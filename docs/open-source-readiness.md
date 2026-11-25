@@ -18,8 +18,8 @@
 
 小米通信 SDK 样例归档中尚未发现明确的独立再分发授权。源代码提供官方依赖下载方法，发布含该 SDK 的 APK 前需要核对适用条款。
 
-GitHub 工作流尚未在远端运行。当前构建验证使用本机 Windows、Node.js 24 和已有 Android/Gradle 环境，CI 配置使用 Node.js 22，远端首次运行后应记录结果。
+GitHub Windows CI 已在 Node.js 22、JDK 17 环境完成双端构建和测试。首次运行的 Android 旧工具包安装问题已修复，成功记录见 https://github.com/zjs215/geely-band-control/actions/runs/45541784186 。本机纯源码构建使用 Node.js 24。
 
 当前自绘资源已完成生成和双端编译，真机视觉与车控回归待补充。现有用户反馈中的手环固件、手机型号和系统版本待录入兼容表。
 
-公开仓库可采用 `zjs215/geely-band-control`，展示名称「腕上银河」。发布时启用私密漏洞报告，公开源码与安装包的发布范围分别按第三方许可确定。
+源码已发布至 https://github.com/zjs215/geely-band-control ，展示名称「腕上银河」，私密漏洞报告已开启。公开安装包的发布范围按第三方许可确定。
