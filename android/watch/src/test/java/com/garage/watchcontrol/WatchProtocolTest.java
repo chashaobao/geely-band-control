@@ -92,4 +92,19 @@ public final class WatchProtocolTest {
         assertTrue(compact.modelMaxWidthDp() < standard.modelMaxWidthDp()
                 && standard.modelMaxWidthDp() < large.modelMaxWidthDp());
     }
+
+    @Test public void mapsCircularWatchDimensionsToS5DesignWidth336AndFitsWithoutOverflow() {
+        for (int diameterPx : new int[]{396, 454, 466, 480}) {
+            WatchProtocol.WatchScale scale = new WatchProtocol.WatchScale(true, diameterPx, 2.0f);
+            assertEquals(diameterPx, scale.px(336, 233));
+            assertEquals(Math.round(diameterPx * (72 / 336.0f)), scale.px(scale.roundOrb336(4), 58));
+            assertEquals(Math.round(diameterPx * (48 / 336.0f)), scale.px(scale.roundIcon336(4), 40));
+            assertEquals(diameterPx * (16 / 336.0f), scale.textPx(scale.roundLabel336(4)), 0.05f);
+            assertTrue(WatchProtocol.WatchScale.roundControlsEstimatedHeight336(1, true) <= 336);
+            assertTrue(WatchProtocol.WatchScale.roundControlsEstimatedHeight336(2, true) <= 336);
+            assertTrue(WatchProtocol.WatchScale.roundControlsEstimatedHeight336(4, true) <= 336);
+        }
+        WatchProtocol.WatchScale rect = new WatchProtocol.WatchScale(false, 400, 2.0f);
+        assertEquals(28, rect.px(36, 14));
+    }
 }

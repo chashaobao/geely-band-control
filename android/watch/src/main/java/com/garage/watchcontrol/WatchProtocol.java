@@ -43,6 +43,43 @@ final class WatchProtocol {
 
     private WatchProtocol() {}
 
+    record WatchScale(boolean roundScreen, int diameterPx, float density) {
+        static final float DESIGN_WIDTH = 336.0f;
+
+        int px(int design336, int rectDp) {
+            if (!roundScreen) return Math.round(rectDp * density);
+            int safeDial = diameterPx > 0 ? diameterPx : 466;
+            return Math.max(1, Math.round(safeDial * (design336 / DESIGN_WIDTH)));
+        }
+
+        float textPx(int design336) {
+            int safeDial = diameterPx > 0 ? diameterPx : 466;
+            return safeDial * (design336 / DESIGN_WIDTH);
+        }
+
+        int roundOrb336(int actionCount) {
+            return actionCount <= 1 ? 110 : actionCount == 2 ? 92 : 72;
+        }
+
+        int roundIcon336(int actionCount) {
+            return actionCount <= 1 ? 74 : actionCount == 2 ? 62 : 48;
+        }
+
+        int roundLabel336(int actionCount) {
+            return actionCount <= 1 ? 20 : actionCount == 2 ? 18 : 16;
+        }
+
+        static int roundControlsEstimatedHeight336(int actionCount, boolean withHint) {
+            int orb = actionCount <= 1 ? 110 : actionCount == 2 ? 92 : 72;
+            int labelLine = actionCount <= 1 ? 24 : actionCount == 2 ? 22 : 19;
+            int rowHeight = orb + 4 + labelLine + (withHint ? 15 : 0);
+            int rows = actionCount <= 2 ? 1 : 2;
+            int gridHeight = rows * rowHeight + (rows > 1 ? 8 : 0);
+            // top/bottom padding (15 + 15) + topPill (~26) + settingsPill (~30) + margins (~8)
+            return 94 + gridHeight;
+        }
+    }
+
     record RoundHomeMetrics(
             int hPadDp,
             int topPadDp,

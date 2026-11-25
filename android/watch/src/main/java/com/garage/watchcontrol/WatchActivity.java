@@ -6,7 +6,6 @@ import android.app.AlertDialog;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
-import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -18,9 +17,15 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.RelativeSizeSpan;
+import android.text.style.StyleSpan;
 import android.util.Base64;
 import android.util.DisplayMetrics;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -131,6 +136,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
 
     private boolean visible;
     private boolean roundScreen;
+    private WatchProtocol.WatchScale uiScale;
     private boolean showSplitDetail;
     private boolean settingsOpen;
     private boolean hapticsEnabled = true;
@@ -180,6 +186,9 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         vibrator = getSystemService(Vibrator.class);
         hapticsEnabled = !"off".equals(prefs.getString(HAPTICS_KEY, "on"));
         roundScreen = getResources().getConfiguration().isScreenRound();
+        DisplayMetrics dm = getResources().getDisplayMetrics();
+        int diameterPx = Math.min(dm.widthPixels, dm.heightPixels);
+        uiScale = new WatchProtocol.WatchScale(roundScreen, diameterPx, dm.density);
         loadEvents();
 
         client = new BluetoothPhoneClient(this, main, this);
@@ -705,7 +714,17 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     }
 
     private void applyVehicle(JSONObject vehicle, boolean cached) {
-        totalHeroView.setText(WatchProtocol.heroDisplay(vehicle));
+        String hero = WatchProtocol.heroDisplay(vehicle);
+        if (roundScreen && hero.endsWith(" km")) {
+            SpannableStringBuilder span = new SpannableStringBuilder(hero);
+            int unitStart = hero.length() - 3;
+            span.setSpan(new RelativeSizeSpan(17f / 46f), unitStart, hero.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            span.setSpan(new StyleSpan(Typeface.NORMAL), unitStart, hero.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            span.setSpan(new ForegroundColorSpan(SUB_INK), unitStart, hero.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            totalHeroView.setText(span);
+        } else {
+            totalHeroView.setText(hero);
+        }
         subrangeView.setText(WatchProtocol.subrangeDisplay(vehicle));
         electricText.setText(WatchProtocol.energyDisplay(vehicle, "electricKm", "electricPercent"));
         fuelText.setText(WatchProtocol.energyDisplay(vehicle, "fuelKm", "fuelPercent"));
@@ -897,9 +916,10 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         }
         emptyView.setVisibility(View.GONE);
         int count = mapped.size();
-        int orbDp = count <= 1 ? 86 : count == 2 ? 74 : 58;
-        int iconDp = count <= 1 ? 58 : count == 2 ? 50 : 40;
-        int labelSp = count <= 1 ? 17 : count == 2 ? 16 : 14;
+        int orbSize = u(uiScale.roundOrb336(count), count <= 1 ? 86 : count == 2 ? 74 : 58);
+        int iconSize = u(uiScale.roundIcon336(count), count <= 1 ? 58 : count == 2 ? 50 : 40);
+        int label336 = uiScale.roundLabel336(count);
+        int labelRectSp = count <= 1 ? 17 : count == 2 ? 16 : 14;
         for (int i = 0; i < count; i += 2) {
             String first = mapped.get(i);
             String second = i + 1 < count ? mapped.get(i + 1) : null;
@@ -907,18 +927,19 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, -2);
-            if (i > 0) rowParams.topMargin = dp(8);
-            row.addView(buildOrbTile(first, orbDp, iconDp, labelSp), new LinearLayout.LayoutParams(0, -2, 1));
+            if (i > 0) rowParams.topMargin = r(8);
+            row.addView(buildOrbTile(first, orbSize, iconSize, label336, labelRectSp),
+                    new LinearLayout.LayoutParams(0, -2, 1));
             if (second != null) {
                 LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(0, -2, 1);
-                secondParams.setMarginStart(dp(8));
-                row.addView(buildOrbTile(second, orbDp, iconDp, labelSp), secondParams);
+                secondParams.setMarginStart(r(8));
+                row.addView(buildOrbTile(second, orbSize, iconSize, label336, labelRectSp), secondParams);
             }
             gridContainer.addView(row, rowParams);
         }
     }
 
-    private View buildOrbTile(String action, int orbDp, int iconDp, int labelSp) {
+    private View buildOrbTile(String action, int orbSize, int iconSize, int label336, int labelRectSp) {
         boolean isAvailable = available.contains(action);
         String direction = controlDirections.get(action);
         boolean isActive = isAvailable && ("close".equals(direction) || ("lock".equals(action) && "unlock".equals(direction)));
@@ -937,25 +958,25 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         int stroke = isAvailable ? (isActive ? ORB_ACTIVE_BORDER : ORB_READY_BORDER)
                 : linked ? ORB_PAUSED_BORDER : ORB_UNASSIGNED_BORDER;
         orbBg.setColor(fill);
-        orbBg.setStroke(dp(1), stroke);
+        orbBg.setStroke(Math.max(1, r(1)), stroke);
         orb.setBackground(orbBg);
 
         ImageView icon = new ImageView(this);
         icon.setImageBitmap(assetBitmap(WatchProtocol.iconAsset(action, direction)));
         icon.setAlpha(isAvailable ? 1f : 0.62f);
-        orb.addView(icon, new FrameLayout.LayoutParams(dp(iconDp), dp(iconDp), Gravity.CENTER));
-        cell.addView(orb, new LinearLayout.LayoutParams(dp(orbDp), dp(orbDp)));
+        orb.addView(icon, new FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER));
+        cell.addView(orb, new LinearLayout.LayoutParams(orbSize, orbSize));
 
-        TextView labelView = text(label, labelSp, INK, true);
+        TextView labelView = text(label, label336, labelRectSp, INK, true);
         labelView.setSingleLine(true);
         labelView.setEllipsize(TextUtils.TruncateAt.END);
         labelView.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-2, -2);
-        labelParams.topMargin = dp(4);
+        labelParams.topMargin = r(4);
         cell.addView(labelView, labelParams);
 
         if (!hint.isEmpty()) {
-            TextView hintView = text(hint, 10, MUTED, false);
+            TextView hintView = text(hint, 12, 10, MUTED, false);
             hintView.setSingleLine(true);
             hintView.setGravity(Gravity.CENTER);
             cell.addView(hintView);
@@ -965,10 +986,10 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
 
     private void renderDiagnostics() {
         diagnosticsBox.removeAllViews();
-        diagnosticsBox.addView(text("连接记录", 13, INK, true));
+        diagnosticsBox.addView(text("连接记录", 14, 13, INK, true));
         if (events.isEmpty()) {
-            TextView none = text("暂无记录", 11, MUTED, false);
-            none.setPadding(0, dp(4), 0, 0);
+            TextView none = text("暂无记录", 12, 11, MUTED, false);
+            none.setPadding(0, r(4), 0, 0);
             diagnosticsBox.addView(none);
             return;
         }
@@ -981,8 +1002,8 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             if (!entry.type().isEmpty()) line.append(' ').append(entry.type());
             if (!entry.detail().isEmpty()) line.append(' ').append(entry.detail());
             if (!entry.id().isEmpty()) line.append('\n').append(entry.id());
-            TextView row = text(line.toString(), 10, MUTED, false);
-            row.setPadding(0, dp(4), 0, 0);
+            TextView row = text(line.toString(), 12, 10, MUTED, false);
+            row.setPadding(0, r(4), 0, 0);
             diagnosticsBox.addView(row);
         }
     }
@@ -1024,7 +1045,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     }
 
     private void updateDot(View dot, boolean active) {
-        int size = dp(active ? 7 : 5);
+        int size = r(active ? 7 : 5);
         LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) dot.getLayoutParams();
         params.width = size;
         params.height = size;
@@ -1040,16 +1061,10 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{Color.rgb(15, 27, 46), Color.rgb(24, 44, 77), Color.rgb(8, 13, 22)}));
 
-        int hPad = dp(roundScreen ? 22 : 14);
-        int vPad = dp(roundScreen ? 16 : 14);
-        WatchProtocol.RoundHomeMetrics homeMetrics = roundScreen
-                ? WatchProtocol.RoundHomeMetrics.forDiameterDp(dialDiameterDp())
-                : WatchProtocol.RoundHomeMetrics.rectDefault();
-
         homeShell = new FrameLayout(this);
         homePager = new VerticalPagerView(this);
-        homePager.addView(buildMileagePage(homeMetrics));
-        homePager.addView(buildControlsPage(hPad, vPad));
+        homePager.addView(buildMileagePage());
+        homePager.addView(buildControlsPage());
         homePager.setOnPageChangeListener(this::updatePagerDots);
         homeShell.addView(homePager, new FrameLayout.LayoutParams(-1, -1));
 
@@ -1058,42 +1073,44 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         pagerDots.setGravity(Gravity.CENTER_HORIZONTAL);
         pagerDot0 = new View(this);
         pagerDot1 = new View(this);
-        pagerDots.addView(pagerDot0, new LinearLayout.LayoutParams(dp(7), dp(7)));
-        LinearLayout.LayoutParams dot1Params = new LinearLayout.LayoutParams(dp(5), dp(5));
-        dot1Params.topMargin = dp(6);
+        pagerDots.addView(pagerDot0, new LinearLayout.LayoutParams(r(7), r(7)));
+        LinearLayout.LayoutParams dot1Params = new LinearLayout.LayoutParams(r(5), r(5));
+        dot1Params.topMargin = r(6);
         pagerDots.addView(pagerDot1, dot1Params);
         pagerDot0.setOnClickListener(v -> homePager.setCurrentPage(0, true));
         pagerDot1.setOnClickListener(v -> homePager.setCurrentPage(1, true));
         updatePagerDots(0);
 
         FrameLayout.LayoutParams dotsParams = new FrameLayout.LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL);
-        dotsParams.setMarginEnd(dp(10));
+        dotsParams.setMarginEnd(u(11, 10));
         homeShell.addView(pagerDots, dotsParams);
 
+        int safeInset = u(50, 14);
         confirmScreen = new LinearLayout(this);
         confirmScreen.setOrientation(LinearLayout.VERTICAL);
         confirmScreen.setGravity(Gravity.CENTER);
-        confirmScreen.setPadding(hPad, dp(28), hPad, dp(28));
+        confirmScreen.setPadding(safeInset, r(28), safeInset, r(28));
         confirmScreen.setVisibility(View.GONE);
         LinearLayout confirmHeader = new LinearLayout(this);
         confirmHeader.setGravity(Gravity.CENTER);
         confirmIconView = new ImageView(this);
-        confirmHeader.addView(confirmIconView, new LinearLayout.LayoutParams(dp(24), dp(24)));
-        confirmTitleView = text("", 20, INK, true);
+        int confirmIconSize = u(26, 24);
+        confirmHeader.addView(confirmIconView, new LinearLayout.LayoutParams(confirmIconSize, confirmIconSize));
+        confirmTitleView = text("", 24, 20, INK, true);
         confirmTitleView.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams ctParams = new LinearLayout.LayoutParams(-2, -2);
-        ctParams.setMarginStart(dp(8));
+        ctParams.setMarginStart(r(8));
         confirmHeader.addView(confirmTitleView, ctParams);
         confirmScreen.addView(confirmHeader, new LinearLayout.LayoutParams(-1, -2));
 
         TextView confirmBtn = actionButton("确认操作", MINT, Color.rgb(16, 37, 30), true, v -> executeConfirmation());
-        LinearLayout.LayoutParams cbParams = new LinearLayout.LayoutParams(-1, dp(44));
-        cbParams.topMargin = dp(16);
+        LinearLayout.LayoutParams cbParams = new LinearLayout.LayoutParams(-1, u(50, 44));
+        cbParams.topMargin = u(18, 16);
         confirmScreen.addView(confirmBtn, cbParams);
 
         TextView cancelBtn = actionButton("取消", Color.rgb(38, 54, 61), INK, false, v -> cancelConfirmation());
-        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(-1, dp(44));
-        cancelParams.topMargin = dp(8);
+        LinearLayout.LayoutParams cancelParams = new LinearLayout.LayoutParams(-1, u(50, 44));
+        cancelParams.topMargin = u(9, 8);
         confirmScreen.addView(cancelBtn, cancelParams);
 
         settingsScroll = new ScrollView(this);
@@ -1103,15 +1120,15 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         settingsScroll.setVisibility(View.GONE);
         LinearLayout settingsContent = new LinearLayout(this);
         settingsContent.setOrientation(LinearLayout.VERTICAL);
-        settingsContent.setPadding(hPad, dp(34), hPad, dp(34));
+        settingsContent.setPadding(safeInset, u(52, 34), safeInset, u(52, 34));
         settingsScroll.addView(settingsContent, new ScrollView.LayoutParams(-1, -2));
 
-        settingsContent.addView(text("设置", 18, INK, true));
+        settingsContent.addView(text("设置", 21, 18, INK, true));
         LinearLayout hapticsBox = new LinearLayout(this);
         hapticsBox.setGravity(Gravity.CENTER_VERTICAL);
         hapticsBox.setBackground(rounded(META, 12));
-        hapticsBox.setPadding(dp(10), dp(8), dp(10), dp(8));
-        hapticsBox.addView(text("车控震动", 14, INK, false), new LinearLayout.LayoutParams(0, -2, 1));
+        hapticsBox.setPadding(r(10), r(8), r(10), r(8));
+        hapticsBox.addView(text("车控震动", 15, 14, INK, false), new LinearLayout.LayoutParams(0, -2, 1));
         hapticsSwitch = new Switch(this);
         hapticsSwitch.setChecked(hapticsEnabled);
         hapticsSwitch.setThumbTintList(new ColorStateList(new int[][]{{android.R.attr.state_checked}, {}},
@@ -1122,42 +1139,42 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         });
         hapticsBox.addView(hapticsSwitch);
         LinearLayout.LayoutParams hbParams = new LinearLayout.LayoutParams(-1, -2);
-        hbParams.topMargin = dp(10);
+        hbParams.topMargin = r(10);
         settingsContent.addView(hapticsBox, hbParams);
 
         LinearLayout phoneBox = new LinearLayout(this);
         phoneBox.setOrientation(LinearLayout.VERTICAL);
         phoneBox.setBackground(rounded(META, 12));
-        phoneBox.setPadding(dp(10), dp(8), dp(10), dp(8));
-        phoneBox.addView(text("配对手机", 13, INK, true));
-        phoneTargetView = text("自动连接已配对手机", 11, MUTED, false);
+        phoneBox.setPadding(r(10), r(8), r(10), r(8));
+        phoneBox.addView(text("配对手机", 14, 13, INK, true));
+        phoneTargetView = text("自动连接已配对手机", 12, 11, MUTED, false);
         phoneBox.addView(phoneTargetView);
         phoneBox.setOnClickListener(view -> choosePhoneDevice());
         LinearLayout.LayoutParams pbParams = new LinearLayout.LayoutParams(-1, -2);
-        pbParams.topMargin = dp(8);
+        pbParams.topMargin = r(8);
         settingsContent.addView(phoneBox, pbParams);
 
         diagnosticsBox = new LinearLayout(this);
         diagnosticsBox.setOrientation(LinearLayout.VERTICAL);
         diagnosticsBox.setBackground(rounded(PANEL, 12));
-        diagnosticsBox.setPadding(dp(10), dp(8), dp(10), dp(8));
+        diagnosticsBox.setPadding(r(10), r(8), r(10), r(8));
         LinearLayout.LayoutParams diagParams = new LinearLayout.LayoutParams(-1, -2);
-        diagParams.topMargin = dp(8);
+        diagParams.topMargin = r(8);
         settingsContent.addView(diagnosticsBox, diagParams);
 
         TextView backBtn = actionButton("返回", META, INK, false, view -> {
             settingsOpen = false;
             renderScreens();
         });
-        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(-1, dp(40));
-        backParams.topMargin = dp(10);
+        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(-1, r(40));
+        backParams.topMargin = r(10);
         settingsContent.addView(backBtn, backParams);
 
         toastBox = new FrameLayout(this);
-        toastBox.setBackground(rounded(Color.rgb(48, 67, 74), 12));
-        toastBox.setPadding(dp(12), dp(8), dp(12), dp(8));
+        toastBox.setBackground(rounded(Color.rgb(48, 67, 74), 14));
+        toastBox.setPadding(r(12), r(8), r(12), r(8));
         toastBox.setVisibility(View.GONE);
-        toastView = text("", 13, INK, false);
+        toastView = text("", 14, 13, INK, false);
         toastView.setGravity(Gravity.CENTER);
         toastBox.addView(toastView, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
 
@@ -1165,21 +1182,21 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         root.addView(settingsScroll, new FrameLayout.LayoutParams(-1, -1));
         root.addView(confirmScreen, new FrameLayout.LayoutParams(-1, -1));
         FrameLayout.LayoutParams toastParams = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
-        toastParams.setMargins(hPad, 0, hPad, 0);
+        toastParams.setMargins(safeInset, 0, safeInset, 0);
         root.addView(toastBox, toastParams);
         return root;
     }
 
-    private View buildMileagePage(WatchProtocol.RoundHomeMetrics metrics) {
+    private View buildMileagePage() {
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setGravity(Gravity.CENTER_HORIZONTAL);
-        page.setPadding(dp(metrics.hPadDp()), dp(metrics.topPadDp()), dp(metrics.hPadDp()), dp(metrics.bottomPadDp()));
+        page.setPadding(u(24, 14), u(18, 14), u(24, 14), u(12, 14));
 
-        vehicleNameView = text(vehicleName, metrics.modelSp(), SUB_INK, true);
+        vehicleNameView = text(vehicleName, 15, 14, SUB_INK, true);
         vehicleNameView.setSingleLine(true);
         vehicleNameView.setEllipsize(TextUtils.TruncateAt.END);
-        if (metrics.modelMaxWidthDp() > 0) vehicleNameView.setMaxWidth(dp(metrics.modelMaxWidthDp()));
+        if (roundScreen) vehicleNameView.setMaxWidth(r(204));
         page.addView(vehicleNameView);
 
         FrameLayout rangeArea = new FrameLayout(this);
@@ -1192,96 +1209,96 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         heroBlock = new LinearLayout(this);
         heroBlock.setOrientation(LinearLayout.VERTICAL);
         heroBlock.setGravity(Gravity.CENTER_HORIZONTAL);
-        totalHeroView = text("— km", metrics.heroSp(), INK, true);
+        totalHeroView = text("— km", 46, 40, INK, true);
         totalHeroView.setSingleLine(true);
-        subrangeView = text("电 — · 油 — km", metrics.subrangeSp(), MUTED, false);
+        subrangeView = text("电 — · 油 — km", 11, 11, MUTED, false);
         subrangeView.setSingleLine(true);
         heroBlock.addView(totalHeroView);
         LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(-2, -2);
-        subParams.topMargin = dp(1);
+        subParams.topMargin = r(1);
         heroBlock.addView(subrangeView, subParams);
         rangeArea.addView(heroBlock, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
 
         splitRow = new LinearLayout(this);
         splitRow.setOrientation(LinearLayout.HORIZONTAL);
         splitRow.setVisibility(View.GONE);
-        electricText = text("— km", metrics.splitTextSp(), INK, true);
-        fuelText = text("— km", metrics.splitTextSp(), INK, true);
+        electricText = text("— km", 13, 14, INK, true);
+        fuelText = text("— km", 13, 14, INK, true);
         electricFill = new View(this);
         fuelFill = new View(this);
-        splitRow.addView(buildEnergyBox("energy-electric.png", electricText, electricFill, ELECTRIC, metrics),
+        splitRow.addView(buildEnergyBox("energy-electric.png", electricText, electricFill, ELECTRIC),
                 new LinearLayout.LayoutParams(0, -2, 1));
         LinearLayout.LayoutParams fuelBoxParams = new LinearLayout.LayoutParams(0, -2, 1);
-        fuelBoxParams.setMarginStart(dp(metrics.splitGapDp()));
-        splitRow.addView(buildEnergyBox("energy-fuel.png", fuelText, fuelFill, FUEL, metrics), fuelBoxParams);
+        fuelBoxParams.setMarginStart(r(6));
+        splitRow.addView(buildEnergyBox("energy-fuel.png", fuelText, fuelFill, FUEL), fuelBoxParams);
         rangeArea.addView(splitRow, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
 
         LinearLayout.LayoutParams rangeParams = new LinearLayout.LayoutParams(-1, -2);
-        rangeParams.topMargin = dp(Math.max(1, metrics.sectionGapDp() / 2));
+        rangeParams.topMargin = r(2);
         page.addView(rangeArea, rangeParams);
 
         LinearLayout statusRow = new LinearLayout(this);
         statusRow.setOrientation(LinearLayout.HORIZONTAL);
         statusRow.setGravity(Gravity.CENTER_VERTICAL);
         GradientDrawable statusBg = rounded(META, 12);
-        statusBg.setStroke(dp(1), META_BORDER);
+        statusBg.setStroke(Math.max(1, r(1)), META_BORDER);
         statusRow.setBackground(statusBg);
-        statusRow.setPadding(dp(metrics.statusHPadDp()), dp(metrics.statusVPadDp()),
-                dp(metrics.statusHPadDp()), dp(metrics.statusVPadDp()));
+        statusRow.setPadding(u(11, 10), r(4), u(11, 10), r(4));
         connectionDot = new View(this);
         connectionDot.setBackground(rounded(Color.rgb(120, 134, 140), 4));
-        statusRow.addView(connectionDot, new LinearLayout.LayoutParams(dp(metrics.statusDotDp()), dp(metrics.statusDotDp())));
-        statusSummaryView = text("待连接 | 状态未知", metrics.statusTextSp(), INK, false);
+        statusRow.addView(connectionDot, new LinearLayout.LayoutParams(r(6), r(6)));
+        statusSummaryView = text("待连接 | 状态未知", 12, 11, INK, false);
         statusSummaryView.setSingleLine(true);
         LinearLayout.LayoutParams sumParams = new LinearLayout.LayoutParams(-2, -2);
-        sumParams.setMarginStart(dp(metrics.sectionGapDp() + 1));
-        sumParams.setMarginEnd(dp(metrics.sectionGapDp() + 1));
+        sumParams.setMarginStart(r(5));
+        sumParams.setMarginEnd(r(5));
         statusRow.addView(statusSummaryView, sumParams);
         ImageView refreshIcon = new ImageView(this);
         refreshIcon.setImageBitmap(assetBitmap("refresh.png"));
-        statusRow.addView(refreshIcon, new LinearLayout.LayoutParams(dp(metrics.statusIconDp()), dp(metrics.statusIconDp())));
+        int statusIconSize = u(13, 12);
+        statusRow.addView(refreshIcon, new LinearLayout.LayoutParams(statusIconSize, statusIconSize));
         statusRow.setOnClickListener(v -> triggerRefresh());
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-2, -2);
-        statusParams.topMargin = dp(metrics.sectionGapDp());
+        statusParams.topMargin = r(4);
         page.addView(statusRow, statusParams);
 
         carImageView = new ImageView(this);
         carImageView.setImageBitmap(assetBitmap("starshine-8.png"));
         carImageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams carParams = new LinearLayout.LayoutParams(-1, 0, 1);
-        carParams.topMargin = dp(metrics.sectionGapDp());
+        carParams.topMargin = u(2, 4);
         page.addView(carImageView, carParams);
 
         return page;
     }
 
-    private View buildControlsPage(int hPad, int vPad) {
+    private View buildControlsPage() {
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setGravity(Gravity.CENTER_HORIZONTAL);
-        page.setPadding(hPad, roundScreen ? dp(14) : vPad, hPad, roundScreen ? dp(14) : vPad);
+        page.setPadding(u(36, 14), u(15, 14), u(36, 14), u(15, 14));
 
         LinearLayout topPill = new LinearLayout(this);
         topPill.setOrientation(LinearLayout.HORIZONTAL);
         topPill.setGravity(Gravity.CENTER_VERTICAL);
-        topPill.setBackground(rounded(META, 12));
-        topPill.setPadding(dp(10), dp(4), dp(10), dp(4));
+        topPill.setBackground(rounded(META, 13));
+        topPill.setPadding(u(12, 10), r(4), u(12, 10), r(4));
         ImageView refreshIcon = new ImageView(this);
         refreshIcon.setImageBitmap(assetBitmap("refresh.png"));
-        topPill.addView(refreshIcon, new LinearLayout.LayoutParams(dp(13), dp(13)));
-        controlsRefreshView = text("等待车况", 12, SUB_INK, false);
+        topPill.addView(refreshIcon, new LinearLayout.LayoutParams(r(13), r(13)));
+        controlsRefreshView = text("等待车况", 13, 12, SUB_INK, false);
         controlsRefreshView.setSingleLine(true);
         LinearLayout.LayoutParams crParams = new LinearLayout.LayoutParams(-2, -2);
-        crParams.setMarginStart(dp(4));
+        crParams.setMarginStart(u(5, 4));
         topPill.addView(controlsRefreshView, crParams);
         topPill.setOnClickListener(v -> triggerRefresh());
         page.addView(topPill, new LinearLayout.LayoutParams(-2, -2));
 
         FrameLayout centerArea = new FrameLayout(this);
-        emptyView = text("连接手机后显示已映射车控", 13, MUTED, false);
+        emptyView = text("连接手机后显示已映射车控", 15, 13, MUTED, false);
         emptyView.setGravity(Gravity.CENTER);
         emptyView.setBackground(rounded(ORB_UNASSIGNED, 14));
-        emptyView.setPadding(dp(12), dp(16), dp(12), dp(16));
+        emptyView.setPadding(u(10, 12), u(14, 16), u(10, 12), u(14, 16));
         centerArea.addView(emptyView, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
 
         gridContainer = new LinearLayout(this);
@@ -1293,14 +1310,15 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         LinearLayout settingsPill = new LinearLayout(this);
         settingsPill.setOrientation(LinearLayout.HORIZONTAL);
         settingsPill.setGravity(Gravity.CENTER_VERTICAL);
-        settingsPill.setBackground(rounded(META, 14));
-        settingsPill.setPadding(dp(12), dp(5), dp(12), dp(5));
+        settingsPill.setBackground(rounded(META, 15));
+        settingsPill.setPadding(u(14, 12), r(5), u(14, 12), r(5));
         ImageView gear = new ImageView(this);
         gear.setImageBitmap(assetBitmap("settings.png"));
-        settingsPill.addView(gear, new LinearLayout.LayoutParams(dp(14), dp(14)));
-        TextView settingsLabel = text("设置", 12, SUB_INK, false);
+        int gearSize = u(16, 14);
+        settingsPill.addView(gear, new LinearLayout.LayoutParams(gearSize, gearSize));
+        TextView settingsLabel = text("设置", 14, 12, SUB_INK, false);
         LinearLayout.LayoutParams slParams = new LinearLayout.LayoutParams(-2, -2);
-        slParams.setMarginStart(dp(4));
+        slParams.setMarginStart(u(5, 4));
         settingsPill.addView(settingsLabel, slParams);
         settingsPill.setOnClickListener(v -> {
             if (pending != null || !confirmTitle.isEmpty()) return;
@@ -1312,22 +1330,20 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         return page;
     }
 
-    private LinearLayout buildEnergyBox(String iconName, TextView valueView, View fillView, int fillColor,
-                                        WatchProtocol.RoundHomeMetrics metrics) {
+    private LinearLayout buildEnergyBox(String iconName, TextView valueView, View fillView, int fillColor) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setBackground(rounded(Color.rgb(32, 49, 57), 8));
-        box.setPadding(dp(metrics.splitBoxHPadDp()), dp(metrics.splitBoxVPadDp()),
-                dp(metrics.splitBoxHPadDp()), dp(metrics.splitBoxVPadDp() + 1));
+        box.setPadding(r(6), r(4), r(6), r(5));
 
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
         ImageView icon = new ImageView(this);
         icon.setImageBitmap(assetBitmap(iconName));
-        row.addView(icon, new LinearLayout.LayoutParams(dp(metrics.splitIconDp()), dp(metrics.splitIconDp())));
+        row.addView(icon, new LinearLayout.LayoutParams(r(14), r(14)));
         valueView.setSingleLine(true);
         LinearLayout.LayoutParams vParams = new LinearLayout.LayoutParams(-2, -2);
-        vParams.setMarginStart(dp(metrics.sectionGapDp()));
+        vParams.setMarginStart(r(4));
         row.addView(valueView, vParams);
         box.addView(row);
 
@@ -1336,49 +1352,48 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         track.setWeightSum(100);
         track.setBackground(rounded(TRACK, 3));
         fillView.setBackground(rounded(fillColor, 3));
-        track.addView(fillView, new LinearLayout.LayoutParams(0, dp(4), 0));
-        LinearLayout.LayoutParams trackParams = new LinearLayout.LayoutParams(-1, dp(4));
-        trackParams.topMargin = dp(metrics.sectionGapDp());
+        track.addView(fillView, new LinearLayout.LayoutParams(0, r(4), 0));
+        LinearLayout.LayoutParams trackParams = new LinearLayout.LayoutParams(-1, r(4));
+        trackParams.topMargin = r(4);
         box.addView(track, trackParams);
         return box;
     }
 
     private TextView actionButton(String label, int bg, int fg, boolean bold, View.OnClickListener listener) {
-        TextView btn = text(label, 16, fg, bold);
+        TextView btn = text(label, 19, 16, fg, bold);
         btn.setGravity(Gravity.CENTER);
-        btn.setBackground(rounded(bg, 12));
+        btn.setBackground(rounded(bg, 14));
         btn.setOnClickListener(listener);
         return btn;
     }
 
-    private TextView text(String value, int sp, int color, boolean bold) {
+    private TextView text(String value, int round336, int rectSp, int color, boolean bold) {
         TextView view = new TextView(this);
         view.setText(value);
-        view.setTextSize(sp);
+        if (roundScreen && uiScale != null) {
+            view.setTextSize(TypedValue.COMPLEX_UNIT_PX, uiScale.textPx(round336));
+            view.setIncludeFontPadding(false);
+        } else {
+            view.setTextSize(rectSp);
+        }
         view.setTextColor(color);
         if (bold) view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         return view;
     }
 
-    private GradientDrawable rounded(int color, int radiusDp) {
+    private GradientDrawable rounded(int color, int radius) {
         GradientDrawable drawable = new GradientDrawable();
         drawable.setColor(color);
-        drawable.setCornerRadius(dp(radiusDp));
+        drawable.setCornerRadius(r(radius));
         return drawable;
     }
 
-    private int dp(int value) {
-        return Math.round(getResources().getDisplayMetrics().density * value);
+    private int u(int round336, int rectDp) {
+        return uiScale.px(round336, rectDp);
     }
 
-    private int dialDiameterDp() {
-        Configuration cfg = getResources().getConfiguration();
-        if (cfg.screenWidthDp > 0 && cfg.screenHeightDp > 0) {
-            return Math.min(cfg.screenWidthDp, cfg.screenHeightDp);
-        }
-        DisplayMetrics dm = getResources().getDisplayMetrics();
-        float density = dm.density > 0f ? dm.density : 1f;
-        return Math.round(Math.min(dm.widthPixels, dm.heightPixels) / density);
+    private int r(int value) {
+        return uiScale.px(value, value);
     }
 
     private Bitmap assetBitmap(String name) {
