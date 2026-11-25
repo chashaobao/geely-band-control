@@ -203,7 +203,8 @@ public final class GarageApp extends Application {
             String block = isArmed() && lock != null ? lock.blockedReason() : "";
             if (!block.equals(observedBlock)) {
                 observedBlock = block;
-                if (!block.isEmpty()) appendEvent("车锁暂不可用", block, true);
+                if (!block.isEmpty()) appendEvent("车锁暂不可用", block + " · 卡片状态「"
+                        + widgets.vehicle().motion() + "」", true);
             }
         }
         if (observer != null) observer.run();
@@ -292,6 +293,9 @@ public final class GarageApp extends Application {
         GalaxyWidgets.Control control = control(request.action());
         String blocked = blockedReason(control);
         if (!blocked.isEmpty()) {
+            if (request.action() == CarAction.LOCK) {
+                appendEvent("车锁准备被拦截", blocked + " · 卡片状态「" + widgets.vehicle().motion() + "」", true);
+            }
             reply(node, request, "blocked", blocked);
             return;
         }
@@ -339,6 +343,10 @@ public final class GarageApp extends Application {
     }
 
     private DispatchResult dispatchControl(CarAction action, GalaxyWidgets.Target target) {
+        if (action == CarAction.LOCK) {
+            appendEvent("准备" + target.title(), "卡片状态「" + widgets.vehicle().motion()
+                    + "」 · 锁态「" + target.lockState() + "」", false);
+        }
         try {
             if (!target.button().view().performClick()) {
                 return new DispatchResult("blocked", "官方按钮当前不可点击");

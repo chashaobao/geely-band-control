@@ -61,20 +61,6 @@ final class GalaxyWidgets {
         }
     }
 
-    private enum LockCheck {
-        READY(""),
-        NEEDS_READING("请点车况时间刷新银河卡片"),
-        NOT_PARKED("银河卡片未显示已驻车"),
-        CONFLICT("银河显示车门未锁，锁图标状态不一致"),
-        UNKNOWN("请在手机核对车门锁态");
-
-        final String reason;
-
-        LockCheck(String reason) {
-            this.reason = reason;
-        }
-    }
-
     interface RefreshResult {
         void accept(String state, String note);
     }
@@ -364,7 +350,7 @@ final class GalaxyWidgets {
             ControlDirection direction = button.match() == null ? null : button.match().direction();
             if (action == CarAction.LOCK) {
                 lockState = binding.lockState();
-                blockedReason = checkLock(card, lockState).reason;
+                blockedReason = LockControl.blockedReason(card.validReading, card.latest.motion(), lockState);
                 direction = ControlDirection.forLockState(lockState);
                 if (direction == ControlDirection.UNLOCK) title = "解锁车门";
                 if (direction == ControlDirection.LOCK) title = "上锁车门";
@@ -396,17 +382,6 @@ final class GalaxyWidgets {
         }
         card.lastMapped = mapped;
         return result;
-    }
-
-    private static LockCheck checkLock(Card card, String lockState) {
-        boolean unlocked = WidgetTree.UNLOCKED.equals(lockState);
-        if (!unlocked && !WidgetTree.LOCKED.equals(lockState)) return LockCheck.UNKNOWN;
-        if (!card.validReading) return LockCheck.NEEDS_READING;
-        return switch (card.latest.motion()) {
-            case "已驻车", "已停车" -> LockCheck.READY;
-            case "车门未锁", "车门未上锁" -> unlocked ? LockCheck.READY : LockCheck.CONFLICT;
-            default -> LockCheck.NOT_PARKED;
-        };
     }
 
     void refresh(RefreshResult result) {

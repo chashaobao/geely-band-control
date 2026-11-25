@@ -22,6 +22,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build.ps1
 
 常规 CI 每次生成临时签名，产物用于验证该次构建。对外发布版本需由维护者使用保管的发布签名构建。
 
+本地专用 Android 资源可放在 `.local/android-res`，例如 `drawable/ic_launcher_foreground.xml`。debug 构建将其作为资源覆盖目录，公开仓库与全新构建仍使用源码内的自绘素材。
+
 ## 结构
 
 | 目录 | 内容 |
