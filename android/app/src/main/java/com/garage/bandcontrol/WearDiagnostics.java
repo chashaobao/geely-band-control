@@ -33,7 +33,7 @@ final class WearDiagnostics {
         String type = root.getClass().getSimpleName();
         String message = root.getMessage();
         return switch (type) {
-            case "AppNotInstalledException" -> "手表端未安装腕上银河 RPK 或包名不一致 (AppNotInstalled)";
+            case "AppNotInstalledException" -> "未检测到腕上银河 RPK（若用手表 APK 请忽略，AppNotInstalled）";
             case "SignatureVerifyFailedException" -> "手机 APK 与手表 RPK 签名证书不一致 (SignatureVerifyFailed)";
             case "PermissionDeniedException" -> "小米运动健康拒绝了设备通信授权 (PermissionDenied)";
             case "DeviceDisconnectedException" -> "穿戴设备未连接或已断开 (DeviceDisconnected)";

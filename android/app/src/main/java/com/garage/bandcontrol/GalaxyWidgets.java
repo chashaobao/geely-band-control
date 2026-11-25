@@ -302,11 +302,13 @@ final class GalaxyWidgets {
         Card card = primary();
         if (card == null || !hasNormalLayout(card) || WidgetTree.loading(card.view)) return null;
         if (card.carImageRevision != card.view.revision) {
-            card.carImageRevision = card.view.revision;
             layoutForScan(card);
             var view = WidgetTree.vehicleImage(card.view);
             CarImage.Packaged extracted = CarImage.extract(view);
-            if (extracted != null) card.carImage = extracted;
+            if (extracted != null) {
+                card.carImage = extracted;
+                card.carImageRevision = card.view.revision;
+            }
         }
         return card.carImage;
     }

@@ -59,7 +59,9 @@ final class WearLink {
     }
 
     private void refreshStatus() {
-        String combined = combineStatus(xiaomi.status(), bluetoothWatch.status(), bluetoothWatch.isConnected());
+        boolean btConnected = bluetoothWatch.isConnected();
+        xiaomi.setBluetoothWatchConnected(btConnected);
+        String combined = combineStatus(xiaomi.status(), bluetoothWatch.status(), btConnected);
         if (combined.equals(lastStatus)) return;
         lastStatus = combined;
         onChange.run();

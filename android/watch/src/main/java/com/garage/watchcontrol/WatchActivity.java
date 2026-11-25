@@ -364,8 +364,15 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         if (pending == null) return;
         PendingRequest req = pending;
         recordEvent("timeout", req, "");
-        if ("hello".equals(req.type())) finishHello(null);
-        else disconnect("手机回复超时，请检查连接", "timeout", req);
+        if ("hello".equals(req.type())) {
+            finishHello(null);
+        } else if ("car_image".equals(req.type())) {
+            clearPending();
+            resetImageSync();
+            schedulePoll();
+        } else {
+            disconnect("手机回复超时，请检查连接", "timeout", req);
+        }
     }
 
     private void clearPending() {
@@ -429,6 +436,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             int total = reply.optInt("total", 0);
             String data = reply.optString("data");
             if (!hash.equals(imageSyncHash) || index != imageSyncChunks.size() || total <= 0 || data.isEmpty()) {
+                recordEvent("car_img_fail", request, "bad_chunk");
                 resetImageSync();
                 schedulePoll();
                 return;
@@ -549,12 +557,14 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         renderAll();
         String imgHash = reply.optString("carImageHash");
         int imgChunks = reply.optInt("carImageChunks", 0);
-        if ("status".equals(request.type()) && supportsRequest("car_image") && !controlPending && confirmTitle.isEmpty()
+        boolean checkImage = "status".equals(request.type()) || "refresh".equals(request.type());
+        if (checkImage && supportsRequest("car_image") && !controlPending && confirmTitle.isEmpty()
                 && !imgHash.isEmpty() && imgChunks > 0 && !imgHash.equals(carImageHash) && !imgHash.equals(failedCarImageHash)) {
             if (!imgHash.equals(imageSyncHash)) {
                 imageSyncHash = imgHash;
                 imageSyncTotal = imgChunks;
                 imageSyncChunks.clear();
+                recordEvent("car_img_start", request, imgHash + "x" + imgChunks);
             }
             sendRequest("car_image", null, null, null);
             return;
@@ -717,6 +727,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             Bitmap bitmap = BitmapFactory.decodeByteArray(png, 0, png.length);
             if (bitmap == null) {
                 failedCarImageHash = hash;
+                recordEvent("car_img_fail", null, "decode_null");
                 return;
             }
             File target = new File(getFilesDir(), "car_" + hash + ".png");
@@ -732,8 +743,10 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
                     .putString(CAR_IMAGE_FILE_KEY, target.getAbsolutePath()).apply();
             carImageHash = hash;
             carImageView.setImageBitmap(bitmap);
+            recordEvent("car_img_ok", null, hash);
         } catch (IllegalArgumentException | IOException failed) {
             failedCarImageHash = hash;
+            recordEvent("car_img_fail", null, failed.getClass().getSimpleName());
         }
     }
 

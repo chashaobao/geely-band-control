@@ -83,6 +83,7 @@ final class XiaomiLink {
     private String lastCheckError = "";
     private String lastNodeSignature = "";
     private boolean emptyNodesLogged;
+    private boolean bluetoothWatchConnected;
 
     XiaomiLink(Context context, Handler main, Receiver receiver, Consumer<String> onDisconnect,
                Runnable onChange, DiagnosticSink diagnostics) {
@@ -92,6 +93,10 @@ final class XiaomiLink {
         this.onDisconnect = onDisconnect;
         this.onChange = onChange;
         this.diagnostics = diagnostics == null ? (title, detail, warning) -> {} : diagnostics;
+    }
+
+    void setBluetoothWatchConnected(boolean connected) {
+        this.bluetoothWatchConnected = connected;
     }
 
     String status() {
@@ -373,7 +378,7 @@ final class XiaomiLink {
                 String detail = WearDiagnostics.describeSdkError(error);
                 if (WearDiagnostics.isMissingWearAppError(error)) {
                     permissionNeeded.remove(id);
-                    if (!detail.equals(lastCheckError)) {
+                    if (!bluetoothWatchConnected && !detail.equals(lastCheckError)) {
                         lastCheckError = detail;
                         Log.w(TAG, "checkPermission failed (missing/mismatched RPK): " + detail, error);
                         diagnostics.log("穿戴端未检测到可用 RPK", detail, true);

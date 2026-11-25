@@ -1,8 +1,8 @@
 {
   "package": "com.garage.bandcontrol",
   "name": "腕上银河",
-  "versionName": "0.1.23",
-  "versionCode": 24,
+  "versionName": "0.1.24",
+  "versionCode": 25,
   "minPlatformVersion": 1000,
   "minAPILevel": 1,
   "icon": "/common/icon.png",

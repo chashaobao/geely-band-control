@@ -73,6 +73,7 @@ public final class GarageApp extends Application {
     private final List<UiEvent> uiEvents = new ArrayList<>();
     private String observedLink = "";
     private String observedBlock = "";
+    private boolean loggedMissingCarImage;
     private String lastResult = "";
     private String voiceTestResult = "";
 
@@ -517,6 +518,9 @@ public final class GarageApp extends Application {
         CarImage.Packaged image = widgets.carImage();
         String hash = request.imageHash();
         int index = request.imageIndex();
+        if (index == 0 && image != null && image.hash().equals(hash)) {
+            appendEvent("同步车辆图片", "向穿戴端发送官方卡片车图（" + image.chunks().size() + " 片）", false);
+        }
         String text = BandMessage.encodeReply(request.id(), () -> {
             if (image == null || !image.hash().equals(hash) || index < 0 || index >= image.chunks().size()) {
                 return BandMessage.carImageReply(request.id(), hash, index, 0, "");
@@ -564,7 +568,11 @@ public final class GarageApp extends Application {
         if (blocked.length() > 0) response.put("blocked", blocked);
         CarImage.Packaged carImage = widgets.carImage();
         if (carImage != null) {
+            loggedMissingCarImage = false;
             response.put("carImageHash", carImage.hash()).put("carImageChunks", carImage.chunks().size());
+        } else if (!loggedMissingCarImage && widgets.vehicle().updatedAt() > 0) {
+            loggedMissingCarImage = true;
+            appendEvent("未提取到官方车辆图", "本次车况将使用穿戴端默认车辆图", true);
         }
         return response.put("controlDirections", directions)
                 .put("vehicleCached", widgets.showsLastReading())
