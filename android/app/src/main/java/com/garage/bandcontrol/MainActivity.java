@@ -28,6 +28,7 @@ import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -60,6 +61,7 @@ public final class MainActivity extends Activity {
     private WidgetPreview preview;
     private FrameLayout widgetContainer;
     private LinearLayout setupPanel;
+    private TextView vehicleNameText;
     private TextView setupStatus;
     private TextView controlStatus;
     private TextView linkStatus;
@@ -136,7 +138,14 @@ public final class MainActivity extends Activity {
         }
         scroll.addView(screen, new ScrollView.LayoutParams(-1, -2));
         add(screen, text(getString(R.string.app_name), 28, INK, true), 0);
-        add(screen, text("吉利银河星耀 8", 14, MUTED, false), 2);
+        LinearLayout vehicleHeader = row();
+        vehicleNameText = text(app.vehicleName(), 14, MUTED, false);
+        vehicleHeader.addView(vehicleNameText);
+        TextView editVehicleName = text("修改名称", 13, MINT, false);
+        editVehicleName.setPadding(dp(10), dp(4), dp(6), dp(4));
+        vehicleHeader.addView(editVehicleName);
+        vehicleHeader.setOnClickListener(view -> editVehicleName());
+        add(screen, vehicleHeader, 2);
 
         widgetContainer = new FrameLayout(this);
         widgetContainer.setBackground(rounded(PANEL, 20));
@@ -241,6 +250,7 @@ public final class MainActivity extends Activity {
     }
 
     private void updateScreen() {
+        vehicleNameText.setText(app.vehicleName());
         GalaxyWidgets.Card card = app.widgets.primary();
         showWidget(card);
         String link = app.link.status();
@@ -304,6 +314,25 @@ public final class MainActivity extends Activity {
             if (!event.detail().isEmpty()) add(item, text(event.detail(), 12, MUTED, false), 3);
             add(logRows, item, latest ? 0 : 3);
         }
+    }
+
+    private void editVehicleName() {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("例如：银河星耀 8");
+        input.setText(app.vehicleName());
+        input.setSelection(input.getText().length());
+        LinearLayout container = column();
+        container.setPadding(dp(20), dp(8), dp(20), 0);
+        container.addView(input);
+        new AlertDialog.Builder(this)
+                .setTitle("自定义车辆名称")
+                .setMessage("手环与手表首屏将显示此名称，留空则恢复为「" + GarageApp.DEFAULT_VEHICLE_NAME + "」。")
+                .setView(container)
+                .setNeutralButton("恢复默认", (dialog, which) -> app.setVehicleName(""))
+                .setNegativeButton("取消", null)
+                .setPositiveButton("保存", (dialog, which) -> app.setVehicleName(input.getText().toString()))
+                .show();
     }
 
     private void copyDiagnostics() {

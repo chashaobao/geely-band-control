@@ -48,4 +48,13 @@ public final class WatchProtocolTest {
         assertFalse(WatchProtocol.needsDirection("trunk", true));
         assertEquals(2, WatchProtocol.knownActions(new JSONArray().put("climate").put("climate").put("bad").put("find")).size());
     }
+
+    @Test public void crownScrollSwitchesBetweenFirstAndSecondPageWithDebounce() {
+        assertEquals(1, VerticalPagerView.nextPageFromCrown(0, 2, -1.0f, 1000L, 0L));
+        assertEquals(0, VerticalPagerView.nextPageFromCrown(1, 2, 1.0f, 1500L, 1000L));
+        assertEquals(-1, VerticalPagerView.nextPageFromCrown(0, 2, 1.0f, 1500L, 1000L));
+        assertEquals(-1, VerticalPagerView.nextPageFromCrown(1, 2, -1.0f, 1500L, 1000L));
+        assertEquals(-1, VerticalPagerView.nextPageFromCrown(0, 2, -1.0f, 1100L, 1000L));
+        assertEquals(-1, VerticalPagerView.nextPageFromCrown(0, 2, 0.0f, 1500L, 1000L));
+    }
 }

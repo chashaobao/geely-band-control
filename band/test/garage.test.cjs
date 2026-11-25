@@ -667,3 +667,65 @@ test('car image sync pulls chunks when hash changes, caches via system.file, and
   link.page.onCarImageError()
   assert.equal(link.page.carImageSrc, '/common/images/starshine-8.png')
 })
+
+test('vehicle name defaults to generic label, syncs from phone, persists in snapshot, and circular orbs adapt to count and active state', () => {
+  const storage = new Map()
+  const circle = start({
+    native: {
+      '@app-module/system.device': {
+        getInfo({ success }) {
+          success({ screenWidth: 480, screenHeight: 480, screenShape: 'circle' })
+        }
+      },
+      '@app-module/system.storage': {
+        get({ key, success }) { success(storage.get(key) || '') },
+        set({ key, value, complete }) { storage.set(key, value); if (complete) complete() }
+      }
+    }
+  })
+  assert.equal(circle.page.vehicleName, '我的座驾')
+  circle.hello()
+  circle.reply({
+    vehicleName: '  俊哥的星耀8  ',
+    vehicle: { totalKm: 470, electricKm: 120, fuelKm: 350, motion: '已驻车', updatedAt: 1700000000000, updatedLabel: '20:00' },
+    mapped: ['lock'],
+    available: ['lock'],
+    controlDirections: { lock: 'unlock' }
+  })
+  assert.equal(circle.page.vehicleName, '俊哥的星耀8')
+  assert.equal(circle.page.displayRows[0].first.watchOrbSizeStyle, 'watch-orb-hero')
+  assert.equal(circle.page.displayRows[0].first.watchOrbStyle, 'watch-orb watch-orb-ready watch-orb-active')
+
+  circle.page.syncStatus()
+  circle.reply({
+    mapped: ['lock', 'climate'],
+    available: ['lock', 'climate'],
+    controlDirections: { lock: 'lock', climate: 'close' }
+  })
+  assert.equal(circle.page.displayRows[0].first.watchOrbSizeStyle, 'watch-orb-pair')
+  assert.equal(circle.page.displayRows[0].first.watchOrbStyle, 'watch-orb watch-orb-ready')
+  assert.equal(circle.page.displayRows[0].second.watchOrbStyle, 'watch-orb watch-orb-ready watch-orb-active')
+
+  circle.page.syncStatus()
+  circle.reply({
+    vehicleName: '   ',
+    mapped: ['lock', 'climate', 'window_vent', 'trunk'],
+    available: ['lock'],
+    controlDirections: { lock: 'unlock' }
+  })
+  assert.equal(circle.page.vehicleName, '我的座驾')
+  assert.equal(circle.page.displayRows[0].first.watchOrbSizeStyle, 'watch-orb-grid')
+
+  const reopened = start({
+    native: {
+      '@app-module/system.device': {
+        getInfo({ success }) { success({ screenWidth: 480, screenHeight: 480, screenShape: 'circle' }) }
+      },
+      '@app-module/system.storage': {
+        get({ key, success }) { success(storage.get(key) || '') },
+        set({ key, value, complete }) { storage.set(key, value); if (complete) complete() }
+      }
+    }
+  })
+  assert.equal(reopened.page.vehicleName, '我的座驾')
+})

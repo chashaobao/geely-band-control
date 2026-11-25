@@ -24,12 +24,15 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 public final class GarageApp extends Application {
+    static final String DEFAULT_VEHICLE_NAME = "我的座驾";
     private static final String TAG = "GarageApp";
     private static final int CONFIRM_NOTICE = 2;
     private static final String CONFIRM_CHANNEL = "galaxy_confirmation";
     private static final String DISPATCHED = "已发送命令";
     private static final String UNMAPPED = "请在手机核对银河小组件配置";
     private static final String VOICE_ENABLED = "miHomeVoiceEnabled";
+    private static final String VEHICLE_NAME_KEY = "vehicleName";
+    private static final int MAX_VEHICLE_NAME_LENGTH = 24;
     private static final long CONTROL_WAIT_MS = 5_000;
 
     private enum ControlPause {
@@ -65,6 +68,7 @@ public final class GarageApp extends Application {
     private boolean serviceRunning;
     private boolean voiceEnabled;
     private boolean voiceListenerConnected;
+    private String vehicleName = DEFAULT_VEHICLE_NAME;
     private int armedCardId = AppWidgetManager.INVALID_APPWIDGET_ID;
     private Dispatch dispatch;
     private boolean confirmationVisible;
@@ -81,6 +85,7 @@ public final class GarageApp extends Application {
         super.onCreate();
         prefs = getSharedPreferences("garage", MODE_PRIVATE);
         voiceEnabled = prefs.getBoolean(VOICE_ENABLED, false);
+        vehicleName = normalizeVehicleName(prefs.getString(VEHICLE_NAME_KEY, DEFAULT_VEHICLE_NAME));
         try {
             JSONArray saved = new JSONArray(prefs.getString("uiEvents", "[]"));
             for (int i = Math.max(0, saved.length() - 40); i < saved.length(); i++) {
@@ -104,6 +109,25 @@ public final class GarageApp extends Application {
     boolean voiceEnabled() { return voiceEnabled; }
     boolean voiceListenerConnected() { return voiceListenerConnected; }
     String voiceTestResult() { return voiceTestResult; }
+    String vehicleName() { return vehicleName; }
+
+    static String normalizeVehicleName(String raw) {
+        if (raw == null) return DEFAULT_VEHICLE_NAME;
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) return DEFAULT_VEHICLE_NAME;
+        return trimmed.length() > MAX_VEHICLE_NAME_LENGTH
+                ? trimmed.substring(0, MAX_VEHICLE_NAME_LENGTH)
+                : trimmed;
+    }
+
+    void setVehicleName(String raw) {
+        String next = normalizeVehicleName(raw);
+        if (next.equals(vehicleName)) return;
+        vehicleName = next;
+        prefs.edit().putString(VEHICLE_NAME_KEY, next).apply();
+        appendEvent("车辆名称已更新", next, false);
+        changed();
+    }
 
     List<UiEvent> uiEvents() { return List.copyOf(uiEvents); }
 
@@ -563,6 +587,7 @@ public final class GarageApp extends Application {
         JSONArray available = new JSONArray();
         JSONArray mapped = new JSONArray();
         response.put("mode", "live")
+                .put("vehicleName", vehicleName)
                 .put("available", available).put("mapped", mapped).put("vehicle", widgets.vehicle().json());
 
         ControlPause pause = controlPause();

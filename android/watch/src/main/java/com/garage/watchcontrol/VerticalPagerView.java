@@ -1,6 +1,7 @@
 package com.garage.watchcontrol;
 
 import android.content.Context;
+import android.os.SystemClock;
 import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
@@ -14,6 +15,8 @@ final class VerticalPagerView extends ViewGroup {
         void onPageChanged(int page);
     }
 
+    private static final long CROWN_DEBOUNCE_MS = 220;
+
     private final OverScroller scroller;
     private final int touchSlop;
     private final int minFlingVelocity;
@@ -25,6 +28,7 @@ final class VerticalPagerView extends ViewGroup {
     private float startY;
     private boolean dragging;
     private int currentPage;
+    private long lastCrownSwitchAtMs;
 
     VerticalPagerView(Context context) {
         super(context);
@@ -170,16 +174,31 @@ final class VerticalPagerView extends ViewGroup {
     }
 
     @Override public boolean onGenericMotionEvent(MotionEvent event) {
-        if (event.getAction() == MotionEvent.ACTION_SCROLL
-                && (event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)
-                || event.isFromSource(InputDevice.SOURCE_CLASS_POINTER))) {
-            float scroll = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
-            if (scroll != 0f) {
-                setCurrentPage(scroll < 0 ? currentPage + 1 : currentPage - 1, true);
-                return true;
-            }
-        }
+        if (handleCrownMotion(event)) return true;
         return super.onGenericMotionEvent(event);
+    }
+
+    boolean handleCrownMotion(MotionEvent event) {
+        if (event == null || event.getAction() != MotionEvent.ACTION_SCROLL) return false;
+        if (!event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)
+                && !event.isFromSource(InputDevice.SOURCE_CLASS_POINTER)) {
+            return false;
+        }
+        float scroll = event.getAxisValue(MotionEvent.AXIS_SCROLL);
+        if (scroll == 0f) scroll = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+        long now = SystemClock.uptimeMillis();
+        int target = nextPageFromCrown(currentPage, getChildCount(), scroll, now, lastCrownSwitchAtMs);
+        if (target < 0) return scroll != 0f && getChildCount() > 1;
+        lastCrownSwitchAtMs = now;
+        setCurrentPage(target, true);
+        return true;
+    }
+
+    static int nextPageFromCrown(int currentPage, int pageCount, float scroll, long nowMs, long lastSwitchMs) {
+        if (scroll == 0f || pageCount <= 1) return -1;
+        if (lastSwitchMs > 0 && nowMs - lastSwitchMs < CROWN_DEBOUNCE_MS) return -1;
+        int target = Math.max(0, Math.min(pageCount - 1, scroll < 0f ? currentPage + 1 : currentPage - 1));
+        return target == currentPage ? -1 : target;
     }
 
     private void ensureTracker(MotionEvent event) {

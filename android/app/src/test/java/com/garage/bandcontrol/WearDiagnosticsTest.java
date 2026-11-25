@@ -93,4 +93,11 @@ public final class WearDiagnosticsTest {
         assertEquals("等待手表重连", WearDiagnostics.compactLinkStatus("等待手表重连（蓝牙直连）", true));
         assertFalse(WearDiagnostics.isWarningStatus("等待手表重连（蓝牙直连）"));
     }
+
+    @Test public void normalizesCustomAndDefaultVehicleNames() {
+        assertEquals(GarageApp.DEFAULT_VEHICLE_NAME, GarageApp.normalizeVehicleName(null));
+        assertEquals(GarageApp.DEFAULT_VEHICLE_NAME, GarageApp.normalizeVehicleName("   "));
+        assertEquals("星耀 8", GarageApp.normalizeVehicleName("  星耀 8  "));
+        assertEquals(24, GarageApp.normalizeVehicleName("123456789012345678901234567890").length());
+    }
 }
