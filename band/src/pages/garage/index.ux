@@ -2245,15 +2245,15 @@ export default {
   object-fit: contain;
 }
 .watch-controls-page {
-  padding: 18px 40px 18px;
+  padding: 15px 36px 15px;
   justify-content: space-between;
   background-color: #0a101b;
   background: linear-gradient(to bottom, #0d1626 0%, #132138 50%, #080d16 100%);
 }
 .watch-top-pill {
-  height: 24px;
-  padding: 0 11px;
-  border-radius: 12px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 13px;
   border-width: 1px;
   border-color: #243854;
   background-color: #152236;
@@ -2262,19 +2262,19 @@ export default {
 }
 .watch-top-text {
   color: #d6e3f5;
-  font-size: 11px;
-  margin-left: 4px;
+  font-size: 13px;
+  margin-left: 5px;
   lines: 1;
 }
 .watch-grid {
-  width: 244px;
+  width: 260px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 .watch-control-row {
-  width: 244px;
-  margin-top: 6px;
+  width: 260px;
+  margin-top: 8px;
   justify-content: space-around;
 }
 .watch-cell {
@@ -2283,13 +2283,13 @@ export default {
   justify-content: center;
 }
 .watch-cell-hero {
-  width: 164px;
+  width: 180px;
 }
 .watch-cell-pair {
-  width: 118px;
+  width: 126px;
 }
 .watch-cell-grid {
-  width: 112px;
+  width: 124px;
 }
 .watch-orb {
   border-width: 1px;
@@ -2299,19 +2299,19 @@ export default {
   justify-content: center;
 }
 .watch-orb-hero {
-  width: 96px;
-  height: 96px;
-  border-radius: 48px;
+  width: 110px;
+  height: 110px;
+  border-radius: 55px;
 }
 .watch-orb-pair {
-  width: 82px;
-  height: 82px;
-  border-radius: 41px;
+  width: 92px;
+  height: 92px;
+  border-radius: 46px;
 }
 .watch-orb-grid {
-  width: 64px;
-  height: 64px;
-  border-radius: 32px;
+  width: 72px;
+  height: 72px;
+  border-radius: 36px;
 }
 .watch-orb-paused {
   border-color: #213044;
@@ -2329,16 +2329,16 @@ export default {
   object-fit: contain;
 }
 .watch-orb-icon-hero {
-  width: 44px;
-  height: 44px;
+  width: 54px;
+  height: 54px;
 }
 .watch-orb-icon-pair {
-  width: 38px;
-  height: 38px;
+  width: 46px;
+  height: 46px;
 }
 .watch-orb-icon-grid {
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
 }
 .watch-cell-label {
   margin-top: 4px;
@@ -2348,34 +2348,34 @@ export default {
   lines: 1;
 }
 .watch-cell-label-hero {
-  font-size: 16px;
+  font-size: 20px;
 }
 .watch-cell-label-pair {
-  font-size: 15px;
+  font-size: 18px;
 }
 .watch-cell-label-grid {
-  font-size: 13px;
+  font-size: 16px;
 }
 .watch-cell-hint {
   color: #8ca1bc;
-  font-size: 10px;
-  line-height: 12px;
+  font-size: 12px;
+  line-height: 14px;
   text-align: center;
   lines: 1;
 }
 .watch-empty {
-  width: 220px;
+  width: 236px;
   padding: 14px 10px;
   border-radius: 14px;
   background-color: #141f30;
   color: #a9bcbf;
-  font-size: 13px;
+  font-size: 15px;
   text-align: center;
 }
 .watch-settings-pill {
-  height: 28px;
-  padding: 0 13px;
-  border-radius: 14px;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 15px;
   border-width: 1px;
   border-color: #243854;
   background-color: #152236;
@@ -2383,14 +2383,14 @@ export default {
   justify-content: center;
 }
 .watch-settings-icon {
-  width: 14px;
-  height: 14px;
-  margin-right: 4px;
+  width: 16px;
+  height: 16px;
+  margin-right: 5px;
   object-fit: contain;
 }
 .watch-settings-text {
   color: #d4e4e2;
-  font-size: 12px;
+  font-size: 14px;
 }
 .watch-pager {
   width: 10px;

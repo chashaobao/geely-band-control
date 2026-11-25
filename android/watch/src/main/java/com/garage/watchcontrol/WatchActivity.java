@@ -895,9 +895,9 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         }
         emptyView.setVisibility(View.GONE);
         int count = mapped.size();
-        int orbDp = count <= 1 ? 76 : count == 2 ? 66 : 56;
-        int iconDp = count <= 1 ? 36 : count == 2 ? 32 : 26;
-        int labelSp = count <= 1 ? 15 : count == 2 ? 14 : 12;
+        int orbDp = count <= 1 ? 86 : count == 2 ? 74 : 58;
+        int iconDp = count <= 1 ? 44 : count == 2 ? 38 : 31;
+        int labelSp = count <= 1 ? 17 : count == 2 ? 16 : 14;
         for (int i = 0; i < count; i += 2) {
             String first = mapped.get(i);
             String second = i + 1 < count ? mapped.get(i + 1) : null;
@@ -953,7 +953,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         cell.addView(labelView, labelParams);
 
         if (!hint.isEmpty()) {
-            TextView hintView = text(hint, 9, MUTED, false);
+            TextView hintView = text(hint, 10, MUTED, false);
             hintView.setSingleLine(true);
             hintView.setGravity(Gravity.CENTER);
             cell.addView(hintView);
@@ -1252,7 +1252,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setGravity(Gravity.CENTER_HORIZONTAL);
-        page.setPadding(hPad, vPad, hPad, vPad);
+        page.setPadding(hPad, roundScreen ? dp(14) : vPad, hPad, roundScreen ? dp(14) : vPad);
 
         LinearLayout topPill = new LinearLayout(this);
         topPill.setOrientation(LinearLayout.HORIZONTAL);
@@ -1261,8 +1261,8 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         topPill.setPadding(dp(10), dp(4), dp(10), dp(4));
         ImageView refreshIcon = new ImageView(this);
         refreshIcon.setImageBitmap(assetBitmap("refresh.png"));
-        topPill.addView(refreshIcon, new LinearLayout.LayoutParams(dp(12), dp(12)));
-        controlsRefreshView = text("等待车况", 11, SUB_INK, false);
+        topPill.addView(refreshIcon, new LinearLayout.LayoutParams(dp(13), dp(13)));
+        controlsRefreshView = text("等待车况", 12, SUB_INK, false);
         controlsRefreshView.setSingleLine(true);
         LinearLayout.LayoutParams crParams = new LinearLayout.LayoutParams(-2, -2);
         crParams.setMarginStart(dp(4));
@@ -1290,8 +1290,8 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         settingsPill.setPadding(dp(12), dp(5), dp(12), dp(5));
         ImageView gear = new ImageView(this);
         gear.setImageBitmap(assetBitmap("settings.png"));
-        settingsPill.addView(gear, new LinearLayout.LayoutParams(dp(13), dp(13)));
-        TextView settingsLabel = text("设置", 11, SUB_INK, false);
+        settingsPill.addView(gear, new LinearLayout.LayoutParams(dp(14), dp(14)));
+        TextView settingsLabel = text("设置", 12, SUB_INK, false);
         LinearLayout.LayoutParams slParams = new LinearLayout.LayoutParams(-2, -2);
         slParams.setMarginStart(dp(4));
         settingsPill.addView(settingsLabel, slParams);

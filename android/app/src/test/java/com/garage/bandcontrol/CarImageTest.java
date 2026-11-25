@@ -8,6 +8,7 @@ import java.util.Base64;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public final class CarImageTest {
@@ -31,5 +32,18 @@ public final class CarImageTest {
             reassembled.append(chunk);
         }
         assertArrayEquals(sample, Base64.getDecoder().decode(reassembled.toString()));
+    }
+
+    @Test public void supportsHighResolutionPayloadsWithinProtocolChunkLimit() throws Exception {
+        byte[] hdSample = new byte[100_000];
+        for (int i = 0; i < hdSample.length; i++) hdSample[i] = (byte) (i * 17 + 3);
+        CarImage.Packaged packaged = CarImage.packagePng(hdSample);
+        assertNotNull(packaged);
+        assertTrue(packaged.chunks().size() <= CarImage.MAX_CHUNKS);
+        assertNotNull(BandMessage.decode(("{\"v\":1,\"id\":\"img_hd\",\"type\":\"car_image\",\"hash\":\""
+                + packaged.hash() + "\",\"index\":" + (packaged.chunks().size() - 1) + "}").getBytes(StandardCharsets.UTF_8)));
+
+        byte[] oversized = new byte[CarImage.MAX_CHUNKS * CarImage.CHUNK_CHARS];
+        assertNull(CarImage.packagePng(oversized));
     }
 }
