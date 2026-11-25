@@ -6,7 +6,7 @@
           <text class="model">银河星耀 8</text>
           <text class="motion">{{ motion }}</text>
         </div>
-        <image class="vehicle-image" src="/cards/garage/images/starshine-8.png"></image>
+        <image class="vehicle-image" src="/common/images/starshine-8.png"></image>
         <div class="energy total-energy" if="{{ showTotalRange }}">
           <text class="distance"><span class="total-label">总里程: </span>{{ total }}<span class="unit"> km</span></text>
         </div>
@@ -242,9 +242,6 @@ function actionRows(ids, available, linked, controlPending, directions) {
 }
 
 export default {
-  public: {
-    quickAction: ''
-  },
   private: {
     displayRows: [],
     mode: '',
@@ -898,10 +895,6 @@ export default {
     } else if (firstReply || previousNotice !== this.controlNotice || wasControlPending !== this.controlPending) {
       this.clearToast()
       if (!this.controlPending || this.phoneConfirmation) this.showToast(this.controlNotice)
-    }
-    if (request.type === 'status' && this.quickAction === 'climate') {
-      this.quickAction = ''
-      this.select('climate')
     }
     this.scheduleStatus()
   },

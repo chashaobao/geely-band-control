@@ -1,8 +1,8 @@
 {
   "package": "com.garage.bandcontrol",
   "name": "腕上银河",
-  "versionName": "0.1.19",
-  "versionCode": 20,
+  "versionName": "0.1.21",
+  "versionCode": 22,
   "minPlatformVersion": 1000,
   "minAPILevel": 1,
   "icon": "/common/icon.png",
@@ -10,7 +10,6 @@
   "features": [
     { "name": "system.interconnect" },
     { "name": "system.storage" },
-    { "name": "system.router" },
     { "name": "system.vibrator" }
   ],
   "config": {
@@ -24,21 +23,6 @@
     "entry": "pages/garage",
     "pages": {
       "pages/garage": { "component": "index", "path": "/garage" }
-    },
-    "widgets": {
-      "cards/garage": {
-        "name": "腕上银河",
-        "description": "上次同步的车况和车控入口",
-        "component": "index",
-        "type": "js",
-        "minCardPlatformVersion": 2000,
-        "sizes": ["FULLxAUTO"],
-        "deviceTypeList": ["watch"],
-        "features": [
-          { "name": "system.storage" },
-          { "name": "system.router" }
-        ]
-      }
     }
   }
 }

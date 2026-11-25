@@ -8,7 +8,7 @@ Android 手机搭配小米手环 10 Pro，查看吉利银河星耀 8（2025 款�
 
 项目原创代码和自绘展示素材采用 [Apache-2.0](LICENSE)。源码构建会从小米官方下载通信 SDK，公开包含 SDK 的安装包前需核对其再分发条件。
 
-手机 0.1.20（versionCode 21）搭配手环 0.1.19（versionCode 20），可覆盖安装。手机首页用一张银河官方中号卡片展示车况，「手环」卡片内可启动通信、授权车控和管理米家语音直控。手环首屏默认并排展示纯电和燃油续航，点车况卡片可切换总续航，并按官方卡片的槽位顺序同步已识别的车控按钮。
+手机 0.1.20（versionCode 21）搭配手环 0.1.21（versionCode 22），可覆盖安装。手机首页用一张银河官方中号卡片展示车况，「手环」卡片内可启动通信、授权车控和管理米家语音直控。手环首屏默认并排展示纯电和燃油续航，点车况卡片可切换总续航，并按官方卡片的槽位顺序同步已识别的车控按钮。
 
 ## 安装与首次验证
 
@@ -81,14 +81,6 @@ Android 手机搭配小米手环 10 Pro，查看吉利银河星耀 8（2025 款�
 「应用锁定引导」说明如何在最近任务里锁定腕上银河。部分小米手机可在「手机管家 → 设置 → 优化加速 → 锁定任务」中开启。系统提供的入口随手机型号和系统版本变化。
 
 [Android 电池优化](https://developer.android.com/training/monitoring-device-state/doze-standby) · [小米应用智能省电](https://dev.mi.com/distribute/doc/details?pId=1628) · [小米后台应用锁定](https://www.mi.com/global/support/faq/details/KA-535435/)
-
-## 侧滑卡片
-
-RPK 带有试验性 JS 卡片 `cards/garage`，按快应用卡片规范声明了手表设备、卡片尺寸、最低卡片平台版本和所用接口。小米手环 10 Pro 可在手环「设置 → 桌面与表盘 → 小部件」查看系统提供的添加列表。公开的 Vela 应用文档未说明如何将第三方 RPK 注册到这份列表。
-
-如果列表出现「腕上银河」，添加后先在应用中同步一次真实车况，再检查卡片能否显示上次同步的数据和从「车控」打开应用。「空调」快捷入口随已缓存的映射显示。10 Pro 真机是否列出卡片、能否访问缓存及跳转仍待验证。应用列表可直接打开「腕上银河」。
-
-[小米手环 10 Pro 小部件说明](https://www.mi.com/global/support/faq/details/KA-703579/) · [Vela 应用配置](https://iot.mi.com/vela/quickapp/zh/guide/framework/manifest.html) · [快应用 JS 卡片声明](https://www.quickapp.cn/doc/widget/framework/configuration/manifest.html)
 
 ## 本地构建
 

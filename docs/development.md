@@ -28,7 +28,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build.ps1
 | --- | --- |
 | `android/app/src/main` | 组件托管、车况解析、车控方向和确认、米家通知接入 |
 | `android/app/src/test` | 协议、确认、车况、车窗和语音指令测试 |
-| `band/src` | 手环主页面、状态缓存、侧滑卡片和素材 |
+| `band/src` | 手环主页面、状态缓存和素材 |
 | `band/test` | 编译后手环协议和状态流回归 |
 | `scripts` | 依赖准备、双端构建和公开源码导出 |
 

@@ -38,7 +38,7 @@ function Draw-Mark($graphics, [int]$size) {
 
 Write-Png 'band/src/common/icon.png' 192 192 { param($g) Draw-Mark $g 192 }
 
-Write-Png 'band/src/cards/garage/images/starshine-8.png' 488 158 {
+Write-Png 'band/src/common/images/starshine-8.png' 488 158 {
     param($g)
     $body = New-Object Drawing.SolidBrush ([Drawing.ColorTranslator]::FromHtml('#B6D2D6'))
     $glass = New-Object Drawing.SolidBrush ([Drawing.ColorTranslator]::FromHtml('#35515D'))
@@ -63,7 +63,7 @@ Write-Png 'band/src/cards/garage/images/starshine-8.png' 488 158 {
 
 $icons = @('lock','lock-open','window_open','window_vent','trunk','find','heat','cool','purify','defrost','sentry','refresh','settings','energy-electric','energy-fuel','climate')
 foreach ($name in $icons) {
-    $destination = if ($name -eq 'climate') { 'band/src/cards/garage/images/climate.png' } else { "band/src/common/images/$name.png" }
+    $destination = "band/src/common/images/$name.png"
     Write-Png $destination 96 96 {
         param($g)
         $color = switch ($name) {

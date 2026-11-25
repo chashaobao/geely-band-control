@@ -21,7 +21,7 @@ export function readSnapshot(onRead) {
       }
     })
   } catch (_) {
-    // Storage is optional on the first screen and the side card.
+    // Render the first screen even when storage is unavailable.
   }
 }
 
