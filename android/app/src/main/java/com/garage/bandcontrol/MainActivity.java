@@ -443,10 +443,12 @@ public final class MainActivity extends Activity {
             return;
         }
         new AlertDialog.Builder(this)
-                .setTitle("允许手环车控")
-                .setMessage("确认当前卡片选的是这辆星耀 8，且已映射功能与银河配置一致。手环上的确认将点击对应的银河官方按钮。")
+                .setTitle("允许穿戴端车控")
+                .setMessage("请确认当前卡片选中目标车辆，且映射按钮与银河小组件配置一致。穿戴端或语音指令将直接触发对应的银河官方按钮。"
+                        + "\n\n安全与免责提示：本工具为独立开源项目，与吉利汽车及小米无官方关联。远程控车存在通信与刷新延迟，车辆实际状态以吉利银河 App 为准；"
+                        + "请为手环或手表设置锁屏密码，离车或非本人佩戴时请及时关闭车控授权。")
                 .setNegativeButton("取消", null)
-                .setPositiveButton("允许", (dialog, which) -> app.arm())
+                .setPositiveButton("已知晓并允许", (dialog, which) -> app.arm())
                 .show();
     }
 

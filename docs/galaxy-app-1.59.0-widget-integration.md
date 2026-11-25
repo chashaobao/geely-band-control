@@ -18,21 +18,19 @@ Android 模拟器用相同资源结构的测试卡片验证了初始引导、透
 
 0.1.8 将手环首页的提示改为自动消失的浮层。待手机确认状态会继续显示在原刷新区。首页移除总续航大数字并扩大车图和车控触区。纯电与燃油公里数分别配闪电、油滴和各自的进度条。
 
-## APK 与截图能确认的事实
+## 小组件宿主边界与公开契约
 
-样本 用户本机安装包样本，包名 `com.geelygalaxy.customer`，版本 `1.59.0`，`versionCode` 为 `159000047`，SHA-256 为 `b74470a9f6e4537f779160eb05b1291b28782543b01bbe9e1414abd2beed02c6`。Android SDK `apksigner` 验证通过 APK v2、v3 签名，校验范围为本地文件的签名完整性。
+伴侣应用仅通过 Android 系统标准 `AppWidgetHost` 与本机已安装的吉利银河 App（包名 `com.geelygalaxy.customer`，参考版本 `1.59.0`）中号小组件交互，不修改官方安装包、不注入运行时代码，也不直接访问未公开的服务端接口。
 
-REA 6.10.1 的 `inspect-artifact` 完成归档清单检查。`search-android-classes` 通过 headless JADX 0.7.1 返回 23 个类名。直接读取根目录唯一 `classes.dex` 的 `class_defs` 得到 45 条定义，主要为加固加载层。两种检查均未发现 Manifest 声明的小组件业务类。REA 的 Manifest 解码失败，本表的 Manifest 和布局细节来自 Android SDK `aapt2`。配置存储方式、车型能力过滤条件和点击后的业务逻辑仍需运行时观察。
-
-| 项目 | 样本证据 | 对原型的影响 |
+| 项目 | 宿主可见行为 | 对原型的影响 |
 | --- | --- | --- |
-| 大小 | Manifest 的 `WgProviderMiddle` / `WgProviderSmall` 分别关联 `xml/car_wg_middle_info` / `xml/car_wg_small_info`。中号 `layout/wg_middle_normal` 有 `wgFun1Container` 至 `wgFun4Container`。小号有里程、刷新和设置，布局中没有这四个槽位。 | 中号负责车况和车控。先按中号卡声明的最小尺寸 `330 × 110 dp` 校验布局和实际可点击面积。 |
-| 配置 | 两个 provider XML 均无 `android:configure`。Manifest 中 `WgConfigSettingActivity` 为非导出。`layout/wg_edit_widget_dialog_activity` 有四个编辑位置和保存按钮。 | 绑定后引导车主点击已托管卡内的官方设置，保存并核对卡片回显。 |
-| 刷新和设置 | `wg_btn_update_time`、`wg_btn_setting` 是中号卡独立的透明点击视图。渲染时间和齿轮的视图另有资源 ID。两个 provider 声明 `updatePeriodMillis=1800000`。 | 对实际可点击的指定视图做精确识别。30 分钟是 provider 声明的更新间隔，车况以卡片当次显示的时间为准。 |
-| 官方确认 | `wg_middle_layout_confirm` 与 `layout/car_wg_item_layout_confirm_dialog` 有官方确认标题及确认、取消按钮。模板标题示例为“确认解锁车辆吗？”。 | 点击后检查官方确认是否出现。若出现，在手机上把当前官方卡呈现给车主，由车主完成。 |
-| 车型功能 | 用户提供的设置截图显示车锁、空调、车窗微开、后备箱、寻车、车窗全开、极速升温、极速降温、净化共九项。APK 另有 `car_wg_funicon_defrost_*` 和 `car_wg_funicon_vstd_*`，资源 `car_main_str_car_support_vstd_mode` 的文案为“哨兵模式”。 | 除霜和哨兵模式均有专用小组件图标。两项在该车型、账号和车机版本上能否加入卡片，按实际选择列表验收。 |
+| 大小与槽位 | 中号组件（`WgProviderMiddle`）声明最小尺寸约 `330 × 110 dp`，提供 `wgFun1Container` 至 `wgFun4Container` 四个车控槽位；小号组件无这四个槽位。 | 中号负责车况和车控，宿主按中号声明尺寸校验布局和可点击面积。 |
+| 配置入口 | 组件未声明系统 `android:configure` 页面，需通过组件卡片内置设置节点跳转到官方配置界面完成车辆与功能设置。 | 绑定后引导车主点击已托管卡内的官方设置，保存并核对卡片回显。 |
+| 刷新与更新周期 | 卡片内包含时间刷新与设置点击节点，系统声明周期 `updatePeriodMillis=1800000`（30 分钟）。 | 对实际可点击的指定视图做精确识别，车况以卡片当次显示的时间为准。 |
+| 官方确认 | 部分操作点击后卡片视图会切换为官方确认态（包含确认标题、确认与取消按钮）。 | 点击后检查官方确认是否出现。若出现，在手机上把当前官方卡呈现给车主，由车主完成。 |
+| 车型功能 | 卡片设置支持车锁、空调、车窗微开、后备箱、寻车、车窗全开、极速升温、极速降温、净化，另有除霜和哨兵模式图标。 | 除霜和哨兵模式能否加入卡片，以当前车型和账号在官方设置页实际提供的选项为准。 |
 
-资源路径索引可用于对同一 APK 复核。中号 provider `res/zDX.xml`，小号 provider `res/UPb.xml`，中号卡 `res/Tfh.xml`，小号卡 `res/Fvb.xml`，设置 `res/68q.xml`，功能选择 `res/7CI.xml`，确认 `res/rod.xml`。这些打包路径随版本变化，原型按当前安装包的资源名称解析。
+具体功能选项、确认交互及点击后的车辆业务逻辑完全由官方 App 与车端能力决定，运行时以实际托管视图回显为准。
 
 ## Android 伴侣应用
 
@@ -134,7 +132,5 @@ Vela 336 × 480 模拟器打开交付 RPK，设置齿轮及设置页通过检查
 
 ## 参考
 
-- [REA Android 静态分析](https://github.com/morluto/rea/blob/main/docs/guides/android/android-analysis.md)
 - [Android 自定义 AppWidgetHost](https://developer.android.com/develop/ui/views/appwidgets/host)
 - [Android RemoteViews](https://developer.android.com/reference/android/widget/RemoteViews)
-- [原会话「调研小米手环控制银河星耀8的可行性」](codex://threads/01a20c10-c59b-7673-96d8-b7deab1f2f64)

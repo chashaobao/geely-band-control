@@ -2,7 +2,12 @@
 
 Android 手机搭配小米手环 10 Pro、小米手环 10 或小米 Watch 5，查看吉利银河星耀 8（2025 款尊贵版）车况，并从穿戴端打开官方小组件对应的车控功能。
 
-腕上银河由独立开发者维护。车主在手机授权托管银河官方中号小组件，手环通过手机转交当前卡片上的操作。实际车况与车控能力由官方 App、车型和车辆状态提供。
+腕上银河由独立开发者维护，为非官方开源辅助工具，与吉利汽车、小米及米家无官方或授权关联。车主在手机端授权托管银河官方中号小组件，穿戴端通过手机转交当前卡片上的操作。实际车况与车控能力由官方 App、车型和车辆状态提供。
+
+> [!WARNING]
+> **使用安全与免责提示**
+> - 本项目按 [Apache-2.0](LICENSE)「现状」提供，不包含任何明示或默示担保；因网络/蓝牙延迟、官方卡片改版、误触或状态同步滞后造成的车辆状态差异，请以吉利银河官方 App 显示为准。
+> - 开启「允许车控」后，穿戴端二次确认或米家通知指令将直接触发已绑定小组件的官方按钮。请务必为手环或手表开启**锁屏密码**，并在非本人佩戴、设备外借或长期不用时及时关闭车控授权。
 
 [兼容性与验证范围](docs/compatibility.md) · [开发与构建](docs/development.md) · [参与开发](CONTRIBUTING.md) · [安全反馈](SECURITY.md) · [第三方说明](THIRD_PARTY_NOTICES.md)
 
@@ -50,7 +55,7 @@ Android 手机搭配小米手环 10 Pro、小米手环 10 或小米 Watch 5，�
 
 [Android 小组件托管文档](https://developer.android.com/develop/ui/views/appwidgets/host) · [银河中号卡片的社区接入记录](https://github.com/yangyongyongyong/GeelyPassiveKey/blob/main/docs/79_official_widget_fallback.md)
 
-实机验证顺序和 APK 静态证据见 [星耀 8 腕上车况与车控实现方案](docs/galaxy-app-1.59.0-widget-integration.md)。
+实机验证顺序与协议实现细节见 [星耀 8 腕上车况与车控实现方案](docs/galaxy-app-1.59.0-widget-integration.md)。
 
 ## 米家语音直控
 
