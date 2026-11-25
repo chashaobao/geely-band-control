@@ -5,7 +5,7 @@ import java.util.List;
 /** Immutable mapping; Lynk identities are static APK evidence, not device acceptance. */
 final class BrandConfig {
     enum Brand { GALAXY, LYNKCO }
-    enum SlotMode { DYNAMIC, FIXED }
+    enum SlotMode { DYNAMIC, CONFIGURABLE }
     static final BrandConfig GALAXY = new BrandConfig(Brand.GALAXY);
     static final BrandConfig LYNKCO = new BrandConfig(Brand.LYNKCO);
     final Brand brand;
@@ -13,6 +13,8 @@ final class BrandConfig {
     final SlotMode slotMode;
     final int heightDp, hostId;
     final String cardsKey;
+    record Slot(String container, String icon, String progress) {}
+    final List<Slot> slotModels;
     final List<String> slots, energyBars, loading;
     final String packageName;
     final String provider;
@@ -44,11 +46,18 @@ final class BrandConfig {
         this.brand = brand;
         boolean lynk = brand == Brand.LYNKCO;
         name = lynk ? "领克" : "银河";
-        slotMode = lynk ? SlotMode.FIXED : SlotMode.DYNAMIC;
+        slotMode = lynk ? SlotMode.CONFIGURABLE : SlotMode.DYNAMIC;
         heightDp = lynk ? 155 : 175;
         hostId = lynk ? 0x4c43 : 0x4742;
         cardsKey = lynk ? "lynkcoWidgetCards" : "widgetCards";
-        slots = lynk ? List.of("fr_unlock", "fr_window", "fr_kjck", "fr_ccqk") : List.of("wgFun1Container", "wgFun2Container", "wgFun3Container", "wgFun4Container");
+        slotModels = lynk ? List.of(new Slot("fr_unlock", "unlock", "pb_unlock"),
+                new Slot("fr_window", "window", "pb_window"), new Slot("fr_kjck", "kjck", "pb_kjck"),
+                new Slot("fr_ccqk", "ccqk_on", "pb_ccqk_on"))
+                : List.of(new Slot("wgFun1Container", "wg_view_fun_status", "wg_view_fun_loading"),
+                new Slot("wgFun2Container", "wg_view_fun_status", "wg_view_fun_loading"),
+                new Slot("wgFun3Container", "wg_view_fun_status", "wg_view_fun_loading"),
+                new Slot("wgFun4Container", "wg_view_fun_status", "wg_view_fun_loading"));
+        slots = slotModels.stream().map(Slot::container).toList();
         energyBars = lynk ? List.of("progress_bar_electricity", "progress_bar_h") : List.of("wg_pb_energy_normal", "wg_pb_energy_warn", "wg_pb_energy_alert");
         loading = lynk ? List.of("fr_sx", "ll_loading_auth") : List.of("wg_view_update_time_loading", "wg_tv_update_time_loading");
         packageName = lynk ? "com.lynkco.customer" : "com.geelygalaxy.customer";
@@ -78,5 +87,6 @@ final class BrandConfig {
         iconPrefix = lynk ? null : "car_wg_funicon_";
         namespace = lynk ? "LYNKCO_V1" : "GARAGE_V1";
     }
+    Slot slot(String container) { return slotModels.stream().filter(slot -> slot.container().equals(container)).findFirst().orElse(null); }
     static BrandConfig fromId(String id) { return "LYNKCO".equals(id) ? LYNKCO : GALAXY; }
 }

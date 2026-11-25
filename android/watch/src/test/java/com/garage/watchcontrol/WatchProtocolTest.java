@@ -11,6 +11,13 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public final class WatchProtocolTest {
+    @org.junit.Test public void lynkVoiceFiltersBrandAndUnverifiedActions() {
+        org.junit.Assert.assertEquals("lynk_unlock", WatchProtocol.voiceAction("LYNKCO", "lynk_unlock"));
+        org.junit.Assert.assertEquals("lynk_window", WatchProtocol.voiceAction("LYNKCO", "lynk_window"));
+        for (String action : new String[]{"lynk_kjck", "lynk_ccqk", "lock", "engine"})
+            org.junit.Assert.assertEquals("", WatchProtocol.voiceAction("LYNKCO", action));
+        org.junit.Assert.assertEquals("", WatchProtocol.voiceAction("GALAXY", "lynk_unlock"));
+    }
     @Test public void buildsHelloAndPrepareRequestsMatchingCompanionWireFormat() throws Exception {
         JSONObject hello = WatchProtocol.buildRequest("abc_1", "hello", null, null, null, "0.1.23");
         assertEquals(1, hello.getInt("v"));

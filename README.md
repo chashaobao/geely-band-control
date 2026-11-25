@@ -111,8 +111,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1
 
 同一个伴侣 App 与穿戴包支持银河和中国版领克，包名仍为 `com.garage.bandcontrol`。全新安装可选择品牌；已有银河卡片自动迁移银河。首页“车辆品牌”可切换，切换后请核对或重新绑定对应品牌官方小组件，再开启车控授权；语音开关会关闭，需要重新开启。原品牌卡片配置保留，品牌间独立存储。
 
-领克适配基于 4.2.9 APK 静态解析及提供的 4.3.0 小组件面一致性结论，未验证 4.3.1。四个固定槽位按 `fr_unlock`、`fr_window`、`fr_kjck`、`fr_ccqk` 显示，均保留中性名称和“待验证”标记；隐藏或不可点击的槽位不会成为可执行操作。kjck/ccqk 功能不作猜测。点按仍需穿戴端 prepare/token/13 秒确认；官方 verify 浮层必须在手机官方卡片处理，不自动接受确认。
+领克适配基于 4.2.9 APK 静态解析及提供的 4.3.0 小组件面一致性结论，未验证 4.3.1。四个可配置槽位（7 选 4）按 `fr_unlock`、`fr_window`、`fr_kjck`、`fr_ccqk` 显示，均保留中性名称和“待验证”标记；隐藏或不可点击的槽位不会成为可执行操作。kjck/ccqk 功能不作猜测。点按仍需穿戴端 prepare/token/13 秒确认；官方 verify 浮层必须在手机官方卡片处理，不自动接受确认。
 
-银河使用原 `GARAGE_V1` 米家通知码；领克当前仅开放 `LYNKCO_V1:TEST`，控制语音等真机证实功能与方向后再启用。图标尚未验证，领克槽位使用通用设置图标，不做银河图标匹配或手动语义猜配。
+银河使用原 `GARAGE_V1` 米家通知码；领克开放 `LYNKCO_V1:TEST`、`LOCK`、`UNLOCK`、`WINDOW_VENT`、`WINDOW_OPEN`、`WINDOW_CLOSE`；控制需车主明确标记当前签名与功能、核对锁窗状态和方向，并在手环/Watch 上 prepare/token/13 秒确认。未知方向拒绝执行，其他语音功能仍关闭。图标尚未验证，使用通用设置图标，不复用银河图标表或按拼音猜功能。米家手动场景和小爱设置见 [领克语音](docs/lynkco/voice.md)。
 
 评审见 [lynk-integration-review.md](docs/lynk-integration-review.md)，来源与验证边界见 [领克适配说明](docs/lynkco/compatibility.md)。静态代码、测试和编译通过不代表真机配对或控车通过。

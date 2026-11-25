@@ -82,6 +82,8 @@ public final class GarageApp extends Application {
     private boolean loggedMissingCarImage;
     private String lastResult = "";
     private String voiceTestResult = "";
+    private record VoiceRequest(CarAction action, String targetKey, String label, long expiresAt) {}
+    private VoiceRequest pendingVoice;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -266,6 +268,7 @@ public final class GarageApp extends Application {
 
     void disarm() {
         confirmations.clear();
+        pendingVoice = null;
         if (armedCardId == AppWidgetManager.INVALID_APPWIDGET_ID) return;
         armedCardId = AppWidgetManager.INVALID_APPWIDGET_ID;
         appendEvent("车控授权已关闭", "车控与语音直控", false);
@@ -297,6 +300,7 @@ public final class GarageApp extends Application {
     }
 
     private void onWidgetChange(int id) {
+        if (brand == BrandConfig.LYNKCO) { confirmations.clear(); pendingVoice = null; }
         if (armedCardId != AppWidgetManager.INVALID_APPWIDGET_ID && !isArmed()) {
             armedCardId = AppWidgetManager.INVALID_APPWIDGET_ID;
             confirmations.clear();
@@ -329,7 +333,7 @@ public final class GarageApp extends Application {
     void onVoiceNotification(String key, long postedAt, MiHomeVoice.Match match) {
         if (!voiceEnabled) return;
         MiHomeVoice.Command command = match.command();
-        if (brand == BrandConfig.LYNKCO && command != MiHomeVoice.Command.TEST) return;
+        if (!MiHomeVoice.enabled(brand.namespace, command)) return;
         String id = Long.toString(postedAt, 36) + "-" + Integer.toUnsignedString(key.hashCode(), 36);
         MiHomeVoice.Admission admission = voiceNotifications.receive(key, postedAt,
                 System.currentTimeMillis(), SystemClock.elapsedRealtime(), command);
@@ -346,10 +350,19 @@ public final class GarageApp extends Application {
             changed();
             return;
         }
-        CarAction action = command.action;
+        CarAction action = MiHomeVoice.action(brand.namespace, command);
         GalaxyWidgets.Control control = control(action);
         String blocked = voiceBlockedReason(control);
-        if (blocked.isEmpty()) blocked = command.directionBlock(control.target().direction());
+        if (blocked.isEmpty() && brand != BrandConfig.LYNKCO) blocked = command.directionBlock(control.target().direction());
+        if (brand == BrandConfig.LYNKCO) {
+            if (blocked.isEmpty()) blocked = widgets.voiceEvidence(command, control);
+            if (blocked.isEmpty() && !serviceRunning) blocked = "请先开启穿戴通信，在手环或 Watch 确认";
+            if (!blocked.isEmpty()) { setResult("领克语音" + command.label + " · " + blocked); return; }
+            pendingVoice = new VoiceRequest(action, control.target().key(), command.label,
+                    SystemClock.elapsedRealtime() + 13_000);
+            setResult("领克语音" + command.label + " · 请在已连接穿戴端于 13 秒内核对确认");
+            return;
+        }
         DispatchResult result = blocked.isEmpty() ? dispatchControl(action, control.target())
                 : new DispatchResult("blocked", blocked);
         Log.i(TAG, "event=dispatch_result id=" + id + " type=voice action=" + action.id
@@ -389,7 +402,7 @@ public final class GarageApp extends Application {
             return;
         }
         GalaxyWidgets.Target target = control.target();
-        if (request.direction() == null && target.direction() == ControlDirection.CLOSE) {
+        if (brand != BrandConfig.LYNKCO && request.direction() == null && target.direction() == ControlDirection.CLOSE) {
             reply(node, request, "blocked", "请更新手环端后使用「" + target.title() + "」");
             return;
         }
@@ -398,7 +411,11 @@ public final class GarageApp extends Application {
             return;
         }
         String token = confirmations.prepare(node, request.action(), target.key(), SystemClock.elapsedRealtime());
-        send(node, request.id(), () -> BandMessage.reply(request.id(), "confirm", target.title())
+        VoiceRequest voice = validVoice();
+        String title = voice != null && voice.action() == request.action()
+                ? "领克语音" + voice.label() + " · " + target.title() : target.title();
+        pendingVoice = null;
+        send(node, request.id(), () -> BandMessage.reply(request.id(), "confirm", title)
                 .put("token", token).put("action", request.action().id));
     }
 
@@ -569,13 +586,13 @@ public final class GarageApp extends Application {
     }
 
     private String wearBlockedReason(GalaxyWidgets.Control control) {
-        if (control == null) return UNMAPPED;
+        if (control == null) return UNMAPPED.replace("银河", brand.name);
         String notice = liveControlNotice(controlPause(), true);
         return notice.isEmpty() ? control.blockedReason() : notice;
     }
 
     private String voiceBlockedReason(GalaxyWidgets.Control control) {
-        if (control == null) return UNMAPPED;
+        if (control == null) return UNMAPPED.replace("银河", brand.name);
         String notice = liveControlNotice(controlPause(), false);
         return notice.isEmpty() ? control.blockedReason() : notice;
     }
@@ -625,7 +642,18 @@ public final class GarageApp extends Application {
                 });
     }
 
+    private VoiceRequest validVoice() {
+        if (pendingVoice == null) return null;
+        GalaxyWidgets.Control current = control(pendingVoice.action());
+        if (SystemClock.elapsedRealtime() >= pendingVoice.expiresAt() || current == null || !current.ready()
+                || !current.target().key().equals(pendingVoice.targetKey())) pendingVoice = null;
+        return pendingVoice;
+    }
+
     private JSONObject withState(JSONObject response) throws JSONException {
+        VoiceRequest voice = validVoice();
+        if (voice != null && brand == BrandConfig.LYNKCO) response.put("voiceAction", voice.action().id)
+                .put("voiceLabel", voice.label());
         JSONArray available = new JSONArray();
         JSONArray mapped = new JSONArray();
         response.put("mode", "live")

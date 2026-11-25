@@ -1159,6 +1159,12 @@ export default {
     }
 
     const directionChanged = request.controlDirection && request.controlDirection !== directions[request.action]
+    if (request.type === 'status' && this.brand === 'LYNKCO'
+        && (reply.voiceAction === 'lynk_unlock' || reply.voiceAction === 'lynk_window')
+        && this.available.indexOf(reply.voiceAction) >= 0 && !this.confirmTitle) {
+      this.select(reply.voiceAction)
+      return
+    }
     if (request.type === 'prepare' && reply.status === 'confirm' && reply.action === request.action && !directionChanged
         && typeof reply.token === 'string' && reply.token.length === 36
         && typeof reply.message === 'string' && reply.message) {

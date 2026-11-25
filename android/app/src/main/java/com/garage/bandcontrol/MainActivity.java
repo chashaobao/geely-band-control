@@ -370,8 +370,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showVoiceCommands() {
-        MiHomeVoice.Command[] commands = app.brand == BrandConfig.LYNKCO
-                ? new MiHomeVoice.Command[]{MiHomeVoice.Command.TEST} : MiHomeVoice.Command.values();
+        MiHomeVoice.Command[] commands = MiHomeVoice.commands(app.brand.namespace);
         String[] choices = new String[commands.length];
         for (int index = 0; index < commands.length; index++) {
             MiHomeVoice.Command command = commands[index];
@@ -578,7 +577,18 @@ public final class MainActivity extends Activity {
 
     private void labelButton(GalaxyWidgets.Card card, WidgetTree.Button target) {
         if (app.brand == BrandConfig.LYNKCO && target.role().isEmpty()) {
-            toast("固定槽位：请在穿戴端确认后点按验证，功能以真机为准");
+            String[] choices = java.util.stream.Stream.concat(LynkMark.CATEGORIES.stream(), java.util.stream.Stream.of("清除标记")).toArray(String[]::new);
+            new AlertDialog.Builder(this).setTitle("车主明确标记：" + target.slot() + "\n描述：" + target.label() + "\n签名：" + target.fingerprint())
+                    .setItems(choices, (dialog, index) -> {
+                        if (index == LynkMark.CATEGORIES.size()) { saveBinding(card, target, "", ""); return; }
+                        String category = choices[index];
+                        String[] directions = category.equals("锁") ? new String[]{"当前已解锁 → 上锁", "当前已上锁 → 解锁", "未知"}
+                                : new String[]{"当前关闭 → 打开（须已验证点按）", "当前开启 → 关闭（须已验证点按）", "未知"};
+                        new AlertDialog.Builder(this).setTitle("核对卡片当前状态及真机点按方向")
+                                .setItems(directions, (d, i) -> saveBinding(card, target, LynkWidgets.binding(target).action(),
+                                        category + ":" + (i == 2 ? "" : category.equals("锁") ? (i == 0 ? "lock" : "unlock") : (i == 0 ? "open" : "close"))))
+                                .setNegativeButton("取消", null).show();
+                    }).setNegativeButton("取消", null).show();
             return;
         }
         if (target.role().equals(app.brand.settings)) {
@@ -595,7 +605,7 @@ public final class MainActivity extends Activity {
                     .setPositiveButton("知道了", null).show();
             return;
         }
-        CarAction[] actions = CarAction.values();
+        CarAction[] actions = Arrays.stream(CarAction.values()).filter(action -> !action.id.startsWith("lynk_")).toArray(CarAction[]::new);
         String[] choices = Arrays.copyOf(Arrays.stream(actions).map(action -> action.label).toArray(String[]::new),
                 actions.length + 1);
         choices[actions.length] = "清除标记";
@@ -629,9 +639,11 @@ public final class MainActivity extends Activity {
 
     private String buttonLabel(GalaxyWidgets.Card card, WidgetTree.Button target) {
         if (!target.role().isEmpty()) return target.label();
-        GalaxyWidgets.Binding binding = app.brand == BrandConfig.LYNKCO ? LynkWidgets.binding(target) : card.binding(target);
+        GalaxyWidgets.Binding binding = card.binding(target);
+        if (binding == null && app.brand == BrandConfig.LYNKCO) binding = LynkWidgets.binding(target);
         CarAction action = binding == null ? null : CarAction.fromId(binding.action());
         if (action == null) return target.label().isEmpty() ? "待标记" : target.label() + "（待标记）";
+        if (binding.mark() != null) return action.label + " · 车主标记：" + binding.mark().category() + " · " + binding.mark().direction();
         String source = target.match() != null ? "自动识别" : "手动标记";
         String state = switch (binding.lockState()) {
             case WidgetTree.LOCKED -> "，已上锁";

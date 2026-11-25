@@ -37,9 +37,11 @@ class GalaxyWidgets {
     private static final long REFRESH_TIMEOUT_MS = 9_000;
     private static final Control WAITING_FOR_WIDGET = new Control(null, "等待官方卡片更新");
 
-    record Binding(String slot, String fingerprint, String action, String lockState) {
+    record Binding(String slot, String fingerprint, String action, String lockState, LynkMark mark) {
+        Binding(String slot, String fingerprint, String action, String lockState) { this(slot, fingerprint, action, lockState, null); }
         boolean matches(WidgetTree.Button button) {
-            return slot.equals(button.slot()) && fingerprint.equals(button.fingerprint());
+            return slot.equals(button.slot()) && fingerprint.equals(button.fingerprint())
+                    && (mark == null || mark.matches(button.slot(), button.fingerprint(), button.label()));
         }
     }
 
@@ -281,11 +283,18 @@ class GalaxyWidgets {
         String version = providerVersion();
         if (version == null) return Collections.emptyList();
         layoutForScan(card);
-        return tree.buttons(card.view, version, card.validReading, icons);
+        List<WidgetTree.Button> current = tree.buttons(card.view, version, card.validReading, icons);
+        if (config.slotMode == BrandConfig.SlotMode.CONFIGURABLE && !tree.loading(card.view)
+                && !tree.confirmationVisible(card.view)) {
+            boolean removed = card.bindings.removeIf(binding -> binding.mark() != null
+                    && current.stream().noneMatch(binding::matches));
+            if (removed) { card.lastMapped = Map.of(); persist(); }
+        }
+        return current;
     }
 
     boolean bindButton(Card card, WidgetTree.Button original, String action, String lockState) {
-        if (config.slotMode == BrandConfig.SlotMode.FIXED || card != primary()) return false;
+        if (card != primary()) return false;
         WidgetTree.Button current = null;
         for (WidgetTree.Button button : buttons(card)) {
             if (button.slot().equals(original.slot()) && button.fingerprint().equals(original.fingerprint())) {
@@ -297,10 +306,30 @@ class GalaxyWidgets {
         String fingerprint = current.fingerprint();
         card.bindings.removeIf(binding -> binding.slot.equals(original.slot())
                 && (action.isEmpty() || binding.fingerprint.equals(fingerprint) || !binding.action.equals(action)));
-        if (!action.isEmpty()) card.bindings.add(new Binding(original.slot(), fingerprint, action, lockState));
+        if (!action.isEmpty()) {
+            if (config.slotMode == BrandConfig.SlotMode.CONFIGURABLE) {
+                String[] evidence = lockState.split(":", -1);
+                if (evidence.length != 2 || !LynkMark.CATEGORIES.contains(evidence[0])) return false;
+                Binding neutral = LynkWidgets.binding(current);
+                if (neutral == null) return false;
+                card.bindings.add(new Binding(current.slot(), fingerprint, neutral.action(), "",
+                        new LynkMark(current.slot(), fingerprint, current.label(), evidence[0], evidence[1])));
+            } else card.bindings.add(new Binding(original.slot(), fingerprint, action, lockState));
+        }
         persist();
         onChange.accept(card.id);
         return true;
+    }
+
+    String voiceEvidence(MiHomeVoice.Command command, Control control) {
+        if (config.slotMode != BrandConfig.SlotMode.CONFIGURABLE) return "";
+        if (control == null || control.target() == null) return "请在手机核对领克卡片槽位";
+        Binding binding = primary().binding(control.target().button());
+        if (binding == null || binding.mark() == null || !binding.mark().permits(command))
+            return "请先在手机明确标记当前锁/车窗功能并核对状态；未验证功能不能语音执行";
+        if (!primary().validReading) return "当前卡片状态不可读，请刷新并核对锁/车窗状态";
+        if (control.target().direction() == null) return "当前方向未知，请在手机核对当前卡片的锁/车窗状态并重新标记";
+        return command.directionBlock(control.target().direction());
     }
 
     VehicleStatus vehicle() {
@@ -367,8 +396,8 @@ class GalaxyWidgets {
                         && match.direction() == ControlDirection.CLOSE);
         for (WidgetTree.Button button : buttons) {
             if (!button.role().isEmpty()) continue;
-            Binding binding = config.slotMode == BrandConfig.SlotMode.FIXED
-                    ? LynkWidgets.binding(button) : card.binding(button);
+            Binding binding = config.slotMode == BrandConfig.SlotMode.CONFIGURABLE
+                    ? (card.binding(button) == null ? LynkWidgets.binding(button) : card.binding(button)) : card.binding(button);
             CarAction action = binding == null ? null : CarAction.fromId(binding.action());
             if (action == null || live.containsKey(action)) continue;
 
@@ -376,6 +405,11 @@ class GalaxyWidgets {
             String lockState = "";
             String blockedReason = "";
             ControlDirection direction = button.match() == null ? null : button.match().direction();
+            if (config.slotMode == BrandConfig.SlotMode.CONFIGURABLE && binding.mark() != null) {
+                direction = ControlDirection.fromId(binding.mark().direction());
+                lockState = binding.mark().category();
+                title += " · 车主标记：" + lockState + (direction == null ? " · 请核对方向" : " · " + direction.id);
+            }
             if (action == CarAction.LOCK) {
                 lockState = binding.lockState();
                 blockedReason = LockControl.blockedReason(card.validReading, card.latest.motion(), lockState);
@@ -584,7 +618,9 @@ class GalaxyWidgets {
                     JSONObject item = entries.getJSONObject(j);
                     String slot = item.optString("slot");
                     if (!slot.isEmpty()) bindings.add(new Binding(slot, item.getString("fingerprint"),
-                            item.getString("action"), item.optString("lockState")));
+                            item.getString("action"), item.optString("lockState"),
+                            item.has("category") ? new LynkMark(slot, item.getString("fingerprint"), item.optString("description"),
+                            item.getString("category"), item.optString("direction")) : null));
                 }
                 addCard(id, info, bindings);
             }
@@ -599,8 +635,11 @@ class GalaxyWidgets {
             for (Card card : cards.values()) {
                 JSONArray entries = new JSONArray();
                 for (Binding binding : card.bindings) {
-                    entries.put(new JSONObject().put("slot", binding.slot).put("fingerprint", binding.fingerprint)
-                            .put("action", binding.action).put("lockState", binding.lockState));
+                    JSONObject item = new JSONObject().put("slot", binding.slot).put("fingerprint", binding.fingerprint)
+                            .put("action", binding.action).put("lockState", binding.lockState);
+                    if (binding.mark() != null) item.put("category", binding.mark().category())
+                            .put("description", binding.mark().description()).put("direction", binding.mark().direction());
+                    entries.put(item);
                 }
                 data.put(new JSONObject().put("id", card.id).put("bindings", entries));
             }

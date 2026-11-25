@@ -5,7 +5,7 @@ import android.content.SharedPreferences;
 import android.os.Handler;
 import java.util.function.IntConsumer;
 
-/** Fixed slot identities from 4.2.9/4.3.0. No inferred functional directions. */
+/** Configurable slot identities from 4.2.9/4.3.0. No inferred functional directions. */
 final class LynkWidgets extends GalaxyWidgets {
     LynkWidgets(Context context, SharedPreferences prefs, Handler main, IntConsumer onChange) {
         super(context, prefs, main, onChange, BrandConfig.LYNKCO);

@@ -808,3 +808,48 @@ test('Lynk official confirmation suspends fixed controls and expires the local p
   assert.match(link.page.controlNotice, /领克/)
   assert.ok(link.sent.slice(before).every(item => item.data.type !== 'prepare' && item.data.type !== 'execute'))
 })
+
+
+test('Lynk voice routes only lock and window through prepare and wearable confirmation', () => {
+  for (const action of ['lynk_unlock', 'lynk_window']) {
+    const link = start()
+    link.hello({ brand: 'LYNKCO' })
+    link.reply({ brand: 'LYNKCO', mapped: [action], available: [action], voiceAction: action })
+    assert.equal(link.sent.at(-1).data.type, 'prepare')
+    assert.equal(link.sent.at(-1).data.action, action)
+    link.reply({ brand: 'LYNKCO', mapped: [action], available: [action], status: 'confirm', action,
+      token: 'v'.repeat(36), message: '领克语音 · 核对当前卡片' })
+    assert.match(link.page.confirmTitle, /核对/)
+    assert.notEqual(link.sent.at(-1).data.type, 'execute')
+    link.page.execute()
+    assert.equal(link.sent.at(-1).data.type, 'execute')
+    assert.equal(link.sent.at(-1).data.token, 'v'.repeat(36))
+  }
+  for (const action of ['TEST', 'lynk_kjck', 'lynk_ccqk', 'engine', 'heat', 'cool', 'sunroof', 'trunk', 'find']) {
+    const link = start()
+    link.hello({ brand: 'LYNKCO' })
+    link.reply({ brand: 'LYNKCO', mapped: ['lynk_kjck', 'lynk_ccqk'], available: ['lynk_kjck', 'lynk_ccqk'], voiceAction: action })
+    assert.equal(link.sent.at(-1).data.type, 'status')
+    assert.equal(link.page.confirmTitle, '')
+  }
+  const galaxy = start()
+  galaxy.hello()
+  galaxy.reply({ voiceAction: 'lynk_unlock' })
+  assert.equal(galaxy.sent.at(-1).data.type, 'status')
+})
+
+
+test('configurable Lynk slot and owner mark contracts remain separate from Galaxy icon catalog', () => {
+  const source = name => readFileSync(path.join(__dirname, '../../android/app/src/main/java/com/garage/bandcontrol/', name), 'utf8')
+  const config = source('BrandConfig.java')
+  for (const [container, icon, progress] of [['fr_unlock', 'unlock', 'pb_unlock'], ['fr_window', 'window', 'pb_window'],
+      ['fr_kjck', 'kjck', 'pb_kjck'], ['fr_ccqk', 'ccqk_on', 'pb_ccqk_on']]) {
+    assert.ok(config.includes('new Slot("' + container + '", "' + icon + '", "' + progress + '")'))
+  }
+  assert.ok(config.includes("lynk ? SlotMode.CONFIGURABLE : SlotMode.DYNAMIC"))
+  const mark = source('LynkMark.java')
+  assert.ok(mark.includes("this.fingerprint.equals(fingerprint)"))
+  assert.ok(mark.includes("this.description.equals(description)"))
+  assert.doesNotMatch(mark, /car_wg_funicon_/)
+  assert.ok(source("GalaxyWidgets.java").includes("current.stream().noneMatch(binding::matches)"))
+})

@@ -25,7 +25,10 @@ final class MiHomeVoice {
         COOL(CarAction.COOL),
         PURIFY(CarAction.PURIFY),
         DEFROST(CarAction.DEFROST),
-        SENTRY(CarAction.SENTRY);
+        SENTRY(CarAction.SENTRY),
+        WINDOW_CLOSE(CarAction.WINDOW_OPEN, "关窗", ControlDirection.CLOSE),
+        ENGINE(null, "发动机（待验证）", null),
+        SUNROOF(null, "天窗（待验证）", null);
 
         final String code;
         final CarAction action;
@@ -56,6 +59,29 @@ final class MiHomeVoice {
         }
     }
 
+    static boolean enabled(String namespace, Command command) {
+        if ("LYNKCO_V1".equals(namespace)) return switch (command) {
+            case TEST, LOCK, UNLOCK, WINDOW_VENT, WINDOW_OPEN, WINDOW_CLOSE -> true;
+            default -> false;
+        };
+        return "GARAGE_V1".equals(namespace) && command != Command.WINDOW_CLOSE
+                && command != Command.ENGINE && command != Command.SUNROOF;
+    }
+
+    static Command[] commands(String namespace) {
+        return java.util.Arrays.stream(Command.values()).filter(command -> enabled(namespace, command)).toArray(Command[]::new);
+    }
+
+    static CarAction action(String namespace, Command command) {
+        if (!enabled(namespace, command)) return null;
+        if ("LYNKCO_V1".equals(namespace)) return switch (command) {
+            case LOCK, UNLOCK -> CarAction.LYNK_UNLOCK;
+            case WINDOW_VENT, WINDOW_OPEN, WINDOW_CLOSE -> CarAction.LYNK_WINDOW;
+            default -> null;
+        };
+        return command.action;
+    }
+
     enum Admission { ACCEPTED, STALE, DUPLICATE }
 
     record Match(Command command, String field) {}
@@ -79,7 +105,7 @@ final class MiHomeVoice {
             for (Command candidate : Command.values()) {
                 if (value != null && (namespace + ":" + candidate.name()).contentEquals(value)) command = candidate;
             }
-            if ("LYNKCO_V1".equals(namespace) && command != Command.TEST) command = null;
+            if (command != null && !enabled(namespace, command)) return null;
             if (command == null) continue;
             if (match == null) match = new Match(command, FIELDS[index]);
             else if (match.command() != command) return null;

@@ -561,6 +561,12 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             }
         }
 
+        String voiceAction = WatchProtocol.voiceAction(brand, reply.optString("voiceAction"));
+        if ("status".equals(request.type()) && !voiceAction.isEmpty()
+                && available.contains(voiceAction) && confirmTitle.isEmpty()) {
+            selectAction(voiceAction);
+            return;
+        }
         String status = reply.optString("status");
         String replyAction = reply.optString("action");
         String token = reply.optString("token");

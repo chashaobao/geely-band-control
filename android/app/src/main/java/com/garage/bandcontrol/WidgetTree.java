@@ -53,10 +53,8 @@ final class WidgetTree {
     }
 
     private boolean slotLoading(View slot) {
-        if (config.slotMode == BrandConfig.SlotMode.FIXED) {
-            return unique(slot, view -> view instanceof ProgressBar) != null;
-        }
-        return named(slot, config.slotLoading) != null;
+        BrandConfig.Slot model = slot == null ? null : config.slot(resource(slot));
+        return model != null && named(slot, model.progress()) != null;
     }
 
     private WidgetReadings.Energy energy(View root, String containerName, String barName) {
@@ -125,10 +123,11 @@ final class WidgetTree {
 
         if (!controlsReady && config.slotMode == BrandConfig.SlotMode.DYNAMIC) return buttons;
         int lockIcons = 0;
-        for (String slotName : config.slots) {
+        for (BrandConfig.Slot model : config.slotModels) {
+            String slotName = model.container();
             View slot = named(root, slotName);
             if (slot == null || slotLoading(slot)) continue;
-            View icon = config.slotIcon == null ? unique(slot, view -> view instanceof ImageView) : named(slot, config.slotIcon);
+            View icon = named(slot, model.icon());
             if (!(icon instanceof ImageView image) || image.getDrawable() == null
                     || icon.getWidth() <= 0 || icon.getHeight() <= 0) continue;
             try {

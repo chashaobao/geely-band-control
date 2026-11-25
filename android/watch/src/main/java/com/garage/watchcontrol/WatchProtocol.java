@@ -209,6 +209,10 @@ final class WatchProtocol {
         return result;
     }
 
+    static String voiceAction(String brand, String action) {
+        return "LYNKCO".equals(brand) && ("lynk_unlock".equals(action) || "lynk_window".equals(action)) ? action : "";
+    }
+
     static boolean isWindow(String action) {
         return "window_vent".equals(action) || "window_open".equals(action);
     }

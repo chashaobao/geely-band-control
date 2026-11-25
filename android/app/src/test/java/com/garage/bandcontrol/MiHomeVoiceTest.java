@@ -24,8 +24,23 @@ public final class MiHomeVoiceTest {
         assertNull(MiHomeVoice.match("LYNKCO_V1", "GARAGE_V1:TEST", null, null));
         assertNull(MiHomeVoice.match("GARAGE_V1", "LYNKCO_V1:TEST", null, null));
         for (MiHomeVoice.Command command : MiHomeVoice.Command.values()) {
-            if (command != TEST) assertNull(MiHomeVoice.match("LYNKCO_V1", "LYNKCO_V1:" + command.name(), null, null));
+            if (!MiHomeVoice.enabled("LYNKCO_V1", command)) assertNull(MiHomeVoice.match("LYNKCO_V1", "LYNKCO_V1:" + command.name(), null, null));
         }
+    }
+
+    @Test public void lynkRoutesAreExplicitAndDirectionsNeverGuessed() {
+        for (MiHomeVoice.Command command : MiHomeVoice.commands("LYNKCO_V1")) {
+            assertEquals(command, MiHomeVoice.match("LYNKCO_V1", "LYNKCO_V1:" + command.name(), null, null).command());
+        }
+        assertEquals(CarAction.LYNK_UNLOCK, MiHomeVoice.action("LYNKCO_V1", LOCK));
+        assertEquals(CarAction.LYNK_UNLOCK, MiHomeVoice.action("LYNKCO_V1", UNLOCK));
+        for (MiHomeVoice.Command command : new MiHomeVoice.Command[]{WINDOW_OPEN, WINDOW_VENT, MiHomeVoice.Command.WINDOW_CLOSE}) {
+            assertEquals(CarAction.LYNK_WINDOW, MiHomeVoice.action("LYNKCO_V1", command));
+            assertFalse(command.directionBlock(null).isEmpty());
+        }
+        assertEquals("", MiHomeVoice.Command.WINDOW_CLOSE.directionBlock(ControlDirection.CLOSE));
+        assertNull(MiHomeVoice.match("UNKNOWN", "UNKNOWN:TEST", null, null));
+        assertNull(MiHomeVoice.match("LYNKCO_V1", "LYNKCO_V1:LOCK", "LYNKCO_V1:ENGINE", null));
     }
 
     @Test public void acceptsOnlyTheOfficialPackage() {
@@ -50,14 +65,14 @@ public final class MiHomeVoiceTest {
 
     @Test public void everyCarActionHasAnExactVoiceCode() {
         EnumSet<CarAction> mapped = EnumSet.noneOf(CarAction.class);
-        for (MiHomeVoice.Command command : MiHomeVoice.Command.values()) {
+        for (MiHomeVoice.Command command : MiHomeVoice.commands("GARAGE_V1")) {
             assertEquals(command, MiHomeVoice.match(command.code, null, null).command());
             if (command.action != null) mapped.add(command.action);
         }
         EnumSet<CarAction> galaxy = EnumSet.allOf(CarAction.class);
         galaxy.removeIf(action -> action.id.startsWith("lynk_"));
         assertEquals(galaxy, mapped);
-        assertEquals(13, MiHomeVoice.Command.values().length);
+        assertEquals(13, MiHomeVoice.commands("GARAGE_V1").length);
     }
 
     @Test public void lockAndUnlockOnlyUseTheCorrectButtonDirection() {
