@@ -61,9 +61,11 @@ public final class MainActivity extends Activity {
     private FrameLayout widgetContainer;
     private LinearLayout setupPanel;
     private TextView setupStatus;
+    private TextView controlStatus;
     private TextView linkStatus;
     private LinearLayout logRows;
     private String renderedLogs = "";
+    private LinearLayout controlPanel;
     private TextView mappingStatus;
     private TextView batteryStatus;
     private TextView voiceStatus;
@@ -152,36 +154,25 @@ public final class MainActivity extends Activity {
         add(setupPanel, addWidget, 12);
         add(screen, setupPanel, 18);
 
-        LinearLayout bandPanel = panel();
-        LinearLayout bandHeader = row();
-        bandHeader.addView(text("穿戴设备", 18, INK, true), new LinearLayout.LayoutParams(0, -2, 1));
+        controlPanel = panel();
+        LinearLayout controlHeader = row();
+        controlHeader.addView(text("车控授权", 18, INK, true), new LinearLayout.LayoutParams(0, -2, 1));
         mappingStatus = text("", 13, MINT, true);
-        bandHeader.addView(mappingStatus);
-        add(bandPanel, bandHeader, 0);
+        controlHeader.addView(mappingStatus);
+        add(controlPanel, controlHeader, 0);
 
-        linkStatus = text("", 14, MUTED, false);
-        add(bandPanel, linkStatus, 4);
-        connection = button("启动通信", this::toggleService);
+        controlStatus = text("", 14, MUTED, false);
+        add(controlPanel, controlStatus, 4);
         liveControl = button("允许车控", this::toggleControl);
-        LinearLayout bandActions = row();
-        bandActions.addView(connection, new LinearLayout.LayoutParams(0, -2, 1));
-        LinearLayout.LayoutParams controlBounds = new LinearLayout.LayoutParams(0, -2, 1);
-        controlBounds.setMarginStart(dp(8));
-        bandActions.addView(liveControl, controlBounds);
-        add(bandPanel, bandActions, 12);
-        authorize = button("授权小米设备通信", () -> app.link.authorize());
-        add(bandPanel, authorize, 8);
-
+        add(controlPanel, liveControl, 12);
         phoneConfirmation = button("处理银河官方确认", this::showOfficialConfirmation);
         phoneConfirmation.setActivated(true);
-        add(bandPanel, phoneConfirmation, 8);
-        View divider = new View(this);
-        divider.setBackgroundColor(0xff30414a);
-        LinearLayout.LayoutParams dividerBounds = new LinearLayout.LayoutParams(-1, dp(1));
-        dividerBounds.setMargins(0, dp(16), 0, dp(12));
-        bandPanel.addView(divider, dividerBounds);
+        add(controlPanel, phoneConfirmation, 8);
+        add(screen, controlPanel, 14);
+
+        LinearLayout voicePanel = panel();
         LinearLayout voiceHeader = row();
-        voiceHeader.addView(text("米家语音", 17, INK, true), new LinearLayout.LayoutParams(0, -2, 1));
+        voiceHeader.addView(text("米家语音", 18, INK, true), new LinearLayout.LayoutParams(0, -2, 1));
         voiceToggle = new Switch(this);
         voiceToggle.setContentDescription("米家语音直控");
         voiceToggle.setThumbTintList(new ColorStateList(new int[][]{{android.R.attr.state_checked}, {}},
@@ -190,18 +181,29 @@ public final class MainActivity extends Activity {
             if (checked != app.voiceEnabled()) app.setVoiceEnabled(checked);
         });
         voiceHeader.addView(voiceToggle);
-        add(bandPanel, voiceHeader, 0);
+        add(voicePanel, voiceHeader, 0);
         voiceStatus = text("", 13, MUTED, false);
-        add(bandPanel, voiceStatus, 4);
+        add(voicePanel, voiceStatus, 4);
         LinearLayout voiceActions = row();
         voiceActions.addView(button("通知权限", this::openNotificationAccess), new LinearLayout.LayoutParams(0, -2, 1));
         LinearLayout.LayoutParams accessBounds = new LinearLayout.LayoutParams(0, -2, 1);
         accessBounds.setMarginStart(dp(8));
         voiceActions.addView(button("指令码", this::showVoiceCommands), accessBounds);
-        add(bandPanel, voiceActions, 8);
-        add(bandPanel, text("通过小爱触发米家场景，执行需开启车控授权。",
+        add(voicePanel, voiceActions, 10);
+        add(voicePanel, text("无需手环或手表，开启「允许车控」与通知权限后，通过小爱触发米家场景即可控车。",
                 13, MUTED, false), 8);
-        add(screen, bandPanel, 14);
+        add(screen, voicePanel, 12);
+
+        LinearLayout bandPanel = panel();
+        add(bandPanel, text("穿戴设备（可选）", 18, INK, true), 0);
+        linkStatus = text("", 14, MUTED, false);
+        add(bandPanel, linkStatus, 4);
+        connection = button("启动通信", this::toggleService);
+        add(bandPanel, connection, 12);
+        authorize = button("授权小米设备通信", () -> app.link.authorize());
+        add(bandPanel, authorize, 8);
+        add(bandPanel, text("仅在搭配小米手环或手表端「腕上银河」时需要启动通信。", 13, MUTED, false), 8);
+        add(screen, bandPanel, 12);
 
         LinearLayout backgroundPanel = panel();
         LinearLayout backgroundHeader = row();
@@ -243,7 +245,7 @@ public final class MainActivity extends Activity {
         showWidget(card);
         String link = app.link.status();
         String compact = WearDiagnostics.compactLinkStatus(link, app.hasService());
-        linkStatus.setText(compact + (app.isArmed() ? " · 车控已授权" : " · 车控未授权"));
+        linkStatus.setText(compact);
         connection.setText(app.hasService() ? "停止通信" : "启动通信");
         connection.setActivated(!app.hasService());
         boolean showAuthorize = app.link.canAuthorize() || app.link.isAuthorizing();
@@ -252,8 +254,7 @@ public final class MainActivity extends Activity {
         authorize.setText(app.link.isAuthorizing() ? "正在等待小米运动健康授权…" : "授权小米设备通信");
         updateLogs();
         updateVoiceControls();
-        mappingStatus.setVisibility(card == null ? View.GONE : View.VISIBLE);
-        liveControl.setVisibility(card == null ? View.GONE : View.VISIBLE);
+        controlPanel.setVisibility(card == null ? View.GONE : View.VISIBLE);
         if (card == null) {
             phoneConfirmation.setVisibility(View.GONE);
             boolean hasProvider = app.widgets.isProviderInstalled();
@@ -311,7 +312,7 @@ public final class MainActivity extends Activity {
             toast("无法访问剪贴板");
             return;
         }
-        clipboard.setPrimaryClip(ClipData.newPlainText("腕上银河诊断信息", app.exportDiagnostics()));
+        clipboard.setPrimaryClip(ClipData.newPlainText("智在银河诊断信息", app.exportDiagnostics()));
         toast("已复制诊断信息与日志");
     }
 
@@ -340,10 +341,13 @@ public final class MainActivity extends Activity {
 
     private void updateBandControls(Map<CarAction, GalaxyWidgets.Control> controls) {
         boolean armed = app.isArmed();
+        boolean hasReady = controls.values().stream().anyMatch(GalaxyWidgets.Control::ready);
         mappingStatus.setText("功能已同步 · " + controls.size() + "/" + WidgetTree.SLOTS.size());
+        controlStatus.setText(armed ? "车控已授权 · 可用米家语音或穿戴端控车"
+                : hasReady ? "车控未授权 · 点击下方允许后即可控车" : "请先刷新车况或点按上方预览卡片补标按钮");
         liveControl.setText(armed ? "关闭车控" : "允许车控");
         liveControl.setActivated(!armed);
-        liveControl.setEnabled(armed || (app.hasService() && controls.values().stream().anyMatch(GalaxyWidgets.Control::ready)));
+        liveControl.setEnabled(armed || hasReady);
         phoneConfirmation.setVisibility(app.phoneConfirmationCard() != null ? View.VISIBLE : View.GONE);
     }
 
@@ -374,10 +378,10 @@ public final class MainActivity extends Activity {
     private void showBatteryGuide() {
         new AlertDialog.Builder(this)
                 .setTitle("省电策略设置")
-                .setMessage("在「腕上银河」的应用信息中，打开「电池用量」或「省电策略」，选择「无限制」。"
+                .setMessage("在「智在银河」的应用信息中，打开「电池用量」或「省电策略」，选择「无限制」。"
                         + "如果系统提供的是「允许后台活动」，请开启它。"
-                        + "\n\n小米手机也可从「省电与电池 → 应用智能省电」为腕上银河选择「无限制」。"
-                        + "\n\n使用 Android 电池优化列表时，选中腕上银河并设为「不优化」。")
+                        + "\n\n小米手机也可从「省电与电池 → 应用智能省电」为智在银河选择「无限制」。"
+                        + "\n\n使用 Android 电池优化列表时，选中智在银河并设为「不优化」。")
                 .setNegativeButton("返回", null)
                 .setNeutralButton("电池优化列表", (dialog, which) -> openBatteryOptimizationSettings())
                 .setPositiveButton("打开应用信息", (dialog, which) -> openApplicationSettings())
@@ -387,7 +391,7 @@ public final class MainActivity extends Activity {
     private void showLockGuide() {
         new AlertDialog.Builder(this)
                 .setTitle("应用锁定引导")
-                .setMessage("打开最近任务，找到「腕上银河」。长按卡片或打开卡片菜单，选择「锁定」或锁形图标。"
+                .setMessage("打开最近任务，找到「智在银河」。长按卡片或打开卡片菜单，选择「锁定」或锁形图标。"
                         + "\n\n部分小米手机可在「手机管家 → 设置 → 优化加速 → 锁定任务」中开启。"
                         + "锁定后，一键清理时会保留这个任务。入口随手机系统而异。")
                 .setPositiveButton("知道了", null)
@@ -406,13 +410,12 @@ public final class MainActivity extends Activity {
         try {
             startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getPackageName(), null)));
         } catch (ActivityNotFoundException unavailable) {
-            toast("请在系统设置中搜索腕上银河");
+            toast("请在系统设置中搜索智在银河");
         }
     }
 
     private void toggleService() {
         if (app.hasService()) {
-            app.disarm();
             stopService(new Intent(this, BandService.class));
             return;
         }
@@ -456,10 +459,10 @@ public final class MainActivity extends Activity {
             return;
         }
         new AlertDialog.Builder(this)
-                .setTitle("允许穿戴端车控")
-                .setMessage("请确认当前卡片选中目标车辆，且映射按钮与银河小组件配置一致。穿戴端或语音指令将直接触发对应的银河官方按钮。"
+                .setTitle("允许车控")
+                .setMessage("请确认当前卡片选中目标车辆，且映射按钮与银河小组件配置一致。米家语音指令或穿戴端确认将直接触发对应的银河官方按钮。"
                         + "\n\n安全与免责提示：本工具为独立开源项目，与吉利汽车及小米无官方关联。远程控车存在通信与刷新延迟，车辆实际状态以吉利银河 App 为准；"
-                        + "请为手环或手表设置锁屏密码，离车或非本人佩戴时请及时关闭车控授权。")
+                        + "米家语音收到通知后将直接执行，请谨慎设置触发口令；如搭配穿戴设备使用，请开启锁屏密码，离车或非本人佩戴时及时关闭车控授权。")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("已知晓并允许", (dialog, which) -> app.arm())
                 .show();

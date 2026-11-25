@@ -94,7 +94,7 @@ final class WearDiagnostics {
             boolean authorizing,
             List<GarageApp.UiEvent> events) {
         StringBuilder out = new StringBuilder();
-        out.append("腕上银河诊断信息\n");
+        out.append("智在银河诊断信息\n");
         out.append("伴侣版本: ").append(appVersion).append('\n');
         out.append("系统: Android API ").append(sdkInt).append(" / ").append(deviceModel).append('\n');
         if (environmentSummary != null && !environmentSummary.isEmpty()) {

@@ -153,6 +153,7 @@ public final class GarageApp extends Application {
         voiceEnabled = enabled;
         prefs.edit().putBoolean(VOICE_ENABLED, enabled).apply();
         appendEvent(enabled ? "语音直控已开启" : "语音直控已关闭", "米家语音", false);
+        updateWidgetListening();
         changed();
     }
 
@@ -160,38 +161,45 @@ public final class GarageApp extends Application {
         if (voiceListenerConnected == connected) return;
         voiceListenerConnected = connected;
         appendEvent(connected ? "通知监听已连接" : "通知监听已断开", "米家语音", !connected);
+        updateWidgetListening();
         changed();
     }
 
     void setScreen(boolean visible, Runnable observer) {
         screenVisible = visible;
         this.observer = observer;
-        widgets.setListening(screenVisible || serviceRunning);
+        updateWidgetListening();
     }
 
     void setService(boolean running) {
         serviceRunning = running;
-        widgets.setListening(screenVisible || serviceRunning);
         if (running) {
             link.start();
         } else {
-            widgets.cancelRefresh("手环通信已停止");
+            widgets.cancelRefresh("穿戴通信已停止");
             finishControlObservation();
             link.stop();
-            disarm();
         }
+        updateWidgetListening();
         changed();
+    }
+
+    private void updateWidgetListening() {
+        widgets.setListening(ControlPolicy.shouldListenWidgets(
+                screenVisible, serviceRunning, voiceEnabled, isArmed()));
     }
 
     void arm() {
         GalaxyWidgets.Card card = widgets.primary();
-        if (serviceRunning && card != null && widgets.controls().values().stream()
-                .anyMatch(GalaxyWidgets.Control::ready)) {
+        boolean hasReady = card != null && widgets.controls().values().stream()
+                .anyMatch(GalaxyWidgets.Control::ready);
+        if (ControlPolicy.canArm(card != null, hasReady)) {
             armedCardId = card.id;
             appendEvent("车控授权已开启", "当前银河中号卡片", false);
+            updateWidgetListening();
             changed();
         } else {
-            setResult(serviceRunning ? "请先核对银河卡片按钮和车况" : "请先启动手环通信");
+            setResult("请先核对银河卡片按钮和车况");
         }
     }
 
@@ -199,7 +207,8 @@ public final class GarageApp extends Application {
         confirmations.clear();
         if (armedCardId == AppWidgetManager.INVALID_APPWIDGET_ID) return;
         armedCardId = AppWidgetManager.INVALID_APPWIDGET_ID;
-        appendEvent("车控授权已关闭", "手环与语音车控", false);
+        appendEvent("车控授权已关闭", "车控与语音直控", false);
+        updateWidgetListening();
         changed();
     }
 
@@ -230,6 +239,7 @@ public final class GarageApp extends Application {
         if (armedCardId != AppWidgetManager.INVALID_APPWIDGET_ID && !isArmed()) {
             armedCardId = AppWidgetManager.INVALID_APPWIDGET_ID;
             confirmations.clear();
+            updateWidgetListening();
         }
         if (handledConfirmation == id && !widgets.hasOfficialConfirmation(id)) {
             handledConfirmation = AppWidgetManager.INVALID_APPWIDGET_ID;
@@ -276,7 +286,7 @@ public final class GarageApp extends Application {
         }
         CarAction action = command.action;
         GalaxyWidgets.Control control = control(action);
-        String blocked = blockedReason(control);
+        String blocked = voiceBlockedReason(control);
         if (blocked.isEmpty()) blocked = command.directionBlock(control.target().direction());
         DispatchResult result = blocked.isEmpty() ? dispatchControl(action, control.target())
                 : new DispatchResult("blocked", blocked);
@@ -308,7 +318,7 @@ public final class GarageApp extends Application {
     private void prepare(String node, BandMessage request) {
         if (replyIfControlPending(node, request)) return;
         GalaxyWidgets.Control control = control(request.action());
-        String blocked = blockedReason(control);
+        String blocked = wearBlockedReason(control);
         if (!blocked.isEmpty()) {
             if (request.action() == CarAction.LOCK) {
                 appendEvent("车锁准备被拦截", blocked + " · 卡片状态「" + widgets.vehicle().motion() + "」", true);
@@ -343,7 +353,7 @@ public final class GarageApp extends Application {
         }
         if (replyIfControlPending(node, request)) return;
         GalaxyWidgets.Control control = control(request.action());
-        String blocked = blockedReason(control);
+        String blocked = wearBlockedReason(control);
         GalaxyWidgets.Target target = blocked.isEmpty() ? control.target() : null;
         String key = target == null ? "" : target.key();
         boolean confirmed = confirmations.consume(node, request.action(), request.token(), key, SystemClock.elapsedRealtime());
@@ -480,19 +490,27 @@ public final class GarageApp extends Application {
         return dispatch == null ? ControlPause.NONE : ControlPause.DISPATCH;
     }
 
-    private String liveControlNotice(ControlPause pause) {
-        if (pause != ControlPause.NONE) return pause.message;
-        if (!serviceRunning) return "请先启动手机端手环通信";
-        return isArmed() ? "" : "请在手机点击「允许手环车控」";
+    private String liveControlNotice(ControlPause pause, boolean requireWearService) {
+        return ControlPolicy.liveControlNotice(
+                pause == ControlPause.NONE ? "" : pause.message,
+                requireWearService,
+                serviceRunning,
+                isArmed());
     }
 
     private GalaxyWidgets.Control control(CarAction action) {
         return widgets.controls().get(action);
     }
 
-    private String blockedReason(GalaxyWidgets.Control control) {
+    private String wearBlockedReason(GalaxyWidgets.Control control) {
         if (control == null) return UNMAPPED;
-        String notice = liveControlNotice(controlPause());
+        String notice = liveControlNotice(controlPause(), true);
+        return notice.isEmpty() ? control.blockedReason() : notice;
+    }
+
+    private String voiceBlockedReason(GalaxyWidgets.Control control) {
+        if (control == null) return UNMAPPED;
+        String notice = liveControlNotice(controlPause(), false);
         return notice.isEmpty() ? control.blockedReason() : notice;
     }
 
@@ -548,7 +566,7 @@ public final class GarageApp extends Application {
                 .put("available", available).put("mapped", mapped).put("vehicle", widgets.vehicle().json());
 
         ControlPause pause = controlPause();
-        String notice = liveControlNotice(pause);
+        String notice = liveControlNotice(pause, true);
         JSONObject blocked = new JSONObject();
         JSONObject directions = new JSONObject();
         for (Map.Entry<CarAction, GalaxyWidgets.Control> entry : widgets.controls().entrySet()) {

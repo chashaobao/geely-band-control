@@ -16,12 +16,11 @@ public final class BandService extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && STOP.equals(intent.getAction())) {
-            ((GarageApp) getApplication()).disarm();
             stopSelf();
             return START_NOT_STICKY;
         }
         NotificationManager manager = getSystemService(NotificationManager.class);
-        manager.createNotificationChannel(new NotificationChannel(CHANNEL, "手环通信", NotificationManager.IMPORTANCE_LOW));
+        manager.createNotificationChannel(new NotificationChannel(CHANNEL, "穿戴设备通信", NotificationManager.IMPORTANCE_LOW));
         int pendingFlags = PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT;
         PendingIntent open = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), pendingFlags);
         PendingIntent stop = PendingIntent.getService(this, 0,
@@ -29,7 +28,7 @@ public final class BandService extends Service {
         Notification notice = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_garage)
                 .setContentTitle(getString(R.string.app_name))
-                .setContentText("正在运行手机端手环通信")
+                .setContentText("正在运行穿戴设备通信")
                 .setContentIntent(open)
                 .setOngoing(true)
                 .addAction(new Notification.Action.Builder(Icon.createWithResource(this, R.drawable.ic_garage),

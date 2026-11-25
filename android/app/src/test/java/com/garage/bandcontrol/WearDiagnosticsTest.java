@@ -61,6 +61,7 @@ public final class WearDiagnosticsTest {
                 true,
                 false,
                 List.of(new GarageApp.UiEvent(1_700_000_000_000L, "设备授权超时", "详情", true)));
+        assertTrue(report.contains("智在银河诊断信息"));
         assertTrue(report.contains("伴侣版本: 0.1.23"));
         assertTrue(report.contains("Android API 35 / Xiaomi 15"));
         assertTrue(report.contains("服务包 com.mi.health"));
