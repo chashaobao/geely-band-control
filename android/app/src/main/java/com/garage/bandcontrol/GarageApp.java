@@ -57,7 +57,7 @@ public final class GarageApp extends Application {
     private final Map<RequestKey, Receipt> receipts = new LinkedHashMap<>();
     private final Runnable controlTimeout = this::finishControlObservation;
     GalaxyWidgets widgets;
-    XiaomiLink link;
+    WearLink link;
     private SharedPreferences prefs;
     private Runnable observer;
     private boolean screenVisible;
@@ -90,7 +90,7 @@ public final class GarageApp extends Application {
             uiEvents.clear();
         }
         widgets = new GalaxyWidgets(this, prefs, main, this::onWidgetChange);
-        link = new XiaomiLink(this, main, this::onBandMessage, confirmations::disconnect, this::changed);
+        link = new WearLink(this, main, this::onBandMessage, confirmations::disconnect, this::changed);
     }
 
     boolean isArmed() {

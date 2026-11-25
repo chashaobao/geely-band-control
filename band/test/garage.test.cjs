@@ -554,3 +554,59 @@ test('a missing vibrator leaves confirmations and dispatch usable', () => {
   assert.equal(link.page.toastText, '指令已发送')
   assert.equal(link.page.vibrator, null)
 })
+
+test('layout profile adapts to Band 10 capsule, circular Watch 5, and falls back to Band 10 Pro rect', () => {
+  const capsule = start({
+    native: {
+      '@app-module/system.device': {
+        getInfo({ success }) {
+          success({ screenWidth: 212, screenHeight: 520, screenShape: 'pill-shaped' })
+        }
+      }
+    }
+  })
+  assert.equal(capsule.page.layoutProfile, 'capsule')
+  assert.equal(capsule.page.ui.range, 'range range-capsule')
+  assert.equal(capsule.page.ui.split, 'split split-capsule')
+  assert.equal(capsule.page.ui.confirmation, 'confirmation confirmation-capsule')
+  capsule.hello()
+  capsule.reply({ mapped: ['lock', 'climate', 'window_vent', 'trunk'], available: ['climate'] })
+  assert.equal(capsule.page.displayRows.length, 4)
+  assert.ok(capsule.page.displayRows.every(row => row.second.id === '' && /full-tile/.test(row.first.style) && /tile-capsule/.test(row.first.style)))
+  assert.match(capsule.page.displayRows[1].first.labelStyle, /tile-label-capsule/)
+
+  for (const deviceInfo of [
+    { screenWidth: 480, screenHeight: 480, screenShape: 'circle' },
+    { screenWidth: 480, screenHeight: 480 }
+  ]) {
+    const circle = start({
+      native: {
+        '@app-module/system.device': {
+          getInfo({ success }) { success(deviceInfo) }
+        }
+      }
+    })
+    assert.equal(circle.page.layoutProfile, 'circle')
+    assert.equal(circle.page.ui.homeScreen, 'home-screen home-screen-circle')
+    assert.equal(circle.page.ui.confirmation, 'confirmation confirmation-circle')
+    circle.hello()
+    circle.reply({ mapped: ['lock', 'climate', 'window_vent', 'trunk'], available: ['climate'] })
+    assert.equal(circle.page.displayRows.length, 2)
+    assert.match(circle.page.displayRows[0].first.style, /tile-circle/)
+    assert.match(circle.page.displayRows[0].second.style, /tile-circle/)
+  }
+
+  for (const native of [
+    {},
+    { '@app-module/system.device': { getInfo({ fail }) { fail('unavailable', 200) } } },
+    { '@app-module/system.device': { getInfo({ success }) { success({ screenWidth: 336, screenHeight: 480, screenShape: 'rect' }) } } }
+  ]) {
+    const rect = start({ native })
+    assert.equal(rect.page.layoutProfile, 'rect')
+    assert.equal(rect.page.ui.range, 'range')
+    rect.hello()
+    rect.reply({ mapped: ['lock', 'climate', 'window_vent', 'trunk'], available: ['climate'] })
+    assert.equal(rect.page.displayRows.length, 2)
+    assert.equal(rect.page.displayRows[0].first.labelStyle, 'tile-label')
+  }
+})

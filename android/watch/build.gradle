@@ -1,0 +1,54 @@
+plugins {
+    id 'com.android.application'
+}
+
+def workspace = rootProject.projectDir.parentFile
+def signing = new Properties()
+def signingFile = new File(workspace, '.local/signing.properties')
+if (!signingFile.isFile()) {
+    throw new GradleException('Run scripts/prepare.ps1 to create the matching Android and Vela signing files.')
+}
+signingFile.withInputStream { signing.load(it) }
+
+android {
+    namespace 'com.garage.watchcontrol'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.garage.bandcontrol'
+        minSdk 28
+        targetSdk 35
+        versionCode 24
+        versionName '0.1.23'
+    }
+
+    signingConfigs {
+        localPair {
+            storeFile new File(workspace, '.local/companion.p12')
+            storeType 'PKCS12'
+            storePassword signing.getProperty('password')
+            keyAlias 'bandcontrol'
+            keyPassword signing.getProperty('password')
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.localPair
+        }
+    }
+    buildFeatures {
+        buildConfig = true
+    }
+    sourceSets {
+        main.assets.srcDirs += ['../../band/src/common/images']
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+}

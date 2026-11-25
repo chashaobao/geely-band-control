@@ -1,0 +1,123 @@
+export const DEFAULT_LAYOUT = 'rect'
+
+const PROFILES = {
+  rect: { profile: 'rect', columns: 2, stackSplit: false, needsScroll: false },
+  capsule: { profile: 'capsule', columns: 1, stackSplit: true, needsScroll: true },
+  circle: { profile: 'circle', columns: 2, stackSplit: false, needsScroll: true }
+}
+
+const CLASS_KEYS = [
+  'scrollPage', 'homeScreen', 'range', 'rangeHeader', 'model', 'motion',
+  'vehicleImage', 'split', 'energy', 'totalEnergy', 'energyReading',
+  'energyIcon', 'distance', 'distanceCompact', 'totalLabel', 'unit',
+  'energyTrack', 'energyFill', 'rangeIndicators', 'rangeDot',
+  'activeRangeDot', 'vehicleMeta', 'refresh', 'refreshIcon', 'updated',
+  'metaDivider', 'connection', 'dot', 'mode', 'settingsIcon', 'empty',
+  'grid', 'controlRow', 'toast', 'toastText', 'confirmation',
+  'confirmAction', 'confirmIcon', 'confirmTitle', 'confirmButton',
+  'cancelButton', 'settingsScreen', 'settingsTitle', 'hapticsSetting',
+  'hapticsLabel', 'hapticsSwitch', 'diagnostics', 'diagnosticsTitle',
+  'diagnosticsLine', 'settingsBack'
+]
+
+const BASE_NAMES = {
+  scrollPage: 'scroll-page',
+  homeScreen: 'home-screen',
+  range: 'range',
+  rangeHeader: 'range-header',
+  model: 'model',
+  motion: 'motion',
+  vehicleImage: 'vehicle-image',
+  split: 'split',
+  energy: 'energy',
+  totalEnergy: 'energy total-energy',
+  energyReading: 'energy-reading',
+  energyIcon: 'energy-icon',
+  distance: 'distance',
+  distanceCompact: 'distance compact',
+  totalLabel: 'total-label',
+  unit: 'unit',
+  energyTrack: 'energy-track',
+  energyFill: 'energy-fill',
+  rangeIndicators: 'range-indicators',
+  rangeDot: 'range-dot',
+  activeRangeDot: 'range-dot active-range-dot',
+  vehicleMeta: 'vehicle-meta',
+  refresh: 'refresh',
+  refreshIcon: 'refresh-icon',
+  updated: 'updated',
+  metaDivider: 'meta-divider',
+  connection: 'connection',
+  dot: 'dot',
+  mode: 'mode',
+  settingsIcon: 'settings-icon',
+  empty: 'empty',
+  grid: 'grid',
+  controlRow: 'control-row',
+  toast: 'toast',
+  toastText: 'toast-text',
+  confirmation: 'confirmation',
+  confirmAction: 'confirm-action',
+  confirmIcon: 'confirm-icon',
+  confirmTitle: 'confirm-title',
+  confirmButton: 'confirm-button',
+  cancelButton: 'cancel-button',
+  settingsScreen: 'settings-screen',
+  settingsTitle: 'settings-title',
+  hapticsSetting: 'haptics-setting',
+  hapticsLabel: 'haptics-label',
+  hapticsSwitch: 'haptics-switch',
+  diagnostics: 'diagnostics',
+  diagnosticsTitle: 'diagnostics-title',
+  diagnosticsLine: 'diagnostics-line',
+  settingsBack: 'settings-back'
+}
+
+export function resolveLayoutProfile(info) {
+  if (!info || typeof info !== 'object') return DEFAULT_LAYOUT
+  const width = Number(info.screenWidth) || 0
+  const height = Number(info.screenHeight) || 0
+  const shape = typeof info.screenShape === 'string' ? info.screenShape.toLowerCase() : ''
+  if (shape === 'circle' || (width >= 400 && height >= 400 && Math.abs(width - height) <= 32)) {
+    return 'circle'
+  }
+  if (shape === 'pill-shaped' || shape === 'capsule' || (width > 0 && width <= 260 && height >= 360)) {
+    return 'capsule'
+  }
+  return DEFAULT_LAYOUT
+}
+
+export function layoutConfig(profile) {
+  return PROFILES[profile] || PROFILES[DEFAULT_LAYOUT]
+}
+
+export function variantClass(base, profile) {
+  if (!profile || profile === DEFAULT_LAYOUT) return base
+  const suffix = '-' + profile
+  return base + ' ' + base.split(' ').map(name => name + suffix).join(' ')
+}
+
+export function layoutClasses(profile) {
+  const active = PROFILES[profile] ? profile : DEFAULT_LAYOUT
+  const result = {}
+  for (const key of CLASS_KEYS) {
+    result[key] = variantClass(BASE_NAMES[key], active)
+  }
+  return result
+}
+
+export function detectDeviceProfile(onResolved) {
+  try {
+    const device = require('@system.device')
+    if (!device || typeof device.getInfo !== 'function') {
+      onResolved(DEFAULT_LAYOUT)
+      return
+    }
+    device.getInfo({
+      success: info => onResolved(resolveLayoutProfile(info)),
+      fail: () => onResolved(DEFAULT_LAYOUT)
+    })
+  } catch (_) {
+    onResolved(DEFAULT_LAYOUT)
+  }
+}

@@ -154,15 +154,15 @@ public final class MainActivity extends Activity {
 
         LinearLayout bandPanel = panel();
         LinearLayout bandHeader = row();
-        bandHeader.addView(text("手环", 18, INK, true), new LinearLayout.LayoutParams(0, -2, 1));
+        bandHeader.addView(text("穿戴设备", 18, INK, true), new LinearLayout.LayoutParams(0, -2, 1));
         mappingStatus = text("", 13, MINT, true);
         bandHeader.addView(mappingStatus);
         add(bandPanel, bandHeader, 0);
 
         linkStatus = text("", 14, MUTED, false);
         add(bandPanel, linkStatus, 4);
-        connection = button("启动手环通信", this::toggleService);
-        liveControl = button("允许手环车控", this::toggleControl);
+        connection = button("启动通信", this::toggleService);
+        liveControl = button("允许车控", this::toggleControl);
         LinearLayout bandActions = row();
         bandActions.addView(connection, new LinearLayout.LayoutParams(0, -2, 1));
         LinearLayout.LayoutParams controlBounds = new LinearLayout.LayoutParams(0, -2, 1);
@@ -238,7 +238,9 @@ public final class MainActivity extends Activity {
         GalaxyWidgets.Card card = app.widgets.primary();
         showWidget(card);
         String link = app.link.status();
-        String compact = link.equals("已收到手环消息") ? "应用已连接"
+        String compact = link.equals("已收到手环消息") || link.equals("已收到手表消息") || link.equals("已收到穿戴设备消息")
+                ? "应用已连接"
+                : link.startsWith("手表已连接") ? "手表已连接"
                 : link.startsWith("手环已连接") ? "手环已连接"
                 : app.hasService() ? "正在等待连接" : "通信未启动";
         linkStatus.setText(compact + (app.isArmed() ? " · 车控已授权" : " · 车控未授权"));

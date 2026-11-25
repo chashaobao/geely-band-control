@@ -28,11 +28,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build.ps1
 
 | 目录 | 内容 |
 | --- | --- |
-| `android/app/src/main` | 组件托管、车况解析、车控方向和确认、米家通知接入 |
-| `android/app/src/test` | 协议、确认、车况、车窗和语音指令测试 |
-| `band/src` | 手环主页面、状态缓存和素材 |
-| `band/test` | 编译后手环协议和状态流回归 |
-| `scripts` | 依赖准备、双端构建和公开源码导出 |
+| `android/app/src/main` | 组件托管、车况解析、车控方向和确认、小米通信与蓝牙手表直连、米家通知接入 |
+| `android/app/src/test` | 协议、确认、车况、车窗、蓝牙分帧和语音指令测试 |
+| `android/watch/src/main` | 小米 Watch 5 / Android 圆屏手表端应用与蓝牙 SPP 客户端 |
+| `android/watch/src/test` | Watch 协议解析与方向校验测试 |
+| `band/src` | Vela 穿戴主页面、多屏布局适配（手环 10 Pro / 手环 10 / 圆屏手表）、状态缓存和素材 |
+| `band/test` | 编译后手环协议、状态流和多屏布局回归 |
+| `scripts` | 依赖准备、双端/手表构建和公开源码导出 |
 
 ## 素材
 

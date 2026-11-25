@@ -4,7 +4,7 @@ $project = Split-Path -Parent $PSScriptRoot
 
 Push-Location (Join-Path $project 'android')
 try {
-    & .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+    & .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest :app:lintDebug :watch:assembleDebug :watch:testDebugUnitTest :watch:lintDebug
     if ($LASTEXITCODE -ne 0) { throw 'Android build or tests failed.' }
 } finally {
     Pop-Location
@@ -28,6 +28,8 @@ $manifest = Get-Content -LiteralPath (Join-Path $project 'band\src\manifest.json
 $rpk = '{0}.debug.{1}.rpk' -f $manifest.package,$manifest.versionName
 Copy-Item -LiteralPath (Join-Path $project 'android\app\build\outputs\apk\debug\app-debug.apk') `
     -Destination (Join-Path $artifacts 'galaxy-band-companion.apk') -Force
+Copy-Item -LiteralPath (Join-Path $project 'android\watch\build\outputs\apk\debug\watch-debug.apk') `
+    -Destination (Join-Path $artifacts 'galaxy-watch-companion.apk') -Force
 Copy-Item -LiteralPath (Join-Path (Join-Path $project 'band\dist') $rpk) `
     -Destination (Join-Path $artifacts 'galaxy-band.rpk') -Force
 Get-ChildItem -LiteralPath $artifacts -File | Select-Object Name,Length
