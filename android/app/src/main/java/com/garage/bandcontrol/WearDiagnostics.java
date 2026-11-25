@@ -11,13 +11,25 @@ import java.util.Locale;
 final class WearDiagnostics {
     private WearDiagnostics() {}
 
-    static String describeSdkError(Throwable error) {
-        if (error == null) return "未知错误";
+    private static Throwable unwrap(Throwable error) {
         Throwable root = error;
-        while (root.getCause() != null && root.getCause() != root
+        while (root != null && root.getCause() != null && root.getCause() != root
                 && root.getClass() == RuntimeException.class) {
             root = root.getCause();
         }
+        return root;
+    }
+
+    static boolean isMissingWearAppError(Throwable error) {
+        Throwable root = unwrap(error);
+        if (root == null) return false;
+        String type = root.getClass().getSimpleName();
+        return "AppNotInstalledException".equals(type) || "SignatureVerifyFailedException".equals(type);
+    }
+
+    static String describeSdkError(Throwable error) {
+        Throwable root = unwrap(error);
+        if (root == null) return "未知错误";
         String type = root.getClass().getSimpleName();
         String message = root.getMessage();
         return switch (type) {
@@ -66,7 +78,8 @@ final class WearDiagnostics {
     static boolean isWarningStatus(String status) {
         if (status == null) return false;
         return status.contains("失败") || status.contains("无法") || status.contains("超时")
-                || status.contains("未授予") || status.contains("未检测") || status.contains("未安装");
+                || status.contains("未授予") || status.contains("未检测") || status.contains("未安装")
+                || status.contains("不一致");
     }
 
     static String formatDiagnosticExport(

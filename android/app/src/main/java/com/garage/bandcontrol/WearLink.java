@@ -59,19 +59,23 @@ final class WearLink {
     }
 
     private void refreshStatus() {
-        String x = xiaomi.status();
-        String b = bluetoothWatch.status();
-        String combined;
-        if (!b.isEmpty() && x.equals("已收到手环消息")) {
-            combined = "已收到穿戴设备消息";
-        } else if (!b.isEmpty() && (x.equals("通信服务未启动") || x.equals("正在连接小米运动健康")
-                || x.equals("等待小米运动健康连接") || x.equals("等待手环连接") || x.equals("无法启动小米通信 SDK"))) {
-            combined = b;
-        } else {
-            combined = x;
-        }
+        String combined = combineStatus(xiaomi.status(), bluetoothWatch.status(), bluetoothWatch.isConnected());
         if (combined.equals(lastStatus)) return;
         lastStatus = combined;
         onChange.run();
+    }
+
+    static String combineStatus(String xiaomiStatus, String bluetoothStatus, boolean bluetoothConnected) {
+        String x = xiaomiStatus == null ? "" : xiaomiStatus;
+        String b = bluetoothStatus == null ? "" : bluetoothStatus;
+        if (bluetoothConnected && !b.isEmpty()) {
+            if (x.equals("已收到手环消息")) return "已收到穿戴设备消息";
+            if (!x.startsWith("手环已连接，等待打开")) return b;
+        }
+        if (!b.isEmpty() && (x.equals("通信服务未启动") || x.equals("正在连接小米运动健康")
+                || x.equals("等待小米运动健康连接") || x.equals("等待手环连接") || x.equals("无法启动小米通信 SDK"))) {
+            return b;
+        }
+        return x;
     }
 }

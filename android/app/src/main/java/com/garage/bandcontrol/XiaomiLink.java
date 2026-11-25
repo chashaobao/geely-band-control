@@ -80,6 +80,7 @@ final class XiaomiLink {
     private String status = "通信服务未启动";
     private String environmentSummary = "未检查";
     private String lastPollError = "";
+    private String lastCheckError = "";
     private String lastNodeSignature = "";
     private boolean emptyNodesLogged;
 
@@ -141,14 +142,17 @@ final class XiaomiLink {
                             register(node, requestGeneration);
                             return;
                         }
+                        if (grantedNames.isEmpty() && !connected.contains(node)) {
+                            permissionNeeded.remove(node);
+                        }
                         diagnostics.log("设备授权未授予",
                                 grantedNames.isEmpty() ? "未返回已授予权限" : "返回权限: " + String.join(", ", grantedNames),
                                 true);
                         setStatus("小米设备通信权限未授予");
                     }))
-                    .addOnFailureListener(error -> main.post(() -> authorizationFailed(requestGeneration, error)));
+                    .addOnFailureListener(error -> main.post(() -> authorizationFailed(requestGeneration, node, error)));
         } catch (RuntimeException unavailable) {
-            authorizationFailed(requestGeneration, unavailable);
+            authorizationFailed(requestGeneration, node, unavailable);
         }
     }
 
@@ -167,9 +171,12 @@ final class XiaomiLink {
         main.removeCallbacks(authorizeTimeout);
     }
 
-    private void authorizationFailed(int requestGeneration, Throwable error) {
+    private void authorizationFailed(int requestGeneration, String node, Throwable error) {
         if (!active || generation != requestGeneration) return;
         cancelAuthorizationWait();
+        if (WearDiagnostics.isMissingWearAppError(error)) {
+            permissionNeeded.remove(node);
+        }
         String detail = WearDiagnostics.describeSdkError(error);
         Log.w(TAG, "Authorization failed: " + detail, error);
         diagnostics.log("设备授权失败", detail, true);
@@ -181,6 +188,7 @@ final class XiaomiLink {
         active = true;
         generation++;
         lastPollError = "";
+        lastCheckError = "";
         lastNodeSignature = "";
         emptyNodesLogged = false;
         environmentSummary = inspectWearableService();
@@ -351,6 +359,7 @@ final class XiaomiLink {
             auth.checkPermission(id, Permission.DEVICE_MANAGER).addOnSuccessListener(granted -> main.post(() -> {
                 registering.remove(id);
                 if (!active || generation != requestGeneration || !connected.contains(id)) return;
+                lastCheckError = "";
                 if (Boolean.TRUE.equals(granted)) {
                     permissionNeeded.remove(id);
                     register(id, requestGeneration);
@@ -361,10 +370,23 @@ final class XiaomiLink {
             })).addOnFailureListener(error -> main.post(() -> {
                 registering.remove(id);
                 if (!active || generation != requestGeneration) return;
-                permissionNeeded.add(id);
                 String detail = WearDiagnostics.describeSdkError(error);
-                Log.w(TAG, "checkPermission failed: " + detail, error);
-                diagnostics.log("读取设备授权状态失败", detail, true);
+                if (WearDiagnostics.isMissingWearAppError(error)) {
+                    permissionNeeded.remove(id);
+                    if (!detail.equals(lastCheckError)) {
+                        lastCheckError = detail;
+                        Log.w(TAG, "checkPermission failed (missing/mismatched RPK): " + detail, error);
+                        diagnostics.log("穿戴端未检测到可用 RPK", detail, true);
+                    }
+                    setStatus(detail);
+                    return;
+                }
+                permissionNeeded.add(id);
+                if (!detail.equals(lastCheckError)) {
+                    lastCheckError = detail;
+                    Log.w(TAG, "checkPermission failed: " + detail, error);
+                    diagnostics.log("读取设备授权状态失败", detail, true);
+                }
                 setStatus("无法读取小米授权状态：" + detail);
             }));
         }

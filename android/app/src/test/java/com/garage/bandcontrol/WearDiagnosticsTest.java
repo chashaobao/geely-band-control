@@ -17,8 +17,12 @@ public final class WearDiagnosticsTest {
     @Test public void describesKnownXiaomiSdkExceptionsClearly() {
         assertTrue(WearDiagnostics.describeSdkError(new AppNotInstalledException("app not installed"))
                 .contains("AppNotInstalled"));
+        assertTrue(WearDiagnostics.isMissingWearAppError(new AppNotInstalledException("app not installed")));
         assertTrue(WearDiagnostics.describeSdkError(new SignatureVerifyFailedException("fingerprint verify failed"))
                 .contains("SignatureVerifyFailed"));
+        assertTrue(WearDiagnostics.isMissingWearAppError(new SignatureVerifyFailedException("fingerprint verify failed")));
+        assertFalse(WearDiagnostics.isMissingWearAppError(new PermissionDeniedException("permission denied")));
+        assertFalse(WearDiagnostics.isMissingWearAppError(new DeviceDisconnectedException("device disconnected")));
         assertTrue(WearDiagnostics.describeSdkError(new PermissionDeniedException("permission denied"))
                 .contains("PermissionDenied"));
         assertTrue(WearDiagnostics.describeSdkError(new DeviceDisconnectedException("device disconnected"))
@@ -61,5 +65,24 @@ public final class WearDiagnosticsTest {
         assertTrue(report.contains("Android API 35 / Xiaomi 15"));
         assertTrue(report.contains("服务包 com.mi.health"));
         assertTrue(report.contains("[!] 设备授权超时 — 详情"));
+    }
+
+    @Test public void activeBluetoothWatchStatusIsNotHiddenByMissingRpkError() {
+        assertEquals("手表已连接（蓝牙直连）", WearLink.combineStatus(
+                "手表端未安装腕上银河 RPK 或包名不一致 (AppNotInstalled)",
+                "手表已连接（蓝牙直连）",
+                true));
+        assertEquals("已收到手表消息", WearLink.combineStatus(
+                "无法读取小米授权状态：DeviceDisconnected",
+                "已收到手表消息",
+                true));
+        assertEquals("已收到穿戴设备消息", WearLink.combineStatus(
+                "已收到手环消息",
+                "手表已连接（蓝牙直连）",
+                true));
+        assertEquals("手环已连接，等待打开腕上银河", WearLink.combineStatus(
+                "手环已连接，等待打开腕上银河",
+                "手表已连接（蓝牙直连）",
+                true));
     }
 }
