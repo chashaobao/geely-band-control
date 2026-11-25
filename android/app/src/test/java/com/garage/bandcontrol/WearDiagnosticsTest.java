@@ -84,5 +84,12 @@ public final class WearDiagnosticsTest {
                 "手环已连接，等待打开腕上银河",
                 "手表已连接（蓝牙直连）",
                 true));
+        assertEquals("等待手表重连（蓝牙直连）", WearLink.combineStatus(
+                "未检测到腕上银河 RPK（若用手表 APK 请忽略，AppNotInstalled）",
+                "",
+                false,
+                true));
+        assertEquals("等待手表重连", WearDiagnostics.compactLinkStatus("等待手表重连（蓝牙直连）", true));
+        assertFalse(WearDiagnostics.isWarningStatus("等待手表重连（蓝牙直连）"));
     }
 }

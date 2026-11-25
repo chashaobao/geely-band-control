@@ -11,7 +11,9 @@ final class WidgetReadings {
     private static final Pattern RANGE = Pattern.compile(
             "(\\d{1,3}(?:,\\d{3})|\\d{1,5})\\s*(?:km|㎞|公里)", Pattern.CASE_INSENSITIVE);
     private static final Pattern UPDATED = Pattern.compile(
-            "(?:(\\d{4})[-/年])?(\\d{1,2})[-/月](\\d{1,2})\\s*日?\\s+(\\d{1,2}):(\\d{2})");
+            "(?:(\\d{4})[-/年])?(\\d{1,2})[-/月](\\d{1,2})(?:\\s*日\\s*|\\s+)"
+                    + "(凌晨|上午|早上|中午|下午|傍晚|晚上)?\\s*(\\d{1,2}):(\\d{2})(?:\\s*(AM|PM))?",
+            Pattern.CASE_INSENSITIVE);
 
     record Distance(String value, String unit) {
         Integer kilometers() {
@@ -56,13 +58,28 @@ final class WidgetReadings {
         int month = Integer.parseInt(time.group(2));
         int year = time.group(1) != null ? Integer.parseInt(time.group(1))
                 : current.getYear() - (current.getMonthValue() == 1 && month == 12 ? 1 : 0);
+        int hour = adjustHour(Integer.parseInt(time.group(5)), time.group(4), time.group(7));
         try {
             LocalDateTime value = LocalDateTime.of(year, month, Integer.parseInt(time.group(3)),
-                    Integer.parseInt(time.group(4)), Integer.parseInt(time.group(5)));
+                    hour, Integer.parseInt(time.group(6)));
             long epoch = value.atZone(zone).toInstant().toEpochMilli();
             return epoch > 0 && epoch <= now + 120_000 ? epoch : 0;
         } catch (DateTimeException invalid) {
             return 0;
         }
+    }
+
+    private static int adjustHour(int rawHour, String cnPeriod, String amPm) {
+        if (cnPeriod != null) {
+            return switch (cnPeriod) {
+                case "凌晨", "上午", "早上" -> rawHour == 12 ? 0 : rawHour;
+                case "中午" -> rawHour >= 1 && rawHour <= 10 ? rawHour + 12 : rawHour;
+                case "下午", "傍晚", "晚上" -> rawHour >= 1 && rawHour <= 11 ? rawHour + 12 : rawHour;
+                default -> rawHour;
+            };
+        }
+        if ("AM".equalsIgnoreCase(amPm)) return rawHour == 12 ? 0 : rawHour;
+        if ("PM".equalsIgnoreCase(amPm)) return rawHour >= 1 && rawHour <= 11 ? rawHour + 12 : rawHour;
+        return rawHour;
     }
 }

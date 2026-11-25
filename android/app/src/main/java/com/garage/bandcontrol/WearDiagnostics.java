@@ -67,6 +67,7 @@ final class WearDiagnostics {
                 || linkStatus.equals("已收到穿戴设备消息")) {
             return "应用已连接";
         }
+        if (linkStatus.startsWith("等待手表重连")) return "等待手表重连";
         if (linkStatus.startsWith("手表已连接")) return "手表已连接";
         if (linkStatus.equals("手环已连接，等待打开腕上银河")) return "设备已连接，等待打开腕上银河";
         if (linkStatus.equals("通信服务未启动") || linkStatus.equals("正在连接小米运动健康")) {

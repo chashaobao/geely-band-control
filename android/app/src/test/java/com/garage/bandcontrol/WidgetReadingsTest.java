@@ -50,6 +50,25 @@ public final class WidgetReadingsTest {
         assertEquals(january - 120_000, status.updatedAt());
     }
 
+    @Test public void parsesChineseAndEnglishTwelveHourTimestamps() {
+        long afternoonNow = Instant.parse("2026-11-25T09:20:00Z").toEpochMilli(); // 17:20 +08:00
+        VehicleStatus afternoon = WidgetReadings.parse(distance("643", "km"), energy("97", "%", 97),
+                energy("517", "km", 48), "已驻车", "11-25 下午4:48", afternoonNow, SHANGHAI);
+        assertEquals(Instant.parse("2026-11-25T08:48:00Z").toEpochMilli(), afternoon.updatedAt());
+
+        VehicleStatus noon = WidgetReadings.parse(distance("643", "km"), energy("97", "%", 97),
+                energy("517", "km", 48), "已驻车", "11月25日 中午12:15", afternoonNow, SHANGHAI);
+        assertEquals(Instant.parse("2026-11-25T04:15:00Z").toEpochMilli(), noon.updatedAt());
+
+        VehicleStatus earlyMorning = WidgetReadings.parse(distance("643", "km"), energy("97", "%", 97),
+                energy("517", "km", 48), "已驻车", "11-25 凌晨12:30", afternoonNow, SHANGHAI);
+        assertEquals(Instant.parse("2026-11-24T16:30:00Z").toEpochMilli(), earlyMorning.updatedAt());
+
+        VehicleStatus morningPm = WidgetReadings.parse(distance("643", "km"), energy("97", "%", 97),
+                energy("517", "km", 48), "已驻车", "11-25 4:48 PM", afternoonNow, SHANGHAI);
+        assertEquals(Instant.parse("2026-11-25T08:48:00Z").toEpochMilli(), morningPm.updatedAt());
+    }
+
     private static WidgetReadings.Distance distance(String value, String unit) {
         return new WidgetReadings.Distance(value, unit);
     }
