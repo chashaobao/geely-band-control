@@ -84,6 +84,21 @@ public final class MainActivity extends Activity {
         app = (GarageApp) getApplication();
         if (state != null) pendingBind = state.getInt(BIND_ID, NO_WIDGET);
         setContentView(buildScreen());
+        if (app.needsBrandSelection()) chooseBrand();
+    }
+
+    private void chooseBrand() {
+        new AlertDialog.Builder(this).setTitle("选择车辆品牌")
+                .setSingleChoiceItems(new String[]{"银河", "领克"}, app.brand == BrandConfig.LYNKCO ? 1 : 0,
+                        (dialog, index) -> {
+                            if (pendingBind != NO_WIDGET) app.widgets.cancelBind(pendingBind);
+                            pendingBind = NO_WIDGET;
+                            app.selectBrand(index == 1 ? BrandConfig.LYNKCO : BrandConfig.GALAXY);
+                            dialog.dismiss();
+                            recreate();
+                        }).setCancelable(false).setPositiveButton("使用当前品牌", (dialog, which) -> {
+                            app.selectBrand(app.brand);
+                        }).show();
     }
 
     @Override protected void onStart() {
@@ -138,6 +153,7 @@ public final class MainActivity extends Activity {
         }
         scroll.addView(screen, new ScrollView.LayoutParams(-1, -2));
         add(screen, text(getString(R.string.app_name), 28, INK, true), 0);
+        add(screen, button("车辆品牌：" + app.brand.name + " · 切换", this::chooseBrand), 8);
         LinearLayout vehicleHeader = row();
         vehicleNameText = text(app.vehicleName(), 14, MUTED, false);
         vehicleHeader.addView(vehicleNameText);
@@ -150,15 +166,15 @@ public final class MainActivity extends Activity {
         widgetContainer = new FrameLayout(this);
         widgetContainer.setBackground(rounded(PANEL, 20));
         widgetContainer.setClipToOutline(true);
-        LinearLayout.LayoutParams widgetBounds = new LinearLayout.LayoutParams(-1, dp(GalaxyWidgets.HEIGHT_DP));
+        LinearLayout.LayoutParams widgetBounds = new LinearLayout.LayoutParams(-1, dp(app.brand.heightDp));
         widgetBounds.topMargin = dp(18);
         screen.addView(widgetContainer, widgetBounds);
 
         setupPanel = panel();
-        add(setupPanel, text("银河官方小组件", 19, INK, true), 0);
+        add(setupPanel, text("银河官方小组件".replace("银河", app.brand.name), 19, INK, true), 0);
         setupStatus = text("", 14, MUTED, false);
         add(setupPanel, setupStatus, 5);
-        addWidget = button("添加银河中号小组件", this::bindWidget);
+        addWidget = button("添加银河中号小组件".replace("银河", app.brand.name), this::bindWidget);
         addWidget.setActivated(true);
         add(setupPanel, addWidget, 12);
         add(screen, setupPanel, 18);
@@ -174,7 +190,7 @@ public final class MainActivity extends Activity {
         add(controlPanel, controlStatus, 4);
         liveControl = button("允许车控", this::toggleControl);
         add(controlPanel, liveControl, 12);
-        phoneConfirmation = button("处理银河官方确认", this::showOfficialConfirmation);
+        phoneConfirmation = button("处理银河官方确认".replace("银河", app.brand.name), this::showOfficialConfirmation);
         phoneConfirmation.setActivated(true);
         add(controlPanel, phoneConfirmation, 8);
         add(screen, controlPanel, 14);
@@ -211,7 +227,7 @@ public final class MainActivity extends Activity {
         add(bandPanel, connection, 12);
         authorize = button("授权小米设备通信", () -> app.link.authorize());
         add(bandPanel, authorize, 8);
-        add(bandPanel, text("仅在搭配小米手环或手表端「腕上银河」时需要启动通信。", 13, MUTED, false), 8);
+        add(bandPanel, text("仅在搭配小米手环或手表端「腕上银河」时需要启动通信。".replace("银河", app.brand.name), 13, MUTED, false), 8);
         add(screen, bandPanel, 12);
 
         LinearLayout backgroundPanel = panel();
@@ -269,7 +285,7 @@ public final class MainActivity extends Activity {
             phoneConfirmation.setVisibility(View.GONE);
             boolean hasProvider = app.widgets.isProviderInstalled();
             setupStatus.setText(hasProvider ? "授权添加后，同步卡片车况和四个车控按钮。"
-                    : "请先安装并登录吉利银河 App。");
+                    : "请先安装并登录吉利银河 App。".replace("银河", app.brand.name));
             addWidget.setEnabled(hasProvider && pendingBind == NO_WIDGET);
             return;
         }
@@ -319,7 +335,7 @@ public final class MainActivity extends Activity {
     private void editVehicleName() {
         EditText input = new EditText(this);
         input.setSingleLine(true);
-        input.setHint("例如：银河星耀 8");
+        input.setHint("例如：银河星耀 8".replace("银河", app.brand.name));
         input.setText(app.vehicleName());
         input.setSelection(input.getText().length());
         LinearLayout container = column();
@@ -341,7 +357,7 @@ public final class MainActivity extends Activity {
             toast("无法访问剪贴板");
             return;
         }
-        clipboard.setPrimaryClip(ClipData.newPlainText("智在银河诊断信息", app.exportDiagnostics()));
+        clipboard.setPrimaryClip(ClipData.newPlainText("智在银河诊断信息".replace("银河", app.brand.name), app.exportDiagnostics()));
         toast("已复制诊断信息与日志");
     }
 
@@ -354,16 +370,17 @@ public final class MainActivity extends Activity {
     }
 
     private void showVoiceCommands() {
-        MiHomeVoice.Command[] commands = MiHomeVoice.Command.values();
+        MiHomeVoice.Command[] commands = app.brand == BrandConfig.LYNKCO
+                ? new MiHomeVoice.Command[]{MiHomeVoice.Command.TEST} : MiHomeVoice.Command.values();
         String[] choices = new String[commands.length];
         for (int index = 0; index < commands.length; index++) {
             MiHomeVoice.Command command = commands[index];
-            choices[index] = command.label + "\n" + command.code;
+            choices[index] = command.label + "\n" + (app.brand.namespace + ":" + command.name());
         }
         new AlertDialog.Builder(this)
                 .setTitle("点按复制通知指令码")
                 .setItems(choices, (dialog, index) -> getSystemService(ClipboardManager.class)
-                        .setPrimaryClip(ClipData.newPlainText("米家指令码", commands[index].code)))
+                        .setPrimaryClip(ClipData.newPlainText("米家指令码", (app.brand.namespace + ":" + commands[index].name()))))
                 .setNegativeButton("关闭", null)
                 .show();
     }
@@ -371,7 +388,7 @@ public final class MainActivity extends Activity {
     private void updateBandControls(Map<CarAction, GalaxyWidgets.Control> controls) {
         boolean armed = app.isArmed();
         boolean hasReady = controls.values().stream().anyMatch(GalaxyWidgets.Control::ready);
-        mappingStatus.setText("功能已同步 · " + controls.size() + "/" + WidgetTree.SLOTS.size());
+        mappingStatus.setText("功能已同步 · " + controls.size() + "/" + app.brand.slots.size());
         controlStatus.setText(armed ? "车控已授权 · 可用米家语音或穿戴端控车"
                 : hasReady ? "车控未授权 · 点击下方允许后即可控车" : "请先刷新车况或点按上方预览卡片补标按钮");
         liveControl.setText(armed ? "关闭车控" : "允许车控");
@@ -387,17 +404,18 @@ public final class MainActivity extends Activity {
     }
 
     private void showOfficialConfirmation() {
+        if (app.brand == BrandConfig.LYNKCO) { toast("请在手机领克官方卡片确认操作"); return; }
         if (officialDialog != null && officialDialog.isShowing()) return;
         GalaxyWidgets.Card card = app.phoneConfirmationCard();
         WidgetTree.OfficialConfirmation prompt = app.widgets.officialConfirmation(card);
         if (prompt == null) {
-            toast("请打开吉利银河查看当前操作");
+            toast("请打开吉利银河查看当前操作".replace("银河", app.brand.name));
             return;
         }
         long revision = app.widgets.revision(card);
         officialDialog = new AlertDialog.Builder(this)
                 .setTitle(prompt.title())
-                .setMessage("由银河官方小组件请求确认。")
+                .setMessage("由银河官方小组件请求确认。".replace("银河", app.brand.name))
                 .setNeutralButton("返回", null)
                 .setNegativeButton("取消", (dialog, which) -> app.respondOnPhone(card, prompt, revision, false))
                 .setPositiveButton("确认", (dialog, which) -> app.respondOnPhone(card, prompt, revision, true))
@@ -407,10 +425,10 @@ public final class MainActivity extends Activity {
     private void showBatteryGuide() {
         new AlertDialog.Builder(this)
                 .setTitle("省电策略设置")
-                .setMessage("在「智在银河」的应用信息中，打开「电池用量」或「省电策略」，选择「无限制」。"
+                .setMessage("在「智在银河」的应用信息中，打开「电池用量」或「省电策略」，选择「无限制」。".replace("银河", app.brand.name)
                         + "如果系统提供的是「允许后台活动」，请开启它。"
-                        + "\n\n小米手机也可从「省电与电池 → 应用智能省电」为智在银河选择「无限制」。"
-                        + "\n\n使用 Android 电池优化列表时，选中智在银河并设为「不优化」。")
+                        + "\n\n小米手机也可从「省电与电池 → 应用智能省电」为智在银河选择「无限制」。".replace("银河", app.brand.name)
+                        + "\n\n使用 Android 电池优化列表时，选中智在银河并设为「不优化」。".replace("银河", app.brand.name))
                 .setNegativeButton("返回", null)
                 .setNeutralButton("电池优化列表", (dialog, which) -> openBatteryOptimizationSettings())
                 .setPositiveButton("打开应用信息", (dialog, which) -> openApplicationSettings())
@@ -420,7 +438,7 @@ public final class MainActivity extends Activity {
     private void showLockGuide() {
         new AlertDialog.Builder(this)
                 .setTitle("应用锁定引导")
-                .setMessage("打开最近任务，找到「智在银河」。长按卡片或打开卡片菜单，选择「锁定」或锁形图标。"
+                .setMessage("打开最近任务，找到「智在银河」。长按卡片或打开卡片菜单，选择「锁定」或锁形图标。".replace("银河", app.brand.name)
                         + "\n\n部分小米手机可在「手机管家 → 设置 → 优化加速 → 锁定任务」中开启。"
                         + "锁定后，一键清理时会保留这个任务。入口随手机系统而异。")
                 .setPositiveButton("知道了", null)
@@ -439,7 +457,7 @@ public final class MainActivity extends Activity {
         try {
             startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getPackageName(), null)));
         } catch (ActivityNotFoundException unavailable) {
-            toast("请在系统设置中搜索智在银河");
+            toast("请在系统设置中搜索智在银河".replace("银河", app.brand.name));
         }
     }
 
@@ -489,8 +507,8 @@ public final class MainActivity extends Activity {
         }
         new AlertDialog.Builder(this)
                 .setTitle("允许车控")
-                .setMessage("请确认当前卡片选中目标车辆，且映射按钮与银河小组件配置一致。米家语音指令或穿戴端确认将直接触发对应的银河官方按钮。"
-                        + "\n\n安全与免责提示：本工具为独立开源项目，与吉利汽车及小米无官方关联。远程控车存在通信与刷新延迟，车辆实际状态以吉利银河 App 为准；"
+                .setMessage("请确认当前卡片选中目标车辆，且映射按钮与银河小组件配置一致。米家语音指令或穿戴端确认将直接触发对应的银河官方按钮。".replace("银河", app.brand.name)
+                        + "\n\n安全与免责提示：本工具为独立开源项目，与吉利汽车及小米无官方关联。远程控车存在通信与刷新延迟，车辆实际状态以吉利银河 App 为准；".replace("银河", app.brand.name)
                         + "米家语音收到通知后将直接执行，请谨慎设置触发口令；如搭配穿戴设备使用，请开启锁屏密码，离车或非本人佩戴时及时关闭车控授权。")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("已知晓并允许", (dialog, which) -> app.arm())
@@ -534,17 +552,23 @@ public final class MainActivity extends Activity {
     }
 
     private void configure(GalaxyWidgets.Card card) {
+        if (app.brand == BrandConfig.LYNKCO) {
+            Intent launch = getPackageManager().getLaunchIntentForPackage(app.brand.packageName);
+            if (launch != null) startActivity(launch);
+            else toast("请安装中国版领克 App");
+            return;
+        }
         app.disarm();
         try {
             if (app.widgets.configure(this, card)) return;
         } catch (RuntimeException unavailable) {
             android.util.Log.w("GarageActivity", "Widget configuration did not open");
         }
-        new AlertDialog.Builder(this).setTitle("在吉利银河里配置")
-                .setMessage("打开吉利银河的「设置小组件」，选择这辆车和需要的按钮，保存后返回这里查看卡片。")
+        new AlertDialog.Builder(this).setTitle("在吉利银河里配置".replace("银河", app.brand.name))
+                .setMessage("打开吉利银河的「设置小组件」，选择这辆车和需要的按钮，保存后返回这里查看卡片。".replace("银河", app.brand.name))
                 .setNegativeButton("取消", null)
-                .setPositiveButton("打开吉利银河", (dialog, which) -> {
-                    Intent launch = getPackageManager().getLaunchIntentForPackage(GalaxyWidgets.PACKAGE);
+                .setPositiveButton("打开吉利银河".replace("银河", app.brand.name), (dialog, which) -> {
+                    Intent launch = getPackageManager().getLaunchIntentForPackage(app.brand.packageName);
                     if (launch != null) {
                         app.widgets.recheckAfterConfiguration();
                         startActivity(launch);
@@ -553,17 +577,21 @@ public final class MainActivity extends Activity {
     }
 
     private void labelButton(GalaxyWidgets.Card card, WidgetTree.Button target) {
-        if (target.role().equals(WidgetTree.SETTINGS)) {
+        if (app.brand == BrandConfig.LYNKCO && target.role().isEmpty()) {
+            toast("固定槽位：请在穿戴端确认后点按验证，功能以真机为准");
+            return;
+        }
+        if (target.role().equals(app.brand.settings)) {
             configure(card);
             return;
         }
-        if (target.role().equals(WidgetTree.REFRESH)) {
+        if (target.role().equals(app.brand.refresh)) {
             app.refreshOnPhone();
             return;
         }
         if (target.match() != null) {
             new AlertDialog.Builder(this).setTitle(buttonLabel(card, target))
-                    .setMessage("修改功能请到这张卡片的银河官方配置页面。")
+                    .setMessage("修改功能请到这张卡片的银河官方配置页面。".replace("银河", app.brand.name))
                     .setPositiveButton("知道了", null).show();
             return;
         }
@@ -585,7 +613,7 @@ public final class MainActivity extends Activity {
 
     private void chooseLockState(GalaxyWidgets.Card card, WidgetTree.Button target) {
         new AlertDialog.Builder(this).setTitle("此时的车门锁态")
-                .setMessage("请先对照吉利银河 App 的当前锁态。手环确认时会显示切换后的目标状态。")
+                .setMessage("请先对照吉利银河 App 的当前锁态。手环确认时会显示切换后的目标状态。".replace("银河", app.brand.name))
                 .setNeutralButton("取消", null)
                 .setNegativeButton("当前已解锁", (dialog, which) ->
                         saveBinding(card, target, CarAction.LOCK.id, WidgetTree.UNLOCKED))
@@ -601,7 +629,7 @@ public final class MainActivity extends Activity {
 
     private String buttonLabel(GalaxyWidgets.Card card, WidgetTree.Button target) {
         if (!target.role().isEmpty()) return target.label();
-        GalaxyWidgets.Binding binding = card.binding(target);
+        GalaxyWidgets.Binding binding = app.brand == BrandConfig.LYNKCO ? LynkWidgets.binding(target) : card.binding(target);
         CarAction action = binding == null ? null : CarAction.fromId(binding.action());
         if (action == null) return target.label().isEmpty() ? "待标记" : target.label() + "（待标记）";
         String source = target.match() != null ? "自动识别" : "手动标记";
@@ -698,7 +726,7 @@ public final class MainActivity extends Activity {
             super.onInitializeAccessibilityNodeInfo(info);
             if (app.widgets.showsSetup(card)) return;
             VehicleStatus reading = app.widgets.vehicle();
-            StringBuilder label = new StringBuilder("银河官方小组件");
+            StringBuilder label = new StringBuilder("银河官方小组件".replace("银河", app.brand.name));
             if (reading.totalKm() != null) label.append("，总续航 ").append(reading.totalKm()).append(" 公里");
             if (reading.electricKm() != null) label.append("，纯电 ").append(reading.electricKm()).append(" 公里");
             if (reading.fuelKm() != null) label.append("，燃油 ").append(reading.fuelKm()).append(" 公里");

@@ -33,6 +33,10 @@ final class WatchProtocol {
         ACTION_LABELS.put("defrost", "除霜");
         ACTION_LABELS.put("sentry", "哨兵");
 
+        ACTION_LABELS.put("lynk_unlock", "车锁槽位（待验证）");
+        ACTION_LABELS.put("lynk_window", "车窗槽位（待验证）");
+        ACTION_LABELS.put("lynk_kjck", "kjck（待验证）");
+        ACTION_LABELS.put("lynk_ccqk", "ccqk（待验证）");
         SWITCH_LABELS.put("climate", "空调");
         SWITCH_LABELS.put("heat", "升温");
         SWITCH_LABELS.put("cool", "降温");
@@ -245,6 +249,7 @@ final class WatchProtocol {
 
     static String iconAsset(String action, String direction) {
         if ("lock".equals(action) && "lock".equals(direction)) return "lock-open.png";
+        if (action.startsWith("lynk_")) return "settings.png";
         return action + ".png";
     }
 

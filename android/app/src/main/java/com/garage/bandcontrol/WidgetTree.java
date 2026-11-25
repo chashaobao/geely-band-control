@@ -23,50 +23,43 @@ import java.util.Map;
 import java.util.function.Predicate;
 
 final class WidgetTree {
-    static final String NORMAL_LAYOUT = "wg_middle_normal";
-    static final String SETUP_LAYOUT = "wg_middle_init";
-    static final String SETTINGS = "wg_btn_setting";
-    static final String REFRESH = "wg_btn_update_time";
     static final String LOCKED = "locked";
     static final String UNLOCKED = "unlocked";
-    private static final String CONFIRMATION = "wg_middle_layout_confirm";
-    private static final String ENERGY_VALUE = "wg_tv_energy_percent";
-    private static final String ENERGY_UNIT = "wg_tv_energy_percent_unit";
-    private static final List<String> ENERGY_BARS = List.of("wg_pb_energy_normal", "wg_pb_energy_warn",
-            "wg_pb_energy_alert");
-    static final List<String> SLOTS = List.of("wgFun1Container", "wgFun2Container", "wgFun3Container", "wgFun4Container");
-
     record Button(View view, String slot, String fingerprint, Rect bounds, String label, String role,
                   WidgetIcons.Match match) {}
     record OfficialConfirmation(View accept, View cancel, String title) {}
 
-    private WidgetTree() {}
+    final BrandConfig config;
+    WidgetTree(BrandConfig config) { this.config = config; }
 
-    static VehicleStatus read(View root, long now, ZoneId zone) {
+    VehicleStatus read(View root, long now, ZoneId zone) {
         if (loading(root)) return VehicleStatus.EMPTY;
-        View mileage = named(root, "wg_view_mileage");
-        View alarm = named(root, "wg_alarm_container");
-        View motion = named(alarm, "wg_tv_warn_text");
+        View mileage = named(root, config.mileage);
+        View alarm = named(root, config.alarm);
+        View motion = named(alarm, config.motion);
         if (motion == null) motion = unique(alarm, view -> view instanceof TextView);
-        return WidgetReadings.parse(distance(mileage, "wg_tv_mileage", "wg_tv_mileage_unit"),
-                energy(root, "wg_energy_container_electric", "wg_energy_bar_electric"),
-                energy(root, "wg_energy_container_oil", "wg_energy_bar_oil"),
-                text(motion), text(named(root, "wg_tv_update_time")), now, zone);
+        return WidgetReadings.parse(distance(mileage, config.mileageValue, config.mileageUnit),
+                energy(root, config.electric, config.electricBar),
+                energy(root, config.oil, config.oilBar),
+                text(motion), text(named(root, config.time)), now, zone);
     }
 
-    static boolean loading(View root) {
-        return named(root, "wg_view_update_time_loading") != null || named(root, "wg_tv_update_time_loading") != null;
+    boolean loading(View root) {
+        return config.loading.stream().anyMatch(name -> named(root, name) != null);
     }
 
-    static boolean slotLoading(View root, String slotName) {
+    boolean slotLoading(View root, String slotName) {
         return slotLoading(named(root, slotName));
     }
 
-    private static boolean slotLoading(View slot) {
-        return named(slot, "wg_view_fun_loading") != null;
+    private boolean slotLoading(View slot) {
+        if (config.slotMode == BrandConfig.SlotMode.FIXED) {
+            return unique(slot, view -> view instanceof ProgressBar) != null;
+        }
+        return named(slot, config.slotLoading) != null;
     }
 
-    private static WidgetReadings.Energy energy(View root, String containerName, String barName) {
+    private WidgetReadings.Energy energy(View root, String containerName, String barName) {
         // RemoteViews can replace the included progress bar inside the energy container.
         View container = named(root, containerName);
         if (container == null) container = named(root, barName);
@@ -75,13 +68,13 @@ final class WidgetTree {
         collectEnergyReadings(container, distances, percents);
         WidgetReadings.Distance distance = distances.size() == 1 ? distances.values().iterator().next()
                 : new WidgetReadings.Distance("", "");
-        View visibleBar = unique(container, view -> view instanceof ProgressBar && ENERGY_BARS.contains(resource(view)));
+        View visibleBar = unique(container, view -> view instanceof ProgressBar && config.energyBars.contains(resource(view)));
         Integer barPercent = progressPercent(visibleBar);
         Integer textPercent = percents.size() == 1 ? percents.values().iterator().next() : null;
         return new WidgetReadings.Energy(distance, barPercent != null ? barPercent : textPercent);
     }
 
-    private static Integer progressPercent(View view) {
+    private Integer progressPercent(View view) {
         if (!(view instanceof ProgressBar bar) || bar.isIndeterminate()) return null;
         int minimum = bar.getMin();
         int maximum = bar.getMax();
@@ -90,7 +83,7 @@ final class WidgetTree {
         return (int) Math.round(100.0 * (progress - (long) minimum) / (maximum - (long) minimum));
     }
 
-    private static void collectEnergyReadings(
+    private void collectEnergyReadings(
             View view,
             Map<Integer, WidgetReadings.Distance> distances,
             Map<Integer, Integer> percents) {
@@ -98,8 +91,8 @@ final class WidgetTree {
                 || (distances.size() > 1 && percents.size() > 1)) return;
         if (view instanceof TextView) {
             String unit = "";
-            if (ENERGY_VALUE.equals(resource(view)) && view.getParent() instanceof ViewGroup row) {
-                unit = text(unique(row, other -> other.getParent() == row && ENERGY_UNIT.equals(resource(other))));
+            if (java.util.Objects.equals(config.energyValue, resource(view)) && view.getParent() instanceof ViewGroup row) {
+                unit = text(unique(row, other -> other.getParent() == row && java.util.Objects.equals(config.energyUnit, resource(other))));
             }
             WidgetReadings.Distance candidate = new WidgetReadings.Distance(text(view), unit);
             Integer km = candidate.kilometers();
@@ -113,29 +106,29 @@ final class WidgetTree {
         }
     }
 
-    private static WidgetReadings.Distance distance(View container, String number, String unit) {
+    private WidgetReadings.Distance distance(View container, String number, String unit) {
         return new WidgetReadings.Distance(text(named(container, number)), text(named(container, unit)));
     }
 
-    static List<Button> buttons(ViewGroup root, String providerVersion, boolean controlsReady, WidgetIcons icons) {
+    List<Button> buttons(ViewGroup root, String providerVersion, boolean controlsReady, WidgetIcons icons) {
         List<Button> buttons = new ArrayList<>();
         if (confirmationVisible(root)) return buttons;
 
-        View settings = named(root, SETTINGS);
+        View settings = named(root, config.settings);
         if (clickable(settings, root)) {
-            buttons.add(new Button(settings, SETTINGS, "", bounds(root, settings), "配置", SETTINGS, null));
+            buttons.add(new Button(settings, config.settings, "", bounds(root, settings), "配置", config.settings, null));
         }
-        View refresh = named(root, REFRESH);
+        View refresh = named(root, config.refresh);
         if (!loading(root) && clickable(refresh, root)) {
-            buttons.add(new Button(refresh, REFRESH, "", bounds(root, refresh), "刷新车况", REFRESH, null));
+            buttons.add(new Button(refresh, config.refresh, "", bounds(root, refresh), "刷新车况", config.refresh, null));
         }
 
-        if (!controlsReady) return buttons;
+        if (!controlsReady && config.slotMode == BrandConfig.SlotMode.DYNAMIC) return buttons;
         int lockIcons = 0;
-        for (String slotName : SLOTS) {
+        for (String slotName : config.slots) {
             View slot = named(root, slotName);
             if (slot == null || slotLoading(slot)) continue;
-            View icon = named(slot, "wg_view_fun_status");
+            View icon = config.slotIcon == null ? unique(slot, view -> view instanceof ImageView) : named(slot, config.slotIcon);
             if (!(icon instanceof ImageView image) || image.getDrawable() == null
                     || icon.getWidth() <= 0 || icon.getHeight() <= 0) continue;
             try {
@@ -153,26 +146,21 @@ final class WidgetTree {
         }
         // The unconfigured template uses the closed-lock image in every slot.
         if (lockIcons > 1) {
-            buttons.removeIf(WidgetTree::recognizedLock);
+            buttons.removeIf(this::recognizedLock);
         }
         return buttons;
     }
 
-    private static boolean recognizedLock(Button button) {
+    private boolean recognizedLock(Button button) {
         return button.match() != null && button.match().action() == CarAction.LOCK;
     }
 
-    static boolean confirmationVisible(View root) {
-        return named(root, CONFIRMATION) != null;
+    boolean confirmationVisible(View root) {
+        return named(root, config.confirm) != null;
     }
 
-    private static final List<String> NON_CAR_CONTAINERS = List.of(
-            "wgFun1Container", "wgFun2Container", "wgFun3Container", "wgFun4Container",
-            "wg_energy_container_electric", "wg_energy_container_oil",
-            "wg_energy_bar_electric", "wg_energy_bar_oil",
-            "wg_alarm_container", "wg_view_mileage", CONFIRMATION, SETTINGS, REFRESH);
 
-    static ImageView vehicleImage(ViewGroup root) {
+    ImageView vehicleImage(ViewGroup root) {
         if (root == null || root.getWidth() <= 0 || root.getHeight() <= 0) return null;
         List<ImageView> candidates = new ArrayList<>();
         collectVehicleImages(root, candidates);
@@ -195,10 +183,10 @@ final class WidgetTree {
         return best;
     }
 
-    private static void collectVehicleImages(View view, List<ImageView> out) {
+    private void collectVehicleImages(View view, List<ImageView> out) {
         if (view == null || view.getVisibility() != View.VISIBLE) return;
         String entry = resource(view);
-        if (NON_CAR_CONTAINERS.contains(entry)) return;
+        if (config.slots.contains(entry) || java.util.Arrays.asList(config.electric, config.oil, config.alarm, config.mileage, config.confirm, config.settings, config.refresh).contains(entry)) return;
         if (view instanceof ImageView image) {
             if (image.getDrawable() != null && image.getWidth() > 0 && image.getHeight() > 0) {
                 out.add(image);
@@ -208,16 +196,16 @@ final class WidgetTree {
         }
     }
 
-    static OfficialConfirmation confirmation(ViewGroup root) {
-        View panel = named(root, CONFIRMATION);
-        View accept = named(panel, "wg_middle_confirm_btn_ok");
-        View cancel = named(panel, "wg_middle_confirm_btn_cancel");
-        String title = text(named(panel, "wg_middle_confirm_title"));
+    OfficialConfirmation confirmation(ViewGroup root) {
+        View panel = named(root, config.confirm);
+        View accept = named(panel, config.accept);
+        View cancel = named(panel, config.cancel);
+        String title = text(named(panel, config.confirmTitle));
         if (title.isEmpty() || !clickable(accept, root) || !clickable(cancel, root)) return null;
         return new OfficialConfirmation(accept, cancel, title);
     }
 
-    private static boolean clickable(View view, View root) {
+    private boolean clickable(View view, View root) {
         if (view == null || !view.isClickable() || !view.hasOnClickListeners()) return false;
         for (View current = view; current != null; ) {
             if (!current.isEnabled() || current.getVisibility() != View.VISIBLE
@@ -228,26 +216,26 @@ final class WidgetTree {
         return false;
     }
 
-    private static String description(View view) {
+    private String description(View view) {
         CharSequence label = view.getContentDescription();
         return label == null ? "" : label.toString().trim();
     }
 
-    private static String text(View view) {
+    private String text(View view) {
         return view instanceof TextView text ? text.getText().toString().trim() : "";
     }
 
-    private static View named(View root, String name) {
-        return unique(root, view -> name.equals(resource(view)));
+    private View named(View root, String name) {
+        return name == null ? null : unique(root, view -> name.equals(resource(view)));
     }
 
-    private static View unique(View root, Predicate<View> matches) {
+    private View unique(View root, Predicate<View> matches) {
         List<View> found = new ArrayList<>(2);
         collect(root, matches, found);
         return found.size() == 1 ? found.get(0) : null;
     }
 
-    private static void collect(View view, Predicate<View> matches, List<View> found) {
+    private void collect(View view, Predicate<View> matches, List<View> found) {
         if (view == null || view.getVisibility() != View.VISIBLE || found.size() >= 2) return;
         if (matches.test(view)) found.add(view);
         if (view instanceof ViewGroup group) {
@@ -255,13 +243,13 @@ final class WidgetTree {
         }
     }
 
-    private static Rect bounds(ViewGroup root, View view) {
+    private Rect bounds(ViewGroup root, View view) {
         Rect rect = new Rect(0, 0, view.getWidth(), view.getHeight());
         root.offsetDescendantRectToMyCoords(view, rect);
         return rect;
     }
 
-    private static String resource(View view) {
+    private String resource(View view) {
         if (view.getId() == View.NO_ID) return "";
         try {
             return view.getResources().getResourceEntryName(view.getId());
@@ -270,7 +258,7 @@ final class WidgetTree {
         }
     }
 
-    private static String fingerprint(View view, String descriptor) {
+    private String fingerprint(View view, String descriptor) {
         Bitmap image = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888);
         try {
             Canvas canvas = new Canvas(image);

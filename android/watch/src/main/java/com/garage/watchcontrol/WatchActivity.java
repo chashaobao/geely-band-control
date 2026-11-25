@@ -150,6 +150,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
 
     private String mode = "";
     private String vehicleName = DEFAULT_VEHICLE_NAME;
+    private String brand = "GALAXY";
     private String modeLabel = "待连接";
     private String motionLabel = "状态未知";
     private String updatedLabel = "等待车况";
@@ -195,8 +196,8 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         client.setPreferredAddress(prefs.getString(PHONE_ADDR_KEY, ""));
 
         setContentView(buildUi());
-        loadCachedCarImage();
         loadSnapshot();
+        loadCachedCarImage();
         renderAll();
     }
 
@@ -453,6 +454,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         if ("hello".equals(request.type())) {
             if ("hello-reply".equals(reply.optString("type")) && reply.has("v") && reply.has("protocol")) {
                 recordEvent("recv", request, "hello-reply");
+                applyBrand(reply.optString("brand"));
                 finishHello(reply);
             }
             return;
@@ -487,6 +489,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         if (!"demo".equals(replyMode) && !"live".equals(replyMode)) return;
 
         recordEvent("recv", request, "");
+        applyBrand(reply.optString("brand"));
         boolean firstReply = !linked || !mode.equals(replyMode);
         clearPending();
         linked = true;
@@ -499,12 +502,14 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         controlNotice = reply.optString("controlNotice");
         blockedControls = reply.optJSONObject("blocked") != null ? reply.optJSONObject("blocked") : new JSONObject();
         controlPending = reply.optBoolean("controlPending", false) || phoneConfirmation;
-        if (phoneConfirmation) controlNotice = "请在手机确认银河操作";
+        if (phoneConfirmation) controlNotice = "请在手机确认" + ("LYNKCO".equals(brand) ? "领克" : "银河") + "操作";
 
         List<String> replyAvailable = WatchProtocol.knownActions(reply.optJSONArray("available"));
         List<String> replyMapped = reply.has("mapped")
                 ? WatchProtocol.knownActions(reply.optJSONArray("mapped"))
                 : new ArrayList<>(replyAvailable);
+        replyAvailable.removeIf(action -> "LYNKCO".equals(brand) != action.startsWith("lynk_"));
+        replyMapped.removeIf(action -> "LYNKCO".equals(brand) != action.startsWith("lynk_"));
         if (replyMapped.size() > WatchProtocol.HOME_ACTIONS) {
             replyMapped = new ArrayList<>(replyMapped.subList(0, WatchProtocol.HOME_ACTIONS));
         }
@@ -544,6 +549,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         if ("live".equals(mode) && vehicle != null && vehicle.optLong("updatedAt") > 0) {
             try {
                 JSONObject snapshot = new JSONObject(vehicle.toString());
+                snapshot.put("brand", brand);
                 snapshot.put("mapped", new JSONArray(mapped));
                 snapshot.put("vehicleName", vehicleName);
                 String text = snapshot.toString();
@@ -750,6 +756,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     }
 
     private void loadCachedCarImage() {
+        if (!brand.equals(prefs.getString("carImageBrand", "GALAXY"))) return;
         String hash = prefs.getString(CAR_IMAGE_HASH_KEY, "");
         String path = prefs.getString(CAR_IMAGE_FILE_KEY, "");
         if (hash.isEmpty() || path.isEmpty()) return;
@@ -780,7 +787,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
                 //noinspection ResultOfMethodCallIgnored
                 new File(previousPath).delete();
             }
-            prefs.edit().putString(CAR_IMAGE_HASH_KEY, hash)
+            prefs.edit().putString("carImageBrand", brand).putString(CAR_IMAGE_HASH_KEY, hash)
                     .putString(CAR_IMAGE_FILE_KEY, target.getAbsolutePath()).apply();
             carImageHash = hash;
             carImageView.setImageBitmap(bitmap);
@@ -791,12 +798,31 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         }
     }
 
+    private void applyBrand(String value) {
+        String next = "LYNKCO".equals(value) ? "LYNKCO" : "GALAXY";
+        if (brand.equals(next)) return;
+        brand = next;
+        clearConfirmationState();
+        failedCarImageHash = "";
+        mapped = new ArrayList<>();
+        available = new ArrayList<>();
+        controlDirections = new LinkedHashMap<>();
+        carImageHash = "";
+        resetImageSync();
+        if (carImageView != null) carImageView.setImageDrawable(null);
+        storedSnapshot = "";
+        prefs.edit().putString(SNAPSHOT_KEY, "").apply();
+        vehicleName = DEFAULT_VEHICLE_NAME;
+        applyVehicle(new JSONObject(), true);
+    }
+
     private void loadSnapshot() {
         String raw = prefs.getString(SNAPSHOT_KEY, "");
         if (raw.isEmpty() || hasReply) return;
         try {
             JSONObject snapshot = new JSONObject(raw);
             if (snapshot.optLong("updatedAt") <= 0) return;
+            brand = "LYNKCO".equals(snapshot.optString("brand")) ? "LYNKCO" : "GALAXY";
             storedSnapshot = raw;
             String savedName = snapshot.optString("vehicleName").trim();
             if (!savedName.isEmpty()) vehicleName = savedName;

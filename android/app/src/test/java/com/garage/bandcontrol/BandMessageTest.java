@@ -42,9 +42,9 @@ public final class BandMessageTest {
         assertTrue(reply.toString().getBytes(StandardCharsets.UTF_8).length <= BandMessage.MAX_BYTES);
     }
 
-    @Test public void allElevenControlsHaveDistinctWireNames() throws Exception {
+    @Test public void allBrandControlsHaveDistinctWireNames() throws Exception {
         CarAction[] actions = CarAction.values();
-        assertEquals(11, actions.length);
+        assertEquals(15, actions.length);
         for (CarAction action : actions) {
             BandMessage message = decode(new JSONObject().put("v", 1).put("id", "test-123")
                     .put("type", "prepare").put("action", action.id));
@@ -67,7 +67,7 @@ public final class BandMessageTest {
                 BandMessage request = decode(message.put("controlDirection", direction.id));
                 boolean expected = switch (action) {
                     case LOCK -> direction == ControlDirection.LOCK || direction == ControlDirection.UNLOCK;
-                    case FIND, TRUNK -> false;
+                    case FIND, TRUNK, LYNK_UNLOCK, LYNK_WINDOW, LYNK_KJCK, LYNK_CCQK -> false;
                     default -> direction == ControlDirection.OPEN || direction == ControlDirection.CLOSE;
                 };
                 if (expected) assertSame(direction, request.direction());

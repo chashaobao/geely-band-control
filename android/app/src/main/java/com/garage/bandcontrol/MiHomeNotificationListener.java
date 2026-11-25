@@ -33,7 +33,7 @@ public final class MiHomeNotificationListener extends NotificationListenerServic
         Notification notification = posted.getNotification();
         Bundle extras = notification.extras;
         if (extras == null || (notification.flags & Notification.FLAG_GROUP_SUMMARY) != 0) return;
-        MiHomeVoice.Match match = MiHomeVoice.match(extras.getCharSequence(Notification.EXTRA_TEXT),
+        MiHomeVoice.Match match = MiHomeVoice.match(app.brand.namespace, extras.getCharSequence(Notification.EXTRA_TEXT),
                 extras.getCharSequence(Notification.EXTRA_BIG_TEXT), extras.getCharSequence(Notification.EXTRA_TITLE));
         if (match != null) app.onVoiceNotification(posted.getKey(), posted.getPostTime(), match);
     }

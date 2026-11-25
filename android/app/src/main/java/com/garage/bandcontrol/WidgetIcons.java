@@ -23,9 +23,13 @@ final class WidgetIcons {
     private record Icon(Bitmap bitmap, Match match) {}
     private record Catalog(String version, int density, List<Icon> icons) {}
 
+    private final BrandConfig config;
+    WidgetIcons(BrandConfig config) { this.config = config; }
+
     private final Map<Resources, Catalog> catalogs = new WeakHashMap<>();
 
     Match identify(ImageView image, String version) {
+        if (config.iconPrefix == null) return null;
         if (!(image.getDrawable() instanceof BitmapDrawable drawable)) return null;
         Resources resources = image.getResources();
         int density = resources.getDisplayMetrics().densityDpi;
@@ -45,7 +49,7 @@ final class WidgetIcons {
         return match;
     }
 
-    private static List<Icon> load(Resources resources) {
+    private List<Icon> load(Resources resources) {
         List<Icon> icons = new ArrayList<>();
         add(icons, resources, new Match(CarAction.LOCK, WidgetTree.LOCKED),
                 "door_lock_off_black", "door_lock_off_white");
@@ -64,24 +68,24 @@ final class WidgetIcons {
         return icons;
     }
 
-    private static void addVariants(List<Icon> icons, Resources resources, CarAction action, String name) {
+    private void addVariants(List<Icon> icons, Resources resources, CarAction action, String name) {
         add(icons, resources, new Match(action, ""), name + "_off_black", name + "_off_white", name + "_on");
     }
 
-    private static void addDirectionalVariants(List<Icon> icons, Resources resources, CarAction action, String name) {
+    private void addDirectionalVariants(List<Icon> icons, Resources resources, CarAction action, String name) {
         add(icons, resources, new Match(action, "", ControlDirection.OPEN),
                 name + "_off_black", name + "_off_white");
         add(icons, resources, new Match(action, "", ControlDirection.CLOSE), name + "_on");
     }
 
     @SuppressLint("DiscouragedApi")
-    private static void add(List<Icon> icons, Resources resources, Match match, String... names) {
+    private void add(List<Icon> icons, Resources resources, Match match, String... names) {
         BitmapFactory.Options unscaled = new BitmapFactory.Options();
         unscaled.inScaled = false;
         TypedValue value = new TypedValue();
         for (String name : names) {
             // Resolve the installed provider's resource names instead of using build-specific IDs.
-            int id = resources.getIdentifier("car_wg_funicon_" + name, "mipmap", GalaxyWidgets.PACKAGE);
+            int id = resources.getIdentifier(config.iconPrefix + name, "mipmap", config.packageName);
             if (id == 0) continue;
             try {
                 if (resources.getDrawable(id, null) instanceof BitmapDrawable drawable

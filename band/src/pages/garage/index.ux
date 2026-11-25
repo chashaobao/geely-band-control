@@ -198,7 +198,9 @@ const ACTIONS = [
   ['cool', '快降温'],
   ['purify', '净化'],
   ['defrost', '除霜'],
-  ['sentry', '哨兵']
+  ['sentry', '哨兵'],
+  ['lynk_unlock', '车锁槽位'], ['lynk_window', '车窗槽位'],
+  ['lynk_kjck', 'kjck'], ['lynk_ccqk', 'ccqk']
 ]
 const HOME_ACTIONS = 4
 const STATUS_INTERVAL_MS = 12000
@@ -347,6 +349,7 @@ function actionRows(ids, available, linked, controlPending, directions, profile 
     let hint = ''
     if (!linked) hint = '待连接'
     else if (!isAvailable && !controlPending) hint = '暂不可用'
+    if (id.indexOf('lynk_') === 0) hint = '待验证'
     return {
       id, label, icon, hint,
       style: variantClass('tile ' + state + size, profile),
@@ -388,6 +391,7 @@ export default {
     watchHomeUi: watchHomeClasses('standard'),
     watchPage: 0,
     vehicleName: DEFAULT_VEHICLE_NAME,
+    brand: 'GALAXY',
     carImageSrc: DEFAULT_CAR_IMAGE,
     displayRows: [],
     mode: '',
@@ -477,7 +481,8 @@ export default {
 
   loadCarImageCache() {
     if (this.carImageHash) return
-    readCachedCarImage((uri, hash) => {
+    readCachedCarImage((uri, hash, brand) => {
+      if (brand !== this.brand) return;
       if (!this.visible || this.carImageHash || this.failedCarImageHash === hash) return
       this.carImageHash = hash
       this.carImageUri = uri
@@ -563,6 +568,7 @@ export default {
   loadSnapshot() {
     readSnapshot((snapshot, value) => {
       if (!this.visible || this.hasReply || this.compatibilityNotice) return
+      this.brand = snapshot.brand === "LYNKCO" ? "LYNKCO" : "GALAXY";
       if (typeof snapshot.vehicleName === 'string' && snapshot.vehicleName.trim()) {
         this.vehicleName = normalizeVehicleName(snapshot.vehicleName)
       }
@@ -1016,6 +1022,26 @@ export default {
     return Date.now().toString(36) + '_' + this.sequence.toString(36)
   },
 
+  applyBrand(value) {
+    const brand = value === 'LYNKCO' ? 'LYNKCO' : 'GALAXY'
+    if (brand === this.brand) return
+    this.brand = brand
+    this.clearConfirmation()
+    this.carImageUri = ""
+    this.failedCarImageHash = ""
+    this.mapped = []
+    this.available = []
+    this.controlDirections = {}
+    this.imageSync = null
+    this.carImageHash = ''
+    this.carImageSrc = DEFAULT_CAR_IMAGE
+    this.storedSnapshot = null
+    writeSnapshot("", () => {})
+    this.vehicleName = DEFAULT_VEHICLE_NAME
+    this.showVehicle({}, true)
+    this.updateRows()
+  },
+
   receive(raw) {
     if (!this.visible) return
     const request = this.pending
@@ -1045,6 +1071,7 @@ export default {
     if (request.type === 'hello') {
       if (reply.type === 'hello-reply' && typeof reply.v === 'number' && typeof reply.protocol === 'number') {
         this.recordEvent('recv', request, 'hello-reply')
+        this.applyBrand(reply.brand)
         this.finishHello(reply)
       }
       return
@@ -1066,18 +1093,20 @@ export default {
       const completedHash = this.imageSync.hash
       const base64Text = this.imageSync.chunks.join('')
       this.imageSync = null
+      const imageBrand = this.brand
       saveCarImage(completedHash, base64Text, this.carImageUri, (uri, savedHash) => {
-        if (!this.visible) return
+        if (!this.visible || imageBrand !== this.brand) return
         this.carImageHash = savedHash
         this.carImageUri = uri
         this.carImageSrc = uri
-      })
+      }, imageBrand)
       this.scheduleStatus()
       return
     }
     if (reply.v !== PROTOCOL || reply.type !== 'reply') return
     if (reply.mode !== 'demo' && reply.mode !== 'live') return
     this.recordEvent('recv', request)
+    this.applyBrand(reply.brand)
     const firstReply = !this.linked || this.mode !== reply.mode
     this.clearRequest()
     this.linked = true
@@ -1091,9 +1120,10 @@ export default {
     this.controlNotice = typeof reply.controlNotice === 'string' ? reply.controlNotice : ''
     this.blockedControls = reply.blocked && typeof reply.blocked === 'object' ? reply.blocked : {}
     this.controlPending = reply.controlPending === true || this.phoneConfirmation
-    if (this.phoneConfirmation) this.controlNotice = '请在手机确认银河操作'
-    const available = knownActions(reply.available)
-    const mapped = (Array.isArray(reply.mapped) ? knownActions(reply.mapped) : available).slice(0, HOME_ACTIONS)
+    if (this.phoneConfirmation) this.controlNotice = '请在手机确认' + (this.brand === 'LYNKCO' ? '领克' : '银河') + '操作'
+    const forBrand = ids => knownActions(ids).filter(id => this.brand === 'LYNKCO' ? id.indexOf('lynk_') === 0 : id.indexOf('lynk_') !== 0)
+    const available = forBrand(reply.available)
+    const mapped = (Array.isArray(reply.mapped) ? forBrand(reply.mapped) : available).slice(0, HOME_ACTIONS)
     const partialUpdate = this.controlPending && !firstReply && mapped.length < this.mapped.length
       && mapped.every(action => this.mapped.indexOf(action) >= 0)
     if (!partialUpdate) this.mapped = mapped
@@ -1109,7 +1139,7 @@ export default {
         || !needsDirection(action, this.controlDirectionsSupported) && !(action === 'lock' && cachedVehicle)))
     this.controlDirections = this.controlPending && !firstReply && !cachedVehicle
       ? Object.assign({}, this.controlDirections, directions) : directions
-    this.emptyLabel = '请在手机配置银河卡片'
+    this.emptyLabel = '请在手机配置' + (this.brand === 'LYNKCO' ? '领克' : '银河') + '卡片'
     this.updateRows()
     if (typeof reply.vehicleName === 'string') {
       this.vehicleName = normalizeVehicleName(reply.vehicleName)
@@ -1118,7 +1148,7 @@ export default {
     this.showVehicle(vehicle, cachedVehicle)
     if (this.mode === 'live') {
       const snapshot = vehicle.updatedAt > 0
-        ? JSON.stringify(Object.assign({}, vehicle, { mapped: this.mapped, vehicleName: this.vehicleName }))
+        ? JSON.stringify(Object.assign({}, vehicle, { brand: this.brand, mapped: this.mapped, vehicleName: this.vehicleName }))
         : ''
       if (snapshot !== this.storedSnapshot) {
         this.storedSnapshot = snapshot

@@ -10,6 +10,7 @@
 
     <queries>
         <package android:name="com.geelygalaxy.customer" />
+        <package android:name="com.lynkco.customer" />
     </queries>
 
     <application

@@ -11,7 +11,11 @@ enum CarAction {
     COOL("cool", "极速降温"),
     PURIFY("purify", "净化"),
     DEFROST("defrost", "除霜"),
-    SENTRY("sentry", "哨兵模式");
+    SENTRY("sentry", "哨兵模式"),
+    LYNK_UNLOCK("lynk_unlock", "车锁槽位（待验证）"),
+    LYNK_WINDOW("lynk_window", "车窗槽位（待验证）"),
+    LYNK_KJCK("lynk_kjck", "kjck（待验证）"),
+    LYNK_CCQK("lynk_ccqk", "ccqk（待验证）");
 
     final String id;
     final String label;

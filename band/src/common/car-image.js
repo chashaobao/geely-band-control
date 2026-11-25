@@ -31,7 +31,7 @@ export function readCachedCarImage(onRead) {
         try {
           const parsed = JSON.parse(value)
           if (parsed && typeof parsed.hash === 'string' && typeof parsed.uri === 'string' && parsed.uri) {
-            onRead(parsed.uri, parsed.hash)
+            onRead(parsed.uri, parsed.hash, parsed.brand || "GALAXY")
           }
         } catch (_) {
           // Ignore malformed cache.
@@ -43,7 +43,7 @@ export function readCachedCarImage(onRead) {
   }
 }
 
-export function saveCarImage(hash, base64Text, previousUri, onSaved) {
+export function saveCarImage(hash, base64Text, previousUri, onSaved, brand = "GALAXY") {
   const bytes = decodeBase64(base64Text)
   if (!bytes.length) return
   const targetUri = 'internal://files/car_' + hash + '.png'
@@ -51,7 +51,7 @@ export function saveCarImage(hash, base64Text, previousUri, onSaved) {
   const persistMeta = uri => {
     try {
       const storage = require('@system.storage')
-      storage.set({ key: CACHE_KEY, value: JSON.stringify({ hash, uri }) })
+      storage.set({ key: CACHE_KEY, value: JSON.stringify({ hash, uri, brand }) })
     } catch (_) {
       // Cache persistence is optional.
     }

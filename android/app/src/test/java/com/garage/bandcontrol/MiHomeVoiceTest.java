@@ -19,6 +19,15 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public final class MiHomeVoiceTest {
+    @Test public void namespacesAreIsolatedAndUnverifiedLynkControlsAreClosed() {
+        assertEquals(TEST, MiHomeVoice.match("LYNKCO_V1", "LYNKCO_V1:TEST", null, null).command());
+        assertNull(MiHomeVoice.match("LYNKCO_V1", "GARAGE_V1:TEST", null, null));
+        assertNull(MiHomeVoice.match("GARAGE_V1", "LYNKCO_V1:TEST", null, null));
+        for (MiHomeVoice.Command command : MiHomeVoice.Command.values()) {
+            if (command != TEST) assertNull(MiHomeVoice.match("LYNKCO_V1", "LYNKCO_V1:" + command.name(), null, null));
+        }
+    }
+
     @Test public void acceptsOnlyTheOfficialPackage() {
         assertTrue(MiHomeVoice.isSource("com.xiaomi.smarthome"));
         assertFalse(MiHomeVoice.isSource("com.xiaomi.smarthome.other"));
@@ -45,7 +54,9 @@ public final class MiHomeVoiceTest {
             assertEquals(command, MiHomeVoice.match(command.code, null, null).command());
             if (command.action != null) mapped.add(command.action);
         }
-        assertEquals(EnumSet.allOf(CarAction.class), mapped);
+        EnumSet<CarAction> galaxy = EnumSet.allOf(CarAction.class);
+        galaxy.removeIf(action -> action.id.startsWith("lynk_"));
+        assertEquals(galaxy, mapped);
         assertEquals(13, MiHomeVoice.Command.values().length);
     }
 

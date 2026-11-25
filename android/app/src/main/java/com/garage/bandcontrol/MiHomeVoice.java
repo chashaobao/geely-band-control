@@ -67,10 +67,19 @@ final class MiHomeVoice {
     static boolean isSource(String packageName) { return PACKAGE.equals(packageName); }
 
     static Match match(CharSequence text, CharSequence bigText, CharSequence title) {
+        return match("GARAGE_V1", text, bigText, title);
+    }
+
+    static Match match(String namespace, CharSequence text, CharSequence bigText, CharSequence title) {
         CharSequence[] values = {text, bigText, title};
         Match match = null;
         for (int index = 0; index < values.length; index++) {
-            Command command = Command.fromText(values[index]);
+            CharSequence value = values[index];
+            Command command = null;
+            for (Command candidate : Command.values()) {
+                if (value != null && (namespace + ":" + candidate.name()).contentEquals(value)) command = candidate;
+            }
+            if ("LYNKCO_V1".equals(namespace) && command != Command.TEST) command = null;
             if (command == null) continue;
             if (match == null) match = new Match(command, FIELDS[index]);
             else if (match.command() != command) return null;

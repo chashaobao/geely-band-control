@@ -60,6 +60,8 @@ public final class GarageApp extends Application {
     private final MiHomeVoice voiceNotifications = new MiHomeVoice();
     private final Map<RequestKey, Receipt> receipts = new LinkedHashMap<>();
     private final Runnable controlTimeout = this::finishControlObservation;
+    private int widgetGeneration;
+    BrandConfig brand = BrandConfig.GALAXY;
     GalaxyWidgets widgets;
     WearLink link;
     private SharedPreferences prefs;
@@ -96,8 +98,43 @@ public final class GarageApp extends Application {
         } catch (JSONException invalid) {
             uiEvents.clear();
         }
-        widgets = new GalaxyWidgets(this, prefs, main, this::onWidgetChange);
+        brand = BrandConfig.fromId(prefs.getString("brand", "GALAXY"));
+        if (!prefs.contains("brand") && prefs.contains("widgetCards")) prefs.edit().putString("brand", "GALAXY").apply();
+        widgets = createWidgets();
         link = new WearLink(this, main, this::onBandMessage, confirmations::disconnect, this::changed, this::note);
+    }
+
+    private GalaxyWidgets createWidgets() {
+        int generation = ++widgetGeneration;
+        java.util.function.IntConsumer changed = id -> {
+            if (generation == widgetGeneration) onWidgetChange(id);
+        };
+        return brand == BrandConfig.LYNKCO ? new LynkWidgets(this, prefs, main, changed)
+                : new GalaxyWidgets(this, prefs, main, changed);
+    }
+
+    boolean needsBrandSelection() { return !prefs.contains("brand"); }
+
+    void selectBrand(BrandConfig selected) {
+        prefs.edit().putString("brand", selected.brand.name()).apply();
+        if (brand == selected) return;
+        disarm();
+        voiceEnabled = false;
+        voiceTestResult = "";
+        prefs.edit().putBoolean(VOICE_ENABLED, false).apply();
+        widgets.cancelRefresh("品牌已切换，请重新读取车况");
+        widgets.setListening(false);
+        main.removeCallbacks(controlTimeout);
+        dispatch = null;
+        receipts.clear();
+        handledConfirmation = AppWidgetManager.INVALID_APPWIDGET_ID;
+        brand = selected;
+        widgets = createWidgets();
+        loggedMissingCarImage = false;
+        lastResult = "品牌已切换，请核对或重新绑定" + brand.name + "小组件并重新授权";
+        updateWidgetListening();
+        updateConfirmationNotice();
+        changed();
     }
 
     boolean isArmed() {
@@ -292,6 +329,7 @@ public final class GarageApp extends Application {
     void onVoiceNotification(String key, long postedAt, MiHomeVoice.Match match) {
         if (!voiceEnabled) return;
         MiHomeVoice.Command command = match.command();
+        if (brand == BrandConfig.LYNKCO && command != MiHomeVoice.Command.TEST) return;
         String id = Long.toString(postedAt, 36) + "-" + Integer.toUnsignedString(key.hashCode(), 36);
         MiHomeVoice.Admission admission = voiceNotifications.receive(key, postedAt,
                 System.currentTimeMillis(), SystemClock.elapsedRealtime(), command);
@@ -326,7 +364,7 @@ public final class GarageApp extends Application {
             Log.i(TAG, "event=request_received" + requestFields(request));
             switch (request.type()) {
                 case "hello" -> send(node, request.id(),
-                        () -> BandMessage.helloReply(request.id(), BuildConfig.VERSION_NAME));
+                        () -> BandMessage.helloReply(request.id(), BuildConfig.VERSION_NAME).put("brand", brand.brand.name()));
                 case "status" -> reply(node, request, "ready", "已读取手机车况");
                 case "refresh" -> refresh((state, note) -> reply(node, request, state, note));
                 case "prepare" -> prepare(node, request);
@@ -425,7 +463,7 @@ public final class GarageApp extends Application {
         dispatch = null;
         main.removeCallbacks(controlTimeout);
         if (widgets.hasOfficialConfirmation(finished.cardId())) {
-            setResult(ControlPause.PHONE_CONFIRM.message);
+            setResult(ControlPause.PHONE_CONFIRM.message.replace("银河", brand.name));
         } else {
             changed();
         }
@@ -457,6 +495,10 @@ public final class GarageApp extends Application {
     }
 
     void respondOnPhone(GalaxyWidgets.Card card, WidgetTree.OfficialConfirmation shown, long revision, boolean accept) {
+        if (brand == BrandConfig.LYNKCO) {
+            setResult("请在手机领克官方卡片确认操作");
+            return;
+        }
         WidgetTree.OfficialConfirmation current = widgets.officialConfirmation(card);
         if (current == null || widgets.revision(card) != revision || !current.equals(shown)) {
             setResult("官方确认已变化，请重新打开卡片核对");
@@ -495,7 +537,7 @@ public final class GarageApp extends Application {
         manager.notify(CONFIRM_NOTICE, new Notification.Builder(this, CONFIRM_CHANNEL)
                 .setSmallIcon(R.drawable.ic_garage)
                 .setContentTitle(getString(R.string.app_name))
-                .setContentText(ControlPause.PHONE_CONFIRM.message)
+                .setContentText(ControlPause.PHONE_CONFIRM.message.replace("银河", brand.name))
                 .setContentIntent(openNotification)
                 .setVisibility(Notification.VISIBILITY_PRIVATE)
                 .setAutoCancel(true)
@@ -516,7 +558,7 @@ public final class GarageApp extends Application {
 
     private String liveControlNotice(ControlPause pause, boolean requireWearService) {
         return ControlPolicy.liveControlNotice(
-                pause == ControlPause.NONE ? "" : pause.message,
+                pause == ControlPause.NONE ? "" : pause.message.replace("银河", brand.name),
                 requireWearService,
                 serviceRunning,
                 isArmed());
@@ -588,7 +630,7 @@ public final class GarageApp extends Application {
         JSONArray mapped = new JSONArray();
         response.put("mode", "live")
                 .put("vehicleName", vehicleName)
-                .put("available", available).put("mapped", mapped).put("vehicle", widgets.vehicle().json());
+                .put("brand", brand.brand.name()).put("available", available).put("mapped", mapped).put("vehicle", widgets.vehicle().json());
 
         ControlPause pause = controlPause();
         String notice = liveControlNotice(pause, true);

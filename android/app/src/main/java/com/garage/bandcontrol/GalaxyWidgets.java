@@ -31,17 +31,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.IntConsumer;
 
-final class GalaxyWidgets {
+class GalaxyWidgets {
     static final int BIND_REQUEST = 71;
     static final int CONFIGURE_REQUEST = 72;
-    static final int HEIGHT_DP = 175;
-    static final String PACKAGE = "com.geelygalaxy.customer";
-    private static final ComponentName PROVIDER = new ComponentName(PACKAGE,
-            "com.geely.galaxy.car.weight.appwidget.WgProviderMiddle");
-    private static final String CARDS_KEY = "widgetCards";
-    private static final int HOST_ID = 0x4742;
     private static final long REFRESH_TIMEOUT_MS = 9_000;
-    private static final Control WAITING_FOR_WIDGET = new Control(null, "等待银河卡片更新");
+    private static final Control WAITING_FOR_WIDGET = new Control(null, "等待官方卡片更新");
 
     record Binding(String slot, String fingerprint, String action, String lockState) {
         boolean matches(WidgetTree.Button button) {
@@ -113,19 +107,35 @@ final class GalaxyWidgets {
     private final IntConsumer onChange;
     private final AppWidgetManager manager;
     private final AppWidgetHost host;
-    private final WidgetIcons icons = new WidgetIcons();
+    final BrandConfig config;
+    private final WidgetTree tree;
+    private final WidgetIcons icons;
+    private final String packageName, cardsKey;
+    private final ComponentName providerName;
+    private final int heightDp;
     private final Map<Integer, Card> cards = new LinkedHashMap<>();
     private final Runnable refreshTimeout = this::finishTimedOutRefresh;
     private boolean listening;
     private Refresh refresh;
 
     GalaxyWidgets(Context context, SharedPreferences prefs, Handler main, IntConsumer onChange) {
+        this(context, prefs, main, onChange, BrandConfig.GALAXY);
+    }
+
+    GalaxyWidgets(Context context, SharedPreferences prefs, Handler main, IntConsumer onChange, BrandConfig config) {
+        this.config = config;
+        tree = new WidgetTree(config);
+        icons = new WidgetIcons(config);
+        packageName = config.packageName;
+        providerName = new ComponentName(packageName, config.provider);
+        cardsKey = config.cardsKey;
+        heightDp = config.heightDp;
         this.context = context;
         this.prefs = prefs;
         this.main = main;
         this.onChange = onChange;
         manager = AppWidgetManager.getInstance(context);
-        host = new AppWidgetHost(context, HOST_ID) {
+        host = new AppWidgetHost(context, config.hostId) {
             @Override protected AppWidgetHostView onCreateView(Context viewContext, int id,
                                                               AppWidgetProviderInfo info) {
                 return new HostedView(viewContext);
@@ -202,7 +212,7 @@ final class GalaxyWidgets {
 
     boolean finishBind(int id) {
         AppWidgetProviderInfo info = manager.getAppWidgetInfo(id);
-        if (info == null || !PROVIDER.equals(info.provider)) {
+        if (info == null || !providerName.equals(info.provider)) {
             host.deleteAppWidgetId(id);
             return false;
         }
@@ -240,11 +250,11 @@ final class GalaxyWidgets {
     boolean configure(Activity activity, Card card) {
         if (card != primary()) return false;
         AppWidgetProviderInfo info = manager.getAppWidgetInfo(card.id);
-        if (info == null || !PROVIDER.equals(info.provider)) return false;
+        if (info == null || !providerName.equals(info.provider)) return false;
         if (info.configure != null) {
             host.startAppWidgetConfigureActivityForResult(activity, card.id, 0, CONFIGURE_REQUEST, null);
         } else {
-            WidgetTree.Button settings = uniqueRole(card, WidgetTree.SETTINGS);
+            WidgetTree.Button settings = uniqueRole(card, config.settings);
             if (settings == null || !settings.view().performClick()) return false;
         }
         recheckAfterConfiguration();
@@ -263,7 +273,7 @@ final class GalaxyWidgets {
     }
 
     boolean showsSetup(Card card) {
-        return cards.get(card.id) == card && card.view.layout.equals(WidgetTree.SETUP_LAYOUT);
+        return cards.get(card.id) == card && card.view.layout.equals(config.setupLayout);
     }
 
     List<WidgetTree.Button> buttons(Card card) {
@@ -271,11 +281,11 @@ final class GalaxyWidgets {
         String version = providerVersion();
         if (version == null) return Collections.emptyList();
         layoutForScan(card);
-        return WidgetTree.buttons(card.view, version, card.validReading, icons);
+        return tree.buttons(card.view, version, card.validReading, icons);
     }
 
     boolean bindButton(Card card, WidgetTree.Button original, String action, String lockState) {
-        if (card != primary()) return false;
+        if (config.slotMode == BrandConfig.SlotMode.FIXED || card != primary()) return false;
         WidgetTree.Button current = null;
         for (WidgetTree.Button button : buttons(card)) {
             if (button.slot().equals(original.slot()) && button.fingerprint().equals(original.fingerprint())) {
@@ -300,10 +310,10 @@ final class GalaxyWidgets {
 
     CarImage.Packaged carImage() {
         Card card = primary();
-        if (card == null || !hasNormalLayout(card) || WidgetTree.loading(card.view)) return null;
+        if (card == null || !hasNormalLayout(card) || tree.loading(card.view)) return null;
         if (card.carImageRevision != card.view.revision) {
             layoutForScan(card);
-            var view = WidgetTree.vehicleImage(card.view);
+            var view = tree.vehicleImage(card.view);
             CarImage.Packaged extracted = CarImage.extract(view);
             if (extracted != null) {
                 card.carImage = extracted;
@@ -323,12 +333,12 @@ final class GalaxyWidgets {
     }
 
     private boolean hasNormalLayout(Card card) {
-        return cards.get(card.id) == card && WidgetTree.NORMAL_LAYOUT.equals(card.view.layout);
+        return cards.get(card.id) == card && config.normalLayout.equals(card.view.layout);
     }
 
     private void recordReading(Card card) {
         VehicleStatus update = hasNormalLayout(card)
-                ? WidgetTree.read(card.view, System.currentTimeMillis(), ZoneId.systemDefault()) : VehicleStatus.EMPTY;
+                ? tree.read(card.view, System.currentTimeMillis(), ZoneId.systemDefault()) : VehicleStatus.EMPTY;
         card.validReading = update.updatedAt() != 0 && update.updatedAt() >= card.latest.updatedAt();
         if (!card.validReading) return;
         card.latest = update;
@@ -344,7 +354,7 @@ final class GalaxyWidgets {
         Card card = primary();
         if (card == null || !hasNormalLayout(card)) return Collections.emptyMap();
         Map<CarAction, Control> result = new LinkedHashMap<>();
-        if (WidgetTree.loading(card.view) || WidgetTree.confirmationVisible(card.view)) {
+        if (tree.loading(card.view) || tree.confirmationVisible(card.view)) {
             for (CarAction action : card.lastMapped.values()) result.put(action, WAITING_FOR_WIDGET);
             return result;
         }
@@ -357,7 +367,8 @@ final class GalaxyWidgets {
                         && match.direction() == ControlDirection.CLOSE);
         for (WidgetTree.Button button : buttons) {
             if (!button.role().isEmpty()) continue;
-            Binding binding = card.binding(button);
+            Binding binding = config.slotMode == BrandConfig.SlotMode.FIXED
+                    ? LynkWidgets.binding(button) : card.binding(button);
             CarAction action = binding == null ? null : CarAction.fromId(binding.action());
             if (action == null || live.containsKey(action)) continue;
 
@@ -388,11 +399,11 @@ final class GalaxyWidgets {
         }
 
         Map<String, CarAction> mapped = new LinkedHashMap<>();
-        for (String slot : WidgetTree.SLOTS) {
+        for (String slot : config.slots) {
             CarAction action = liveSlots.get(slot);
             if (action == null) {
                 action = card.lastMapped.get(slot);
-                if (action == null || live.containsKey(action) || !WidgetTree.slotLoading(card.view, slot)) continue;
+                if (action == null || live.containsKey(action) || !tree.slotLoading(card.view, slot)) continue;
             }
             mapped.put(slot, action);
             result.put(action, live.getOrDefault(action, WAITING_FOR_WIDGET));
@@ -404,7 +415,7 @@ final class GalaxyWidgets {
     void refresh(RefreshResult result) {
         Card card = primary();
         if (card == null) {
-            result.accept("blocked", "请先添加银河中号小组件");
+            result.accept("blocked", "请先添加" + config.name + "小组件");
             return;
         }
         if (refresh != null && refresh.card == card) {
@@ -412,21 +423,21 @@ final class GalaxyWidgets {
             return;
         }
         if (hasOfficialConfirmation()) {
-            result.accept("phone_confirm", "请先在手机处理银河官方确认");
+            result.accept("phone_confirm", "请先在手机处理" + config.name + "官方确认");
             return;
         }
-        WidgetTree.Button button = uniqueRole(card, WidgetTree.REFRESH);
+        WidgetTree.Button button = uniqueRole(card, config.refresh);
         if (button == null) {
-            result.accept("cached", WidgetTree.loading(card.view)
-                    ? "银河卡片正在获取车况" : "当前卡片没有可用的刷新按钮");
+            result.accept("cached", tree.loading(card.view)
+                    ? config.name + "卡片正在获取车况" : "当前卡片没有可用的刷新按钮");
             return;
         }
         refresh = new Refresh(card, result);
         main.postDelayed(refreshTimeout, REFRESH_TIMEOUT_MS);
         try {
-            if (!button.view().performClick()) finishRefresh("cached", "银河卡片刷新按钮暂不可用");
+            if (!button.view().performClick()) finishRefresh("cached", config.name + "卡片刷新按钮暂不可用");
         } catch (RuntimeException unavailable) {
-            finishRefresh("cached", "银河卡片刷新暂不可用");
+            finishRefresh("cached", config.name + "卡片刷新暂不可用");
         }
     }
 
@@ -456,7 +467,7 @@ final class GalaxyWidgets {
     private WidgetTree.Button uniqueRole(Card card, String role) {
         if (!hasNormalLayout(card)) return null;
         layoutForScan(card);
-        for (WidgetTree.Button button : WidgetTree.buttons(card.view, "", false, icons)) {
+        for (WidgetTree.Button button : tree.buttons(card.view, "", false, icons)) {
             if (role.equals(button.role())) return button;
         }
         return null;
@@ -469,7 +480,7 @@ final class GalaxyWidgets {
 
     boolean hasOfficialConfirmation(int id) {
         Card card = cards.get(id);
-        return card != null && hasNormalLayout(card) && WidgetTree.confirmationVisible(card.view);
+        return card != null && hasNormalLayout(card) && tree.confirmationVisible(card.view);
     }
 
     Card confirmationCard(int handledId) {
@@ -480,7 +491,7 @@ final class GalaxyWidgets {
     WidgetTree.OfficialConfirmation officialConfirmation(Card card) {
         if (card == null || card != primary() || !hasNormalLayout(card)) return null;
         layoutForScan(card);
-        return WidgetTree.confirmation(card.view);
+        return tree.confirmation(card.view);
     }
 
     long revision(Card card) {
@@ -488,15 +499,15 @@ final class GalaxyWidgets {
     }
 
     private AppWidgetProviderInfo provider() {
-        for (AppWidgetProviderInfo info : manager.getInstalledProvidersForPackage(PACKAGE, Process.myUserHandle())) {
-            if (PROVIDER.equals(info.provider)) return info;
+        for (AppWidgetProviderInfo info : manager.getInstalledProvidersForPackage(packageName, Process.myUserHandle())) {
+            if (providerName.equals(info.provider)) return info;
         }
         return null;
     }
 
     private String providerVersion() {
         try {
-            var info = context.getPackageManager().getPackageInfo(PACKAGE, 0);
+            var info = context.getPackageManager().getPackageInfo(packageName, 0);
             return info.getLongVersionCode() + ":" + info.lastUpdateTime + ":"
                     + (context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK);
         } catch (PackageManager.NameNotFoundException uninstalled) {
@@ -505,9 +516,9 @@ final class GalaxyWidgets {
     }
 
     private String layoutName(RemoteViews views) {
-        if (views == null || !PACKAGE.equals(views.getPackage())) return "";
+        if (views == null || !packageName.equals(views.getPackage())) return "";
         try {
-            return context.getPackageManager().getResourcesForApplication(PACKAGE)
+            return context.getPackageManager().getResourcesForApplication(packageName)
                     .getResourceEntryName(views.getLayoutId());
         } catch (PackageManager.NameNotFoundException | Resources.NotFoundException unavailable) {
             return "";
@@ -527,8 +538,8 @@ final class GalaxyWidgets {
         Bundle options = new Bundle();
         options.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, width);
         options.putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, width);
-        options.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, HEIGHT_DP);
-        options.putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, HEIGHT_DP);
+        options.putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, heightDp);
+        options.putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, heightDp);
         options.putInt(AppWidgetManager.OPTION_APPWIDGET_HOST_CATEGORY, AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN);
         return options;
     }
@@ -546,7 +557,7 @@ final class GalaxyWidgets {
         if (card.view.getWidth() > 0 && card.view.getHeight() > 0 && !card.view.isLayoutRequested()) return;
         // A widget update can replace the controls before the next layout pass.
         int width = card.view.getWidth() > 0 ? card.view.getWidth() : dp(widthDp());
-        int height = card.view.getHeight() > 0 ? card.view.getHeight() : dp(HEIGHT_DP);
+        int height = card.view.getHeight() > 0 ? card.view.getHeight() : dp(heightDp);
         int left = card.view.getLeft();
         int top = card.view.getTop();
         card.view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
@@ -561,12 +572,12 @@ final class GalaxyWidgets {
     private void restore() {
         if (!cards.isEmpty()) return;
         try {
-            JSONArray saved = new JSONArray(prefs.getString(CARDS_KEY, "[]"));
+            JSONArray saved = new JSONArray(prefs.getString(cardsKey, "[]"));
             for (int i = 0; i < saved.length(); i++) {
                 JSONObject entry = saved.getJSONObject(i);
                 int id = entry.getInt("id");
                 AppWidgetProviderInfo info = manager.getAppWidgetInfo(id);
-                if (info == null || !PROVIDER.equals(info.provider)) continue;
+                if (info == null || !providerName.equals(info.provider)) continue;
                 JSONArray entries = entry.getJSONArray("bindings");
                 List<Binding> bindings = new ArrayList<>();
                 for (int j = 0; j < entries.length(); j++) {
@@ -593,7 +604,7 @@ final class GalaxyWidgets {
                 }
                 data.put(new JSONObject().put("id", card.id).put("bindings", entries));
             }
-            prefs.edit().putString(CARDS_KEY, data.toString()).apply();
+            prefs.edit().putString(cardsKey, data.toString()).apply();
         } catch (JSONException invalid) {
             throw new IllegalStateException(invalid);
         }

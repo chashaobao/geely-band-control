@@ -759,3 +759,52 @@ test('energy readings fall back to battery percentage when kilometers are unavai
   assert.equal(link.page.electricUnit, '%')
   assert.equal(link.page.watchSubrange, '电 85%')
 })
+
+
+test('Lynk fixed slots stay neutral, show pending validation and use prepare/token/execute', () => {
+  const link = start()
+  link.hello({ brand: 'LYNKCO' })
+  const state = { brand: 'LYNKCO', mapped: ['lynk_unlock', 'lynk_window', 'lynk_kjck', 'lynk_ccqk'],
+    available: ['lynk_unlock', 'lynk_window', 'lynk_kjck', 'lynk_ccqk'], controlDirections: {} }
+  link.reply(state)
+  assert.equal(link.page.brand, 'LYNKCO')
+  assert.equal(link.page.displayRows[1].first.label, 'kjck')
+  assert.equal(link.page.displayRows[1].first.hint, '待验证')
+  link.page.select('lynk_kjck')
+  assert.equal(link.sent.at(-1).data.type, 'prepare')
+  assert.equal(link.sent.at(-1).data.action, 'lynk_kjck')
+  assert.equal(link.sent.at(-1).data.controlDirection, undefined)
+  link.reply({ ...state, status: 'confirm', action: 'lynk_kjck', token: 'a'.repeat(36), message: 'kjck（待验证）' })
+  assert.match(link.page.confirmTitle, /待验证/)
+  link.page.execute()
+  assert.equal(link.sent.at(-1).data.type, "execute")
+  assert.equal(link.sent.at(-1).data.token, "a".repeat(36))
+  assert.equal(link.sent.at(-1).data.action, "lynk_kjck")
+})
+
+test('brand changes drop Galaxy actions, old vehicle state and image identity', () => {
+  const link = start()
+  link.hello()
+  link.reply({ vehicle: { totalKm: 600, updatedAt: 1700000000000 }, mapped: ['climate'], available: ['climate'] })
+  link.page.carImageHash = 'galaxy-image'
+  link.page.syncStatus()
+  link.reply({ brand: 'LYNKCO', mapped: ['climate', 'lynk_ccqk'], available: ['climate', 'lynk_ccqk'], controlDirections: {} })
+  assert.deepEqual(Array.from(link.page.mapped), ['lynk_ccqk'])
+  assert.equal(link.page.carImageHash, '')
+  assert.equal(link.page.total, '—')
+  link.page.syncStatus()
+  link.reply({ mapped: ['lynk_kjck', 'climate'], available: ['lynk_kjck', 'climate'] })
+  assert.equal(link.page.brand, 'GALAXY')
+  assert.deepEqual(Array.from(link.page.mapped), ['climate'])
+})
+
+test('Lynk official confirmation suspends fixed controls and expires the local prompt', () => {
+  const link = start()
+  link.hello({ brand: 'LYNKCO' })
+  link.reply({ brand: 'LYNKCO', mapped: ['lynk_kjck'], available: ['lynk_kjck'], phoneConfirmation: true })
+  const before = link.sent.length
+  link.page.select('lynk_kjck')
+  assert.equal(link.page.phoneConfirmation, true)
+  assert.match(link.page.controlNotice, /领克/)
+  assert.ok(link.sent.slice(before).every(item => item.data.type !== 'prepare' && item.data.type !== 'execute'))
+})
