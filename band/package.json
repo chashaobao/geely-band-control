@@ -1,0 +1,13 @@
+{
+  "name": "galaxy-band-control",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "aiot build"
+  },
+  "devDependencies": {
+    "aiot-toolkit": "2.0.5"
+  },
+  "browserslist": ["chrome 65"]
+}

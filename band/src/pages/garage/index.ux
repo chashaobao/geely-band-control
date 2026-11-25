@@ -1,0 +1,1363 @@
+<template>
+  <stack class="page">
+    <div class="screen home-screen" if="{{ !confirmTitle && !settingsOpen }}">
+      <div class="range" @click="toggleRange">
+        <div class="range-header">
+          <text class="model">银河星耀 8</text>
+          <text class="motion">{{ motion }}</text>
+        </div>
+        <image class="vehicle-image" src="/cards/garage/images/starshine-8.png"></image>
+        <div class="energy total-energy" if="{{ showTotalRange }}">
+          <text class="distance"><span class="total-label">总里程: </span>{{ total }}<span class="unit"> km</span></text>
+        </div>
+        <div class="split" if="{{ !showTotalRange }}">
+          <div class="energy">
+            <div class="energy-reading">
+              <image class="energy-icon" src="/common/images/energy-electric.png"></image>
+              <text class="{{ electric.length > 3 ? 'distance compact' : 'distance' }}">{{ electric }}<span class="unit"> km</span></text>
+            </div>
+            <div class="energy-track">
+              <div class="energy-fill electric-fill" if="{{ electricPercent > 0 }}" style="width: {{ electricPercent }}%"></div>
+            </div>
+          </div>
+          <div class="energy">
+            <div class="energy-reading">
+              <image class="energy-icon" src="/common/images/energy-fuel.png"></image>
+              <text class="{{ fuel.length > 3 ? 'distance compact' : 'distance' }}">{{ fuel }}<span class="unit"> km</span></text>
+            </div>
+            <div class="energy-track">
+              <div class="energy-fill fuel-fill" if="{{ fuelPercent > 0 }}" style="width: {{ fuelPercent }}%"></div>
+            </div>
+          </div>
+        </div>
+        <div class="range-indicators">
+          <div class="{{ showTotalRange ? 'range-dot' : 'range-dot active-range-dot' }}"></div>
+          <div class="{{ showTotalRange ? 'range-dot active-range-dot' : 'range-dot' }}"></div>
+        </div>
+      </div>
+      <div class="vehicle-meta">
+        <div class="refresh" @click="refresh">
+          <image class="refresh-icon" src="/common/images/refresh.png"></image>
+          <text class="updated">{{ refreshText }}</text>
+        </div>
+        <div class="meta-divider"></div>
+        <div class="connection" @click="openSettings">
+          <div class="connection-status">
+            <div class="{{ modeLabel === '已连接' || modeLabel === '演示' ? 'dot online' : 'dot' }}"></div>
+            <text class="mode">{{ modeLabel }}</text>
+          </div>
+          <image class="settings-icon" src="/common/images/settings.png"></image>
+        </div>
+      </div>
+      <text class="empty" if="{{ compatibilityNotice }}">{{ compatibilityNotice }}</text>
+      <div class="grid" if="{{ !compatibilityNotice }}">
+        <div class="control-row" for="{{ displayRows }}" tid="id">
+          <div class="{{ $item.first.style }}" @click="select($item.first.id)">
+            <div class="{{ $item.first.symbolStyle }}">
+              <image class="{{ $item.first.iconStyle }}" src="{{ $item.first.icon }}"></image>
+            </div>
+            <div class="tile-copy">
+              <text class="tile-label">{{ $item.first.label }}</text>
+              <text if="{{ $item.first.hint }}" class="tile-hint">{{ $item.first.hint }}</text>
+            </div>
+          </div>
+          <div if="{{ $item.second.id }}" class="{{ $item.second.style }}" @click="select($item.second.id)">
+            <div class="{{ $item.second.symbolStyle }}">
+              <image class="{{ $item.second.iconStyle }}" src="{{ $item.second.icon }}"></image>
+            </div>
+            <div class="tile-copy">
+              <text class="tile-label">{{ $item.second.label }}</text>
+              <text if="{{ $item.second.hint }}" class="tile-hint">{{ $item.second.hint }}</text>
+            </div>
+          </div>
+        </div>
+        <text class="empty" if="{{ displayRows.length === 0 }}">{{ emptyLabel }}</text>
+      </div>
+    </div>
+    <div class="screen confirmation" if="{{ confirmTitle }}">
+      <div class="confirm-action">
+        <image class="confirm-icon" src="{{ confirmIcon }}"></image>
+        <text class="confirm-title">{{ confirmTitle }}</text>
+      </div>
+      <text class="confirm-button" @click="execute">确认操作</text>
+      <text class="cancel-button" @click="cancel">取消</text>
+    </div>
+    <div class="screen settings-screen" if="{{ settingsOpen && !confirmTitle }}">
+      <text class="settings-title">设置</text>
+      <div class="haptics-setting">
+        <text class="haptics-label">车控震动</text>
+        <switch class="haptics-switch" checked="{{ hapticsEnabled }}" @change="changeHaptics"></switch>
+      </div>
+      <div class="diagnostics">
+        <text class="diagnostics-title">连接记录</text>
+        <text class="diagnostics-line" if="{{ diagnosticLines.length === 0 }}">暂无记录</text>
+        <text class="diagnostics-line" for="{{ diagnosticLines }}">{{ $item }}</text>
+      </div>
+      <text class="settings-back" @click="closeSettings">返回</text>
+    </div>
+    <div class="toast" if="{{ toastText && !confirmTitle }}">
+      <text class="toast-text">{{ toastText }}</text>
+    </div>
+  </stack>
+</template>
+
+<script>
+import { rangeText, readSnapshot, writeSnapshot } from '../../common/snapshot.js'
+import { actionIcon } from '../../common/action-icons.js'
+import manifest from '../../manifest.json'
+
+const ACTIONS = [
+  ['lock', '车锁'],
+  ['climate', '空调'],
+  ['window_vent', '窗微开'],
+  ['trunk', '后备箱'],
+  ['find', '寻车'],
+  ['window_open', '窗全开'],
+  ['heat', '快升温'],
+  ['cool', '快降温'],
+  ['purify', '净化'],
+  ['defrost', '除霜'],
+  ['sentry', '哨兵']
+]
+const HOME_ACTIONS = 4
+const STATUS_INTERVAL_MS = 12000
+const CONTROL_STATUS_INTERVAL_MS = 1500
+const PHONE_CONFIRM_INTERVAL_MS = 2500
+const TOAST_DURATION_MS = 2800
+const PROTOCOL = 1
+const MIN_PHONE_APP = '0.1.14'
+const HELLO_TIMEOUT_MS = 2000
+const READ_RETRY_MS = 500
+const MAX_REPLY_BYTES = 2048
+const EVENT_LOG_KEY = 'connection-events'
+const EVENT_LOG_LIMIT = 20
+const HAPTICS_KEY = 'control-haptics'
+const FAILURE_PULSE_GAP_MS = 200
+const REQUEST_FEATURES = { refresh: 'refresh', prepare: 'confirm', execute: 'confirm', cancel: 'cancel' }
+const WINDOW_ACTIONS = ['window_vent', 'window_open']
+const SWITCH_LABELS = { climate: '空调', heat: '升温', cool: '降温', purify: '净化', defrost: '除霜', sentry: '哨兵' }
+const NO_ACTION = { id: '', label: '', style: '', icon: '', iconStyle: '', symbolStyle: '', hint: '' }
+
+function versionParts(value) {
+  const match = typeof value === 'string' && /^(\d+)\.(\d+)\.(\d+)$/.exec(value)
+  return match ? match.slice(1).map(Number) : null
+}
+
+function compatibilityMessage(reply) {
+  if (reply.v !== PROTOCOL || reply.protocol !== PROTOCOL) return '请将手机和手环更新到配套版本'
+  const phone = versionParts(reply.phoneApp)
+  if (!phone) return ''
+  const band = versionParts(manifest.versionName)
+  const minimum = versionParts(MIN_PHONE_APP)
+  if (phone[0] > band[0]) return '请更新手环端到配套版本'
+  if (phone[0] < band[0]) return '请更新手机端到配套版本'
+  for (let i = 0; i < minimum.length; i++) {
+    if (phone[i] < minimum[i]) return '请更新手机端到配套版本'
+    if (phone[i] > minimum[i]) break
+  }
+  return ''
+}
+
+function exceedsReplyLimit(text) {
+  if (text.length > MAX_REPLY_BYTES) return true
+  let bytes = 0
+  for (let i = 0; i < text.length; i++) {
+    const unit = text.charCodeAt(i)
+    if (unit < 0x80) bytes += 1
+    else if (unit < 0x800) bytes += 2
+    else {
+      const next = text.charCodeAt(i + 1)
+      if (unit >= 0xd800 && unit <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4
+        i += 1
+      } else bytes += 3
+    }
+    if (bytes > MAX_REPLY_BYTES) return true
+  }
+  return false
+}
+
+function validPercent(value) {
+  return typeof value === 'number' && value >= 0 && value <= 100 ? value : null
+}
+
+function knownActions(ids) {
+  if (!Array.isArray(ids)) return []
+  return ids.filter((id, index) => ids.indexOf(id) === index && ACTIONS.some(action => action[0] === id))
+}
+
+function needsDirection(action, hasDirectionMap) {
+  return action === 'lock' ? hasDirectionMap : WINDOW_ACTIONS.includes(action) || !!SWITCH_LABELS[action]
+}
+
+function readControlDirections(directions, lockState) {
+  const result = {}
+  if (directions) {
+    for (const [action] of ACTIONS) {
+      const direction = directions[action]
+      if (action === 'lock' ? direction === 'lock' || direction === 'unlock'
+        : needsDirection(action, true) && (direction === 'open' || direction === 'close')) {
+        result[action] = direction
+      }
+    }
+  } else if (lockState === 'locked' || lockState === 'unlocked') {
+    result.lock = lockState === 'locked' ? 'unlock' : 'lock'
+  }
+  return result
+}
+
+function controlLabel(action, direction) {
+  if (action === 'lock') {
+    if (direction === 'lock') return '上锁'
+    if (direction === 'unlock') return '解锁'
+  }
+  if (WINDOW_ACTIONS.includes(action) && direction === 'close') return '关窗'
+  if (SWITCH_LABELS[action] && direction) return (direction === 'open' ? '开' : '关') + SWITCH_LABELS[action]
+  return ACTIONS.find(item => item[0] === action)[1]
+}
+
+function actionRows(ids, available, linked, controlPending, directions) {
+  function tile(id, solo) {
+    const label = controlLabel(id, directions[id])
+    const icon = actionIcon(id, directions[id])
+    const isAvailable = available.indexOf(id) >= 0
+    const size = solo ? ' full-tile' : ''
+    const state = isAvailable ? 'ready' : linked ? 'paused' : 'unassigned'
+    let hint = ''
+    if (!linked) hint = '待连接'
+    else if (!isAvailable && !controlPending) hint = '暂不可用'
+    return {
+      id, label, icon, hint, style: 'tile ' + state + size,
+      iconStyle: isAvailable ? 'tile-icon' : 'tile-icon muted-icon',
+      symbolStyle: isAvailable ? 'tile-symbol symbol-ready' : 'tile-symbol'
+    }
+  }
+
+  const rows = []
+  for (let i = 0; i < ids.length; i += 2) {
+    const second = ids[i + 1]
+    rows.push({ id: ids[i], first: tile(ids[i], !second), second: second ? tile(second, false) : NO_ACTION })
+  }
+  return rows
+}
+
+export default {
+  public: {
+    quickAction: ''
+  },
+  private: {
+    displayRows: [],
+    mode: '',
+    modeLabel: '待连接',
+    showTotalRange: false,
+    total: '—',
+    electric: '—',
+    fuel: '—',
+    electricPercent: null,
+    fuelPercent: null,
+    motion: '状态未知',
+    updated: '等待车况',
+    emptyLabel: '连接手机后显示已映射车控',
+    compatibilityNotice: '',
+    settingsOpen: false,
+    diagnosticLines: [],
+    hapticsEnabled: true,
+    toastText: '',
+    busy: false,
+    phoneConfirmation: false,
+    controlPending: false,
+    confirmTitle: '',
+    confirmIcon: ''
+  },
+
+  computed: {
+    refreshText() {
+      if (this.phoneConfirmation) return '请在手机确认'
+      if (this.controlPending) return '同步中…'
+      if (this.busy) return '请稍候…'
+      return this.updated
+    }
+  },
+
+  onInit() {
+    this.available = []
+    this.mapped = []
+    this.controlNotice = ''
+    this.blockedControls = {}
+    this.cachedVehicle = false
+    this.controlDirectionsSupported = false
+    this.controlDirections = {}
+    this.rowsKey = ''
+    this.confirmAction = ''
+    this.confirmToken = ''
+    this.connection = null
+    this.linkGeneration = 0
+    this.handshakeComplete = false
+    this.phoneApp = ''
+    this.protocol = null
+    this.features = null
+    this.pending = null
+    this.startTimer = null
+    this.openTimer = null
+    this.requestTimer = null
+    this.retryTimer = null
+    this.confirmTimer = null
+    this.pollTimer = null
+    this.toastTimer = null
+    this.sequence = 0
+    this.ready = false
+    this.visible = false
+    this.linked = false
+    this.hasReply = false
+    this.reportedLinkIssue = false
+    this.storedSnapshot = null
+    this.events = []
+    this.eventStorage = null
+    this.loadingEventLog = false
+    this.loadedEventLog = false
+    this.savingEventLog = false
+    this.eventLogDirty = false
+    this.hapticsLoaded = false
+    this.vibrator = undefined
+    this.failurePulseTimer = null
+  },
+
+  onReady() {
+    this.ready = true
+    this.startSession()
+  },
+
+  onShow() {
+    this.visible = true
+    this.reportedLinkIssue = false
+    this.startSession()
+  },
+
+  startSession() {
+    if (!this.ready || !this.visible || this.startTimer !== null
+        || this.pollTimer !== null || this.pending) return
+    // Let the first frame render before initializing optional native services.
+    this.startTimer = setTimeout(() => {
+      this.startTimer = null
+      if (!this.visible) return
+      if (!this.hasReply && this.storedSnapshot === null) this.loadSnapshot()
+      this.loadEventLog()
+      this.loadHapticsSetting()
+      this.syncStatus()
+    }, 100)
+  },
+
+  scheduleStatus() {
+    clearTimeout(this.pollTimer)
+    this.pollTimer = null
+    if (!this.visible || this.pending || this.confirmTitle || this.openTimer !== null
+        || this.compatibilityNotice) return
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = null
+      this.syncStatus()
+    }, this.phoneConfirmation ? PHONE_CONFIRM_INTERVAL_MS
+      : this.controlPending ? CONTROL_STATUS_INTERVAL_MS : STATUS_INTERVAL_MS)
+  },
+
+  loadSnapshot() {
+    readSnapshot((snapshot, value) => {
+      if (!this.visible || this.hasReply || this.compatibilityNotice) return
+      this.showVehicle(snapshot, true)
+      this.storedSnapshot = value
+      this.modeLabel = '离线缓存'
+      this.mapped = knownActions(snapshot.mapped).slice(0, HOME_ACTIONS)
+      this.updateRows()
+    })
+  },
+
+  loadEventLog() {
+    if (this.loadedEventLog || this.loadingEventLog) return
+    this.loadingEventLog = true
+    const loaded = value => {
+      let history
+      try {
+        history = JSON.parse(value)
+      } catch (_) {
+        history = []
+      }
+      if (Array.isArray(history)) {
+        const entries = history.filter(entry => entry && typeof entry.ts === 'number'
+          && typeof entry.event === 'string')
+        this.events = entries.concat(this.events).slice(-EVENT_LOG_LIMIT)
+      }
+      this.loadingEventLog = false
+      this.loadedEventLog = true
+      if (this.settingsOpen) this.updateDiagnosticLines()
+      this.saveEventLog()
+    }
+    try {
+      this.eventStorage = require('@system.storage')
+      this.eventStorage.get({ key: EVENT_LOG_KEY, success: loaded, fail: () => loaded('') })
+    } catch (_) {
+      loaded('')
+    }
+  },
+
+  recordEvent(event, request, detail = '') {
+    this.events.push({
+      ts: Date.now(), event, id: request ? request.id : '', type: request ? request.type : '',
+      action: request && request.action ? request.action : '', detail
+    })
+    if (this.events.length > EVENT_LOG_LIMIT) this.events.shift()
+    this.eventLogDirty = true
+    if (this.settingsOpen) this.updateDiagnosticLines()
+    this.saveEventLog()
+  },
+
+  saveEventLog() {
+    if (!this.eventStorage || !this.loadedEventLog || this.savingEventLog || !this.eventLogDirty) return
+    this.eventLogDirty = false
+    this.savingEventLog = true
+    const saved = () => {
+      this.savingEventLog = false
+      this.saveEventLog()
+    }
+    try {
+      this.eventStorage.set({ key: EVENT_LOG_KEY, value: JSON.stringify(this.events), complete: saved })
+    } catch (_) {
+      saved()
+    }
+  },
+
+  updateDiagnosticLines() {
+    this.diagnosticLines = this.events.slice(-3).reverse().map(entry => {
+      const time = new Date(entry.ts).toTimeString().slice(0, 8)
+      const summary = [time, entry.event, entry.type, entry.detail].filter(Boolean).join(' ')
+      return entry.id ? summary + '\n' + entry.id : summary
+    })
+  },
+
+  openSettings() {
+    if (this.busy || this.confirmTitle) return
+    this.settingsOpen = true
+    this.updateDiagnosticLines()
+  },
+
+  closeSettings() {
+    this.settingsOpen = false
+  },
+
+  loadHapticsSetting() {
+    if (this.hapticsLoaded) return
+    const loaded = value => {
+      if (this.hapticsLoaded) return
+      this.hapticsEnabled = value !== 'off'
+      this.hapticsLoaded = true
+    }
+    try {
+      this.eventStorage.get({ key: HAPTICS_KEY, success: loaded, fail: () => loaded('') })
+    } catch (_) {
+      loaded('')
+    }
+  },
+
+  changeHaptics(event) {
+    const enabled = event.checked === true
+    if (this.hapticsLoaded && this.hapticsEnabled === enabled) return
+    this.hapticsLoaded = true
+    this.hapticsEnabled = enabled
+    if (!enabled) this.clearFailurePulse()
+    try {
+      this.eventStorage.set({ key: HAPTICS_KEY, value: enabled ? 'on' : 'off' })
+    } catch (_) {
+      // The setting still applies while this page is open.
+    }
+  },
+
+  vibrateShort() {
+    if (!this.visible || !this.hapticsLoaded || !this.hapticsEnabled) return false
+    try {
+      if (this.vibrator === undefined) {
+        const vibrator = require('@system.vibrator')
+        this.vibrator = vibrator && typeof vibrator.vibrate === 'function' ? vibrator : null
+      }
+      if (!this.vibrator) return false
+      this.vibrator.vibrate({ mode: 'short' })
+      return true
+    } catch (_) {
+      this.vibrator = null
+      return false
+    }
+  },
+
+  vibrateFailure() {
+    if (this.failurePulseTimer !== null || !this.vibrateShort()) return
+    this.failurePulseTimer = setTimeout(() => {
+      this.failurePulseTimer = null
+      this.vibrateShort()
+    }, FAILURE_PULSE_GAP_MS)
+  },
+
+  clearFailurePulse() {
+    clearTimeout(this.failurePulseTimer)
+    this.failurePulseTimer = null
+  },
+
+  onHide() {
+    this.stopSession()
+  },
+
+  stopSession() {
+    if (!this.visible) return
+    this.visible = false
+    clearTimeout(this.startTimer)
+    this.startTimer = null
+    clearTimeout(this.pollTimer)
+    this.pollTimer = null
+    this.clearToast()
+    this.clearFailurePulse()
+    this.cancel()
+    this.disconnect('', 'hidden')
+  },
+
+  onDestroy() {
+    this.stopSession()
+    if (this.connection) {
+      this.connection.onopen = null
+      this.connection.onclose = null
+      this.connection.onerror = null
+      this.connection.onmessage = null
+    }
+  },
+
+  onBackPress() {
+    if (this.confirmTitle) {
+      this.cancel()
+      return true
+    }
+    if (this.settingsOpen) {
+      this.closeSettings()
+      return true
+    }
+    return false
+  },
+
+  syncStatus() {
+    if (this.connect(false)) this.request('status')
+    else this.scheduleStatus()
+  },
+
+  connect(manual) {
+    if (this.compatibilityNotice) {
+      if (manual) this.showToast(this.compatibilityNotice)
+      return false
+    }
+    if (!this.connection) {
+      try {
+        const interconnect = require('@system.interconnect')
+        const connection = interconnect.instance()
+        this.connection = connection
+        connection.onmessage = message => {
+          if (message) this.receive(message.data)
+        }
+        connection.onclose = () => {
+          if (this.visible) this.disconnect('手机连接已断开', 'closed')
+        }
+        connection.onerror = () => {
+          if (this.visible) this.disconnect('请检查手机上的手环通信服务', 'link_error')
+        }
+        connection.onopen = () => {
+          if (!this.visible || this.pending || this.confirmTitle) return
+          if (this.handshakeComplete) this.syncStatus()
+          else this.startHello()
+        }
+      } catch (error) {
+        this.connection = null
+        console.warn('腕上银河通信初始化失败', error && error.message)
+        if (manual || !this.reportedLinkIssue) {
+          this.reportedLinkIssue = true
+          this.recordEvent('disconnect', null, 'init_failed')
+          this.showToast('当前固件未能启动手机通信')
+        }
+        return false
+      }
+    }
+    if (this.handshakeComplete) return true
+    if (!this.visible || this.pending || this.openTimer !== null) return false
+
+    // The singleton can already be open when the page registers its callbacks.
+    const connection = this.connection
+    if (typeof connection.getReadyState === 'function') {
+      const timer = setTimeout(() => this.startHello(), 500)
+      this.openTimer = timer
+      try {
+        connection.getReadyState({
+          success: state => {
+            if (this.openTimer === timer && state && state.status === 1) this.startHello()
+          }
+        })
+      } catch (_) {
+        this.startHello()
+      }
+    } else {
+      this.startHello()
+    }
+    return false
+  },
+
+  startHello() {
+    clearTimeout(this.openTimer)
+    this.openTimer = null
+    if (!this.pending && !this.handshakeComplete && !this.compatibilityNotice) this.request('hello')
+  },
+
+  finishHello(reply) {
+    this.clearRequest()
+    if (reply) {
+      this.phoneApp = reply.phoneApp || ''
+      this.protocol = reply.protocol
+      this.features = Array.isArray(reply.features) ? reply.features.slice() : []
+      this.compatibilityNotice = compatibilityMessage(reply)
+      if (this.compatibilityNotice) {
+        this.modeLabel = '版本不符'
+        this.showToast(this.compatibilityNotice)
+        return
+      }
+    }
+    this.handshakeComplete = true
+    this.syncStatus()
+  },
+
+  supportsRequest(type) {
+    if (type === 'status' || type === 'hello') return true
+    const feature = REQUEST_FEATURES[type]
+    return this.features === null ? typeof feature === 'string' : this.features.indexOf(feature || type) >= 0
+  },
+
+  showToast(message) {
+    if (!this.visible || !message) return
+    this.clearToast()
+    this.toastText = message
+    this.toastTimer = setTimeout(() => this.clearToast(), TOAST_DURATION_MS)
+  },
+
+  clearToast() {
+    clearTimeout(this.toastTimer)
+    this.toastTimer = null
+    this.toastText = ''
+  },
+
+  toggleRange() {
+    this.showTotalRange = !this.showTotalRange
+  },
+
+  refresh() {
+    if (this.busy || this.confirmTitle) return
+    if (this.controlPending) {
+      this.showToast(this.controlNotice || '正在同步车况')
+      this.syncStatus()
+      return
+    }
+    if (!this.connect(true)) return
+    if (this.supportsRequest('refresh')) this.showToast('正在刷新车况…')
+    this.request('refresh')
+  },
+
+  select(action) {
+    if (this.busy || this.confirmTitle) return
+    if (!this.linked) {
+      this.showToast('请先连接手机')
+      this.vibrateFailure()
+      return
+    }
+    if (this.controlPending) {
+      this.showToast(this.controlNotice || '正在同步车况')
+      this.vibrateFailure()
+      this.syncStatus()
+      return
+    }
+    if (this.mapped.indexOf(action) < 0) {
+      this.showToast('请在手机核对银河小组件配置')
+      this.vibrateFailure()
+      return
+    }
+    if (this.mode === 'live' && !this.available.includes(action)
+        && (needsDirection(action, this.controlDirectionsSupported) || action === 'lock' && this.cachedVehicle)) {
+      const reason = this.blockedControls[action]
+      const notice = this.controlDirectionsSupported || action === 'lock'
+        ? this.controlNotice || (typeof reason === 'string' && reason) || '请刷新车况，核对按钮状态'
+        : '请更新手机端后使用此项车控'
+      this.showToast(notice)
+      this.vibrateFailure()
+      return
+    }
+    this.clearToast()
+    if (this.supportsRequest('prepare')) this.vibrateShort()
+    this.request('prepare', action)
+  },
+
+  execute() {
+    if (!this.confirmToken) return
+    const action = this.confirmAction
+    const token = this.confirmToken
+    this.clearConfirmation()
+    this.vibrateShort()
+    this.showToast(this.mode === 'demo' ? '正在执行演示…' : '正在发送命令…')
+    this.request('execute', action, token)
+  },
+
+  cancel() {
+    const token = this.confirmToken
+    this.clearConfirmation()
+    if (token) this.showToast('已取消操作')
+    if (token && this.linked && this.connection && this.supportsRequest('cancel')) {
+      this.sendRequest({ v: PROTOCOL, id: this.nextId(), type: 'cancel', token })
+    }
+    this.scheduleStatus()
+  },
+
+  clearConfirmation() {
+    clearTimeout(this.confirmTimer)
+    this.confirmTimer = null
+    this.confirmTitle = ''
+    this.confirmIcon = ''
+    this.confirmAction = ''
+    this.confirmToken = ''
+  },
+
+  request(type, action, token) {
+    if (!this.connection || !this.visible || this.confirmTitle) return
+    if (type !== 'hello' && !this.handshakeComplete) return
+    if (!this.supportsRequest(type)) {
+      this.showToast('手机端不支持此功能，请更新到配套版本')
+      if (type === 'prepare' || type === 'execute') this.vibrateFailure()
+      return
+    }
+    if (this.pending && (this.pending.type !== 'status' || type === 'status')) return
+    if (this.pending) this.clearRequest()
+    clearTimeout(this.pollTimer)
+    this.pollTimer = null
+    const id = this.nextId()
+    const request = { v: PROTOCOL, id, type }
+    if (type === 'hello') {
+      request.bandApp = manifest.versionName
+      request.minPhoneApp = MIN_PHONE_APP
+    }
+    if (action) request.action = action
+    if (token) request.token = token
+    if (type === 'prepare' && this.controlDirections[action]) {
+      request.controlDirection = this.controlDirections[action]
+    }
+    this.busy = type !== 'status'
+    this.pending = request
+    this.requestTimer = setTimeout(() => {
+      if (this.pending !== request) return
+      this.recordEvent('timeout', request)
+      if (type === 'hello') this.finishHello()
+      else this.disconnect('手机回复超时，请检查连接', 'timeout')
+    }, type === 'hello' ? HELLO_TIMEOUT_MS : type === 'refresh' ? 13000 : 8000)
+    this.sendRequest(request)
+  },
+
+  sendRequest(request, retried = false) {
+    const generation = this.linkGeneration
+    const oneWay = request.type === 'cancel'
+    let failed = false
+    const fail = () => {
+      if (failed || generation !== this.linkGeneration
+          || (oneWay ? !this.visible : this.pending !== request)) return
+      failed = true
+      this.recordEvent('send_failed', request)
+      if (request.type === 'hello') {
+        this.finishHello()
+      } else if (!retried && (request.type === 'status' || request.type === 'refresh')) {
+        this.retryTimer = setTimeout(() => {
+          this.retryTimer = null
+          if (this.pending === request) this.sendRequest(request, true)
+        }, READ_RETRY_MS)
+      } else {
+        this.disconnect('发送失败，请检查手机连接', 'send_failed', request)
+      }
+    }
+    try {
+      this.recordEvent('send', request, retried ? 'retry' : '')
+      this.connection.send({ data: request, fail })
+    } catch (_) {
+      fail()
+    }
+  },
+
+  nextId() {
+    this.sequence += 1
+    return Date.now().toString(36) + '_' + this.sequence.toString(36)
+  },
+
+  receive(raw) {
+    if (!this.visible) return
+    const request = this.pending
+    let reply
+    try {
+      const text = typeof raw === 'string' ? raw : JSON.stringify(raw)
+      if (typeof text !== 'string') return
+      if (exceedsReplyLimit(text)) {
+        this.recordEvent('drop', request, 'too_large')
+        return
+      }
+      if (!request) return
+      reply = typeof raw === 'string' ? JSON.parse(text) : raw
+    } catch (_) {
+      return
+    }
+    if (!reply || reply.id !== request.id) return
+    if (reply.v === PROTOCOL && reply.type === 'reply' && typeof reply.error === 'string' && reply.error) {
+      const error = reply.error
+      const detail = error === 'too_large' || error === 'internal' ? error : 'unknown_error'
+      const message = detail === 'too_large' ? '手机回复超过 2048 B'
+        : detail === 'internal' ? '手机端内部错误' : '手机返回未知错误'
+      this.recordEvent('recv', request, detail)
+      this.disconnect(message, 'reply_error')
+      return
+    }
+    if (request.type === 'hello') {
+      if (reply.type === 'hello-reply' && typeof reply.v === 'number' && typeof reply.protocol === 'number') {
+        this.recordEvent('recv', request, 'hello-reply')
+        this.finishHello(reply)
+      }
+      return
+    }
+    if (reply.v !== PROTOCOL || reply.type !== 'reply') return
+    if (reply.mode !== 'demo' && reply.mode !== 'live') return
+    this.recordEvent('recv', request)
+    const firstReply = !this.linked || this.mode !== reply.mode
+    this.clearRequest()
+    this.linked = true
+    this.hasReply = true
+    this.reportedLinkIssue = false
+    this.mode = reply.mode
+    this.modeLabel = this.mode === 'demo' ? '演示' : '已连接'
+    this.phoneConfirmation = reply.phoneConfirmation === true
+    const previousNotice = this.controlNotice
+    const wasControlPending = this.controlPending
+    this.controlNotice = typeof reply.controlNotice === 'string' ? reply.controlNotice : ''
+    this.blockedControls = reply.blocked && typeof reply.blocked === 'object' ? reply.blocked : {}
+    this.controlPending = reply.controlPending === true || this.phoneConfirmation
+    if (this.phoneConfirmation) this.controlNotice = '请在手机确认银河操作'
+    const available = knownActions(reply.available)
+    const mapped = (Array.isArray(reply.mapped) ? knownActions(reply.mapped) : available).slice(0, HOME_ACTIONS)
+    const partialUpdate = this.controlPending && !firstReply && mapped.length < this.mapped.length
+      && mapped.every(action => this.mapped.indexOf(action) >= 0)
+    if (!partialUpdate) this.mapped = mapped
+    const reportedDirections = reply.controlDirections
+    this.controlDirectionsSupported = !!reportedDirections && typeof reportedDirections === 'object'
+      && !Array.isArray(reportedDirections)
+    const cachedVehicle = reply.vehicleCached === true
+    this.cachedVehicle = cachedVehicle
+    const directions = cachedVehicle ? {} : readControlDirections(
+      this.controlDirectionsSupported ? reportedDirections : null, reply.lockState)
+    this.available = this.controlPending ? [] : available.filter(action => this.mapped.includes(action)
+      && (this.mode === 'demo' || directions[action]
+        || !needsDirection(action, this.controlDirectionsSupported) && !(action === 'lock' && cachedVehicle)))
+    this.controlDirections = this.controlPending && !firstReply && !cachedVehicle
+      ? Object.assign({}, this.controlDirections, directions) : directions
+    this.emptyLabel = '请在手机配置银河卡片'
+    this.updateRows()
+    const vehicle = reply.vehicle || {}
+    this.showVehicle(vehicle, cachedVehicle)
+    if (this.mode === 'live') {
+      const snapshot = vehicle.updatedAt > 0 ? JSON.stringify(Object.assign({}, vehicle, { mapped: this.mapped })) : ''
+      if (snapshot !== this.storedSnapshot) {
+        this.storedSnapshot = snapshot
+        writeSnapshot(snapshot, () => {
+          if (this.storedSnapshot === snapshot) this.storedSnapshot = null
+        })
+      }
+    }
+
+    const directionChanged = request.controlDirection && request.controlDirection !== directions[request.action]
+    if (request.type === 'prepare' && reply.status === 'confirm' && reply.action === request.action && !directionChanged
+        && typeof reply.token === 'string' && reply.token.length === 36
+        && typeof reply.message === 'string' && reply.message) {
+      this.clearToast()
+      this.confirmAction = request.action
+      this.confirmToken = reply.token
+      this.confirmIcon = actionIcon(request.action, directions[request.action])
+      this.confirmTitle = reply.message
+      this.confirmTimer = setTimeout(() => {
+        this.cancel()
+        this.showToast('确认已过期，请重新选择')
+        this.vibrateFailure()
+      }, 13000)
+    } else if (request.type !== 'status') {
+      const dispatched = request.type === 'execute' && reply.status === 'dispatched'
+      let message = reply.message
+      if (this.controlPending && (this.phoneConfirmation || reply.status !== 'dispatched')) {
+        message = this.controlNotice || '正在同步车况'
+      } else if (dispatched && this.mode === 'live') {
+        message = '指令已发送'
+      } else if (reply.status === 'confirm' && directionChanged) {
+        message = '按钮状态已变化，请重新选择'
+      }
+      this.showToast(typeof message === 'string' ? message : '')
+      if (dispatched) this.vibrateShort()
+      else if (request.type === 'prepare' || request.type === 'execute') this.vibrateFailure()
+    } else if (firstReply || previousNotice !== this.controlNotice || wasControlPending !== this.controlPending) {
+      this.clearToast()
+      if (!this.controlPending || this.phoneConfirmation) this.showToast(this.controlNotice)
+    }
+    if (request.type === 'status' && this.quickAction === 'climate') {
+      this.quickAction = ''
+      this.select('climate')
+    }
+    this.scheduleStatus()
+  },
+
+  showVehicle(data, cached) {
+    this.total = rangeText(data.totalKm)
+    this.electric = rangeText(data.electricKm)
+    this.fuel = rangeText(data.fuelKm)
+    this.electricPercent = validPercent(data.electricPercent)
+    this.fuelPercent = validPercent(data.fuelPercent)
+    this.motion = typeof data.motion === 'string' && data.motion ? data.motion : '状态未知'
+    this.updated = data.updatedLabel ? (cached ? '上次 ' : '') + data.updatedLabel : '等待车况'
+  },
+
+  updateRows() {
+    const key = [this.linked, this.mapped.join(), this.available.join(), this.controlPending,
+      this.mapped.map(action => this.controlDirections[action] || '').join()].join('|')
+    if (key === this.rowsKey) return
+    this.rowsKey = key
+    this.displayRows = actionRows(this.mapped, this.available, this.linked, this.controlPending, this.controlDirections)
+  },
+
+  clearRequest() {
+    clearTimeout(this.requestTimer)
+    this.requestTimer = null
+    clearTimeout(this.retryTimer)
+    this.retryTimer = null
+    this.pending = null
+    this.busy = false
+  },
+
+  disconnect(message, reason, request = this.pending) {
+    const waitingForControl = this.pending && this.pending.type === 'execute'
+    const controlInterrupted = this.confirmTitle || (request
+      && (request.type === 'prepare' || request.type === 'execute' || request.type === 'cancel'))
+    const replyError = reason === 'reply_error'
+    const report = replyError || waitingForControl || this.linked || !this.reportedLinkIssue
+    if (this.visible || this.linked || request) this.recordEvent('disconnect', request, reason)
+    this.clearRequest()
+    this.clearConfirmation()
+    this.linkGeneration += 1
+    clearTimeout(this.openTimer)
+    this.openTimer = null
+    this.handshakeComplete = false
+    this.phoneApp = ''
+    this.protocol = null
+    this.features = null
+    this.compatibilityNotice = ''
+    this.linked = false
+    this.phoneConfirmation = false
+    this.controlPending = false
+    this.cachedVehicle = false
+    this.blockedControls = {}
+    this.controlDirectionsSupported = false
+    this.controlDirections = {}
+    this.modeLabel = this.mode === 'demo' ? '演示离线' : '离线'
+    this.emptyLabel = '连接手机后显示已映射车控'
+    this.available = []
+    this.updateRows()
+    if (controlInterrupted && reason !== 'hidden') this.vibrateFailure()
+    if (report && this.visible) {
+      this.reportedLinkIssue = true
+      const result = '结果未知，请在银河 App 查看'
+      this.showToast(waitingForControl ? (replyError ? message + '，' + result : result) : message)
+    }
+    this.scheduleStatus()
+  }
+}
+</script>
+
+<style>
+.page {
+  width: 336px;
+  height: 480px;
+  background-color: #10161b;
+}
+.screen {
+  width: 300px;
+  left: 18px;
+  flex-direction: column;
+}
+.home-screen {
+  top: 22px;
+}
+.vehicle-meta {
+  width: 300px;
+  height: 48px;
+  margin-top: 8px;
+  border-radius: 14px;
+  background-color: #213239;
+  align-items: center;
+}
+.refresh {
+  width: 166px;
+  height: 48px;
+  padding: 0 9px 0 12px;
+  align-items: center;
+}
+.refresh-icon {
+  width: 22px;
+  height: 22px;
+  margin-right: 7px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+.meta-divider {
+  width: 1px;
+  height: 24px;
+  background-color: #41565d;
+}
+.connection {
+  width: 133px;
+  height: 48px;
+  padding: 0 13px 0 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+.connection-status {
+  align-items: center;
+  flex-shrink: 0;
+}
+.dot {
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 4px;
+  background-color: #78868c;
+}
+.online {
+  background-color: #9ee9ce;
+}
+.mode {
+  color: #c5d5d4;
+  font-size: 16px;
+  lines: 1;
+}
+.settings-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+.range {
+  width: 300px;
+  height: 182px;
+  padding: 10px 12px 7px;
+  border-radius: 22px;
+  background-color: #18262c;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+.range-header {
+  width: 276px;
+  height: 25px;
+  padding: 0 2px;
+  align-items: center;
+  justify-content: space-between;
+}
+.model {
+  color: #e1edec;
+  font-size: 19px;
+  font-weight: bold;
+}
+.motion {
+  color: #cbdad8;
+  font-size: 18px;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.vehicle-image {
+  width: 244px;
+  height: 79px;
+  object-fit: contain;
+}
+.split {
+  width: 276px;
+  height: 52px;
+  justify-content: space-between;
+}
+.energy {
+  width: 134px;
+  height: 52px;
+  padding: 5px 9px 8px;
+  border-radius: 11px;
+  background-color: #203139;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.total-energy {
+  width: 276px;
+  padding: 0 9px;
+  align-items: center;
+  justify-content: center;
+}
+.energy-reading {
+  height: 31px;
+  align-items: center;
+}
+.energy-icon {
+  width: 23px;
+  height: 23px;
+  margin-right: 6px;
+  object-fit: contain;
+}
+.distance {
+  color: #f4faf8;
+  font-size: 27px;
+  font-weight: bold;
+  lines: 1;
+}
+.compact {
+  font-size: 20px;
+}
+.total-label {
+  color: #cbdad8;
+  font-size: 18px;
+  font-weight: normal;
+}
+.unit {
+  color: #bacbd0;
+  font-size: 15px;
+  font-weight: normal;
+}
+.energy-track {
+  width: 116px;
+  height: 5px;
+  border-radius: 3px;
+  background-color: #4a585f;
+}
+.energy-fill {
+  height: 5px;
+  border-radius: 3px;
+}
+.electric-fill {
+  background-color: #6fe7a5;
+}
+.fuel-fill {
+  background-color: #74b7ff;
+}
+.range-indicators {
+  width: 24px;
+  height: 4px;
+  justify-content: space-between;
+}
+.range-dot {
+  width: 6px;
+  height: 4px;
+  border-radius: 2px;
+  background-color: #53686b;
+}
+.active-range-dot {
+  width: 12px;
+  background-color: #9ee9ce;
+}
+.updated {
+  width: 116px;
+  color: #d4e4e2;
+  font-size: 18px;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.grid {
+  width: 300px;
+  flex-direction: column;
+}
+.control-row {
+  width: 300px;
+  margin-top: 10px;
+  justify-content: space-between;
+}
+.tile {
+  width: 146px;
+  height: 92px;
+  padding: 0 12px;
+  border-radius: 18px;
+  flex-direction: row;
+  align-items: center;
+}
+.full-tile {
+  width: 300px;
+  justify-content: center;
+}
+.ready {
+  background-color: #1d3532;
+}
+.paused {
+  background-color: #202c33;
+}
+.unassigned {
+  background-color: #19252c;
+}
+.tile-symbol {
+  width: 40px;
+  height: 40px;
+  margin-right: 9px;
+  border-radius: 12px;
+  background-color: #2c3c44;
+  align-items: center;
+  justify-content: center;
+}
+.symbol-ready {
+  background-color: #305248;
+}
+.tile-icon {
+  width: 27px;
+  height: 27px;
+  object-fit: contain;
+}
+.muted-icon {
+  opacity: 0.68;
+}
+.tile-copy {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+.tile-label {
+  color: #f4faf8;
+  font-size: 22px;
+  font-weight: bold;
+  text-align: center;
+  lines: 1;
+}
+.tile-hint {
+  color: #aabac0;
+  font-size: 16px;
+}
+.empty {
+  width: 300px;
+  height: 92px;
+  margin-top: 10px;
+  border-radius: 16px;
+  color: #a9bcbf;
+  background-color: #162026;
+  font-size: 22px;
+  text-align: center;
+}
+.toast {
+  width: 280px;
+  height: 80px;
+  left: 28px;
+  top: 108px;
+  padding: 5px 12px;
+  border-radius: 15px;
+  background-color: #30434a;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.toast-text {
+  color: #f4faf8;
+  width: 256px;
+  font-size: 19px;
+  line-height: 23px;
+  lines: 3;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+.settings-screen {
+  top: 30px;
+}
+.settings-title {
+  font-size: 29px;
+  font-weight: bold;
+  color: #f4faf8;
+  margin-bottom: 16px;
+}
+.haptics-setting {
+  width: 300px;
+  height: 58px;
+  padding: 0 12px;
+  margin-bottom: 12px;
+  border-radius: 16px;
+  background-color: #213239;
+  justify-content: space-between;
+  align-items: center;
+}
+.haptics-label {
+  font-size: 22px;
+  color: #f4faf8;
+}
+.haptics-switch {
+  width: 66px;
+  track-color: #72c9ae;
+}
+.diagnostics {
+  width: 300px;
+  padding: 12px;
+  border-radius: 16px;
+  background-color: #18262c;
+  flex-direction: column;
+}
+.diagnostics-title {
+  font-size: 20px;
+  color: #f4faf8;
+  margin-bottom: 7px;
+}
+.diagnostics-line {
+  width: 276px;
+  min-height: 42px;
+  margin-bottom: 5px;
+  font-size: 16px;
+  line-height: 19px;
+  color: #b7c9c8;
+  lines: 2;
+  text-overflow: ellipsis;
+}
+.settings-back {
+  width: 300px;
+  height: 50px;
+  margin-top: 12px;
+  border-radius: 14px;
+  background-color: #213239;
+  color: #f4faf8;
+  font-size: 20px;
+  text-align: center;
+}
+.confirmation {
+  top: 118px;
+  align-items: center;
+}
+.confirm-action {
+  width: 300px;
+  height: 62px;
+  align-items: center;
+  justify-content: center;
+}
+.confirm-icon {
+  width: 36px;
+  height: 36px;
+  margin-right: 12px;
+  object-fit: contain;
+}
+.confirm-title {
+  color: #f4faf8;
+  font-size: 36px;
+  font-weight: bold;
+  text-align: center;
+}
+.confirm-button, .cancel-button {
+  width: 300px;
+  height: 72px;
+  border-radius: 18px;
+  font-size: 27px;
+  text-align: center;
+}
+.confirm-button {
+  margin-top: 27px;
+  color: #10251e;
+  background-color: #9ee9ce;
+  font-weight: bold;
+}
+.cancel-button {
+  margin-top: 12px;
+  color: #e7f3f2;
+  background-color: #26363d;
+}
+</style>

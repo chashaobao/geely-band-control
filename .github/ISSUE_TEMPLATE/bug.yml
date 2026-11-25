@@ -1,0 +1,21 @@
+name: 故障报告
+description: 报告安装、连接、车况或车控问题
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: 设备和版本
+      description: 手机与 Android、车型年款、银河 App、小米运动健康、手环固件、双端腕上银河版本
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤与预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏截图或日志
+      description: 去除账号、车牌、VIN、位置、设备标识与凭据。敏感安全问题按 SECURITY.md 私密反馈。
