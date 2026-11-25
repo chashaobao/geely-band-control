@@ -12,14 +12,22 @@ final class WearLink {
     private String lastStatus = "通信服务未启动";
 
     WearLink(Context context, Handler main, XiaomiLink.Receiver receiver,
-             Consumer<String> onDisconnect, Runnable onChange) {
+             Consumer<String> onDisconnect, Runnable onChange, XiaomiLink.DiagnosticSink diagnostics) {
         this.onChange = onChange;
-        this.xiaomi = new XiaomiLink(context, main, receiver, onDisconnect, this::refreshStatus);
+        this.xiaomi = new XiaomiLink(context, main, receiver, onDisconnect, this::refreshStatus, diagnostics);
         this.bluetoothWatch = new BluetoothWatchLink(context, main, receiver, onDisconnect, this::refreshStatus);
     }
 
     String status() {
         return lastStatus;
+    }
+
+    String diagnosticSummary() {
+        return xiaomi.environmentSummary();
+    }
+
+    boolean isAuthorizing() {
+        return xiaomi.isAuthorizing();
     }
 
     boolean canAuthorize() {

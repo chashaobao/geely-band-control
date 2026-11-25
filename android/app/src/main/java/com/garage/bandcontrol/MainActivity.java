@@ -221,6 +221,10 @@ public final class MainActivity extends Activity {
         LinearLayout logs = panel();
         LinearLayout logHeader = row();
         logHeader.addView(text("运行日志", 17, INK, true), new LinearLayout.LayoutParams(0, -2, 1));
+        TextView copyLogs = text("复制", 13, MINT, false);
+        copyLogs.setPadding(dp(12), dp(10), dp(12), dp(10));
+        copyLogs.setOnClickListener(view -> copyDiagnostics());
+        logHeader.addView(copyLogs);
         TextView clear = text("清空", 13, MINT, false);
         clear.setPadding(dp(12), dp(10), 0, dp(10));
         clear.setOnClickListener(view -> app.clearUiEvents());
@@ -238,15 +242,14 @@ public final class MainActivity extends Activity {
         GalaxyWidgets.Card card = app.widgets.primary();
         showWidget(card);
         String link = app.link.status();
-        String compact = link.equals("已收到手环消息") || link.equals("已收到手表消息") || link.equals("已收到穿戴设备消息")
-                ? "应用已连接"
-                : link.startsWith("手表已连接") ? "手表已连接"
-                : link.startsWith("手环已连接") ? "手环已连接"
-                : app.hasService() ? "正在等待连接" : "通信未启动";
+        String compact = WearDiagnostics.compactLinkStatus(link, app.hasService());
         linkStatus.setText(compact + (app.isArmed() ? " · 车控已授权" : " · 车控未授权"));
         connection.setText(app.hasService() ? "停止通信" : "启动通信");
         connection.setActivated(!app.hasService());
-        authorize.setVisibility(app.link.canAuthorize() ? View.VISIBLE : View.GONE);
+        boolean showAuthorize = app.link.canAuthorize() || app.link.isAuthorizing();
+        authorize.setVisibility(showAuthorize ? View.VISIBLE : View.GONE);
+        authorize.setEnabled(app.link.canAuthorize());
+        authorize.setText(app.link.isAuthorizing() ? "正在等待小米运动健康授权…" : "授权小米设备通信");
         updateLogs();
         updateVoiceControls();
         mappingStatus.setVisibility(card == null ? View.GONE : View.VISIBLE);
@@ -300,6 +303,16 @@ public final class MainActivity extends Activity {
             if (!event.detail().isEmpty()) add(item, text(event.detail(), 12, MUTED, false), 3);
             add(logRows, item, latest ? 0 : 3);
         }
+    }
+
+    private void copyDiagnostics() {
+        ClipboardManager clipboard = getSystemService(ClipboardManager.class);
+        if (clipboard == null) {
+            toast("无法访问剪贴板");
+            return;
+        }
+        clipboard.setPrimaryClip(ClipData.newPlainText("腕上银河诊断信息", app.exportDiagnostics()));
+        toast("已复制诊断信息与日志");
     }
 
     private void openNotificationAccess() {
