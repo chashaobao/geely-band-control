@@ -107,18 +107,56 @@ export function layoutClasses(profile) {
   return result
 }
 
+export function resolveWatchHomeSize(info) {
+  if (!info || typeof info !== 'object') return 'standard'
+  const width = Number(info.screenWidth || info.windowWidth) || 0
+  const height = Number(info.screenHeight || info.windowHeight) || 0
+  const diameter = width > 0 && height > 0 ? Math.min(width, height) : (width || height)
+  if (diameter > 0 && diameter <= 400) return 'compact'
+  if (diameter >= 473) return 'large'
+  return 'standard'
+}
+
+const WATCH_HOME_BASES = {
+  mileagePage: 'watch-page watch-mileage-page',
+  heroHeader: 'watch-hero-header',
+  model: 'watch-model',
+  rangeTap: 'watch-range-tap',
+  hero: 'watch-hero',
+  subrange: 'watch-subrange',
+  statusRow: 'watch-status-row',
+  statusText: 'watch-status-text',
+  refreshIcon: 'watch-refresh-icon',
+  car: 'watch-car'
+}
+
+export function watchHomeClasses(size) {
+  const tier = size === 'compact' || size === 'large' ? size : 'standard'
+  const result = {}
+  for (const key of Object.keys(WATCH_HOME_BASES)) {
+    const base = WATCH_HOME_BASES[key]
+    if (tier === 'standard') {
+      result[key] = base
+    } else {
+      const target = key === 'mileagePage' ? 'watch-mileage-page' : base
+      result[key] = base + ' ' + target + '-' + tier
+    }
+  }
+  return result
+}
+
 export function detectDeviceProfile(onResolved) {
   try {
     const device = require('@system.device')
     if (!device || typeof device.getInfo !== 'function') {
-      onResolved(DEFAULT_LAYOUT)
+      onResolved(DEFAULT_LAYOUT, 'standard')
       return
     }
     device.getInfo({
-      success: info => onResolved(resolveLayoutProfile(info)),
-      fail: () => onResolved(DEFAULT_LAYOUT)
+      success: info => onResolved(resolveLayoutProfile(info), resolveWatchHomeSize(info)),
+      fail: () => onResolved(DEFAULT_LAYOUT, 'standard')
     })
   } catch (_) {
-    onResolved(DEFAULT_LAYOUT)
+    onResolved(DEFAULT_LAYOUT, 'standard')
   }
 }

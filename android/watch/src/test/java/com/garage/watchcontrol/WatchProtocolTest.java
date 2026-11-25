@@ -74,4 +74,22 @@ public final class WatchProtocolTest {
         assertEquals("电 84%", WatchProtocol.subrangeDisplay(ev));
         assertEquals("— km", WatchProtocol.energyDisplay(ev, "fuelKm", "fuelPercent"));
     }
+
+    @Test public void adaptsRoundWatchHomeMetricsByDialSizeAndPreservesRectDefault() {
+        WatchProtocol.RoundHomeMetrics compact = WatchProtocol.RoundHomeMetrics.forDiameterDp(192);
+        WatchProtocol.RoundHomeMetrics standard = WatchProtocol.RoundHomeMetrics.forDiameterDp(233);
+        WatchProtocol.RoundHomeMetrics large = WatchProtocol.RoundHomeMetrics.forDiameterDp(290);
+        WatchProtocol.RoundHomeMetrics rect = WatchProtocol.RoundHomeMetrics.rectDefault();
+
+        assertEquals(14, rect.hPadDp());
+        assertEquals(0, rect.modelMaxWidthDp());
+        assertEquals(40, standard.heroSp());
+        assertEquals(22, standard.hPadDp());
+        assertTrue(compact.heroSp() < standard.heroSp());
+        assertTrue(compact.hPadDp() < standard.hPadDp());
+        assertTrue(large.heroSp() > standard.heroSp());
+        assertTrue(large.hPadDp() > standard.hPadDp());
+        assertTrue(compact.modelMaxWidthDp() < standard.modelMaxWidthDp()
+                && standard.modelMaxWidthDp() < large.modelMaxWidthDp());
+    }
 }

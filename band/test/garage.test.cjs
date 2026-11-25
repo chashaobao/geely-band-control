@@ -575,10 +575,10 @@ test('layout profile adapts to Band 10 capsule, circular Watch 5, and falls back
   assert.ok(capsule.page.displayRows.every(row => row.second.id === '' && /full-tile/.test(row.first.style) && /tile-capsule/.test(row.first.style)))
   assert.match(capsule.page.displayRows[1].first.labelStyle, /tile-label-capsule/)
 
-  for (const deviceInfo of [
-    { screenWidth: 480, screenHeight: 480, screenShape: 'circle' },
-    { screenWidth: 480, screenHeight: 480 },
-    { screenWidth: 240, screenHeight: 240 }
+  for (const [deviceInfo, expectedHomeSize] of [
+    [{ screenWidth: 480, screenHeight: 480, screenShape: 'circle' }, 'large'],
+    [{ screenWidth: 466, screenHeight: 466 }, 'standard'],
+    [{ screenWidth: 240, screenHeight: 240 }, 'compact']
   ]) {
     const circle = start({
       native: {
@@ -588,8 +588,13 @@ test('layout profile adapts to Band 10 capsule, circular Watch 5, and falls back
       }
     })
     assert.equal(circle.page.layoutProfile, 'circle')
+    assert.equal(circle.page.watchHomeSize, expectedHomeSize)
     assert.equal(circle.page.ui.homeScreen, 'home-screen home-screen-circle')
     assert.equal(circle.page.ui.confirmation, 'confirmation confirmation-circle')
+    assert.equal(
+      circle.page.watchHomeUi.car,
+      expectedHomeSize === 'standard' ? 'watch-car' : 'watch-car watch-car-' + expectedHomeSize
+    )
     circle.hello()
     circle.reply({ mapped: ['lock', 'climate', 'window_vent', 'trunk'], available: ['climate'] })
     assert.equal(circle.page.displayRows.length, 2)

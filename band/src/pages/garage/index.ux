@@ -78,13 +78,13 @@
     </scroll>
     <stack class="watch-shell" if="{{ !confirmTitle && !settingsOpen && layoutProfile === 'circle' }}">
       <swiper id="watchSwiper" class="watch-swiper" vertical="true" indicator="false" loop="false" focusable="true" index="{{ watchPage }}" @change="onWatchPageChange">
-        <div class="watch-page watch-mileage-page">
-          <div class="watch-hero-header">
-            <text class="watch-model">{{ vehicleName }}</text>
-            <div class="watch-range-tap" @click="toggleRange">
+        <div class="{{ watchHomeUi.mileagePage }}">
+          <div class="{{ watchHomeUi.heroHeader }}">
+            <text class="{{ watchHomeUi.model }}">{{ vehicleName }}</text>
+            <div class="{{ watchHomeUi.rangeTap }}" @click="toggleRange">
               <div class="watch-hero-block" if="{{ !showTotalRange }}">
-                <text class="watch-hero">{{ total }}<span class="watch-hero-unit">{{ totalUnit }}</span></text>
-                <text class="watch-subrange">{{ watchSubrange }}</text>
+                <text class="{{ watchHomeUi.hero }}">{{ total }}<span class="watch-hero-unit">{{ totalUnit }}</span></text>
+                <text class="{{ watchHomeUi.subrange }}">{{ watchSubrange }}</text>
               </div>
               <div class="split split-circle watch-split" if="{{ showTotalRange }}">
                 <div class="energy energy-circle">
@@ -107,13 +107,13 @@
                 </div>
               </div>
             </div>
-            <div class="watch-status-row" @click="refresh">
+            <div class="{{ watchHomeUi.statusRow }}" @click="refresh">
               <div class="{{ modeLabel === '已连接' || modeLabel === '演示' ? 'dot dot-circle online' : 'dot dot-circle' }}"></div>
-              <text class="watch-status-text">{{ modeLabel }} | {{ motion }}</text>
-              <image class="watch-refresh-icon" src="/common/images/refresh.png"></image>
+              <text class="{{ watchHomeUi.statusText }}">{{ modeLabel }} | {{ motion }}</text>
+              <image class="{{ watchHomeUi.refreshIcon }}" src="/common/images/refresh.png"></image>
             </div>
           </div>
-          <image class="watch-car" src="{{ carImageSrc }}" @error="onCarImageError"></image>
+          <image class="{{ watchHomeUi.car }}" src="{{ carImageSrc }}" @error="onCarImageError"></image>
         </div>
         <div class="watch-page watch-controls-page">
           <div class="watch-top-pill" @click="refresh">
@@ -184,7 +184,7 @@
 import { rangeText, readSnapshot, writeSnapshot } from '../../common/snapshot.js'
 import { actionIcon } from '../../common/action-icons.js'
 import { DEFAULT_CAR_IMAGE, readCachedCarImage, saveCarImage } from '../../common/car-image.js'
-import { DEFAULT_LAYOUT, detectDeviceProfile, layoutClasses, layoutConfig, variantClass } from '../../common/layout.js'
+import { DEFAULT_LAYOUT, detectDeviceProfile, layoutClasses, layoutConfig, variantClass, watchHomeClasses } from '../../common/layout.js'
 import manifest from '../../manifest.json'
 
 const ACTIONS = [
@@ -384,6 +384,8 @@ export default {
   private: {
     layoutProfile: DEFAULT_LAYOUT,
     ui: layoutClasses(DEFAULT_LAYOUT),
+    watchHomeSize: 'standard',
+    watchHomeUi: watchHomeClasses('standard'),
     watchPage: 0,
     vehicleName: DEFAULT_VEHICLE_NAME,
     carImageSrc: DEFAULT_CAR_IMAGE,
@@ -492,10 +494,15 @@ export default {
   detectLayout() {
     if (this.layoutDetected) return
     this.layoutDetected = true
-    detectDeviceProfile(profile => this.applyLayoutProfile(profile))
+    detectDeviceProfile((profile, watchHomeSize) => this.applyLayoutProfile(profile, watchHomeSize))
   },
 
-  applyLayoutProfile(profile) {
+  applyLayoutProfile(profile, watchHomeSize) {
+    const nextSize = watchHomeSize || 'standard'
+    if (this.watchHomeSize !== nextSize) {
+      this.watchHomeSize = nextSize
+      this.watchHomeUi = watchHomeClasses(nextSize)
+    }
     const next = profile || DEFAULT_LAYOUT
     if (this.layoutProfile === next) return
     this.layoutProfile = next
@@ -2159,30 +2166,50 @@ export default {
   height: 100%;
 }
 .watch-page {
-  width: 336px;
-  height: 336px;
+  width: 100%;
+  height: 100%;
   flex-direction: column;
   align-items: center;
 }
 .watch-mileage-page {
-  padding: 20px 24px 6px;
+  padding: 18px 24px 12px;
   justify-content: space-between;
   background-color: #0b121e;
   background: linear-gradient(to bottom, #0f1b2e 0%, #182c4d 45%, #080d16 100%);
+}
+.watch-mileage-page-compact {
+  padding: 14px 20px 10px;
+}
+.watch-mileage-page-large {
+  padding: 22px 26px 14px;
 }
 .watch-hero-header {
   width: 268px;
   flex-direction: column;
   align-items: center;
 }
+.watch-hero-header-compact {
+  width: 256px;
+}
+.watch-hero-header-large {
+  width: 272px;
+}
 .watch-model {
-  max-width: 216px;
+  max-width: 204px;
   color: #c8d7eb;
   font-size: 15px;
   font-weight: bold;
   text-align: center;
   lines: 1;
   text-overflow: ellipsis;
+}
+.watch-model-compact {
+  max-width: 196px;
+  font-size: 16px;
+}
+.watch-model-large {
+  max-width: 214px;
+  font-size: 15px;
 }
 .watch-range-tap {
   width: 256px;
@@ -2191,6 +2218,14 @@ export default {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+.watch-range-tap-compact {
+  width: 248px;
+  min-height: 64px;
+}
+.watch-range-tap-large {
+  width: 260px;
+  min-height: 70px;
 }
 .watch-hero-block {
   flex-direction: column;
@@ -2202,6 +2237,12 @@ export default {
   font-weight: bold;
   lines: 1;
 }
+.watch-hero-compact {
+  font-size: 46px;
+}
+.watch-hero-large {
+  font-size: 44px;
+}
 .watch-hero-unit {
   color: #c8d7eb;
   font-size: 17px;
@@ -2212,6 +2253,12 @@ export default {
   color: #8ea6c5;
   font-size: 11px;
   lines: 1;
+}
+.watch-subrange-compact {
+  font-size: 12px;
+}
+.watch-subrange-large {
+  font-size: 11px;
 }
 .watch-split {
   margin-top: 4px;
@@ -2227,10 +2274,24 @@ export default {
   align-items: center;
   justify-content: center;
 }
+.watch-status-row-compact {
+  height: 24px;
+  padding: 0 10px;
+}
+.watch-status-row-large {
+  height: 25px;
+  padding: 0 12px;
+}
 .watch-status-text {
   color: #dce7f7;
   font-size: 12px;
   lines: 1;
+}
+.watch-status-text-compact {
+  font-size: 13px;
+}
+.watch-status-text-large {
+  font-size: 12px;
 }
 .watch-refresh-icon {
   width: 13px;
@@ -2238,11 +2299,27 @@ export default {
   margin-left: 5px;
   object-fit: contain;
 }
+.watch-refresh-icon-compact {
+  width: 14px;
+  height: 14px;
+}
+.watch-refresh-icon-large {
+  width: 13px;
+  height: 13px;
+}
 .watch-car {
-  width: 312px;
-  height: 128px;
+  width: 288px;
+  height: 124px;
   margin-top: 2px;
   object-fit: contain;
+}
+.watch-car-compact {
+  width: 272px;
+  height: 114px;
+}
+.watch-car-large {
+  width: 284px;
+  height: 126px;
 }
 .watch-controls-page {
   padding: 15px 36px 15px;

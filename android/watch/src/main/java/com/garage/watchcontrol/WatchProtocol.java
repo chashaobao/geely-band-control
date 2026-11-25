@@ -43,6 +43,61 @@ final class WatchProtocol {
 
     private WatchProtocol() {}
 
+    record RoundHomeMetrics(
+            int hPadDp,
+            int topPadDp,
+            int bottomPadDp,
+            int modelMaxWidthDp,
+            int modelSp,
+            int heroSp,
+            int subrangeSp,
+            int statusTextSp,
+            int statusDotDp,
+            int statusIconDp,
+            int statusHPadDp,
+            int statusVPadDp,
+            int splitTextSp,
+            int splitIconDp,
+            int splitBoxHPadDp,
+            int splitBoxVPadDp,
+            int splitGapDp,
+            int sectionGapDp) {
+        static RoundHomeMetrics forDiameterDp(int dialDp) {
+            int safeDial = dialDp > 0 ? dialDp : 233;
+            float scale = Math.max(0.76f, Math.min(1.42f, safeDial / 233.0f));
+            return new RoundHomeMetrics(
+                    clamp(Math.round(22 * scale), 16, 32),
+                    clamp(Math.round(16 * scale), 12, 24),
+                    clamp(Math.round(12 * scale), 8, 18),
+                    Math.round(safeDial * 0.58f),
+                    clamp(Math.round(14 * scale), 12, 20),
+                    clamp(Math.round(40 * scale), 30, 56),
+                    clamp(Math.round(11 * scale), 9, 16),
+                    clamp(Math.round(11 * scale), 9, 16),
+                    clamp(Math.round(6 * scale), 5, 9),
+                    clamp(Math.round(12 * scale), 10, 17),
+                    clamp(Math.round(10 * scale), 8, 14),
+                    clamp(Math.round(4 * scale), 3, 6),
+                    clamp(Math.round(14 * scale), 11, 20),
+                    clamp(Math.round(14 * scale), 11, 20),
+                    clamp(Math.round(6 * scale), 4, 9),
+                    clamp(Math.round(4 * scale), 3, 6),
+                    clamp(Math.round(6 * scale), 4, 9),
+                    clamp(Math.round(4 * scale), 2, 7));
+        }
+
+        static RoundHomeMetrics rectDefault() {
+            return new RoundHomeMetrics(
+                    14, 14, 14, 0,
+                    14, 40, 11, 11, 6, 12, 10, 4,
+                    14, 14, 6, 4, 6, 4);
+        }
+
+        private static int clamp(int value, int min, int max) {
+            return Math.max(min, Math.min(max, value));
+        }
+    }
+
     static JSONObject buildRequest(String id, String type, String action, String token,
                                    String controlDirection, String watchVersion) throws JSONException {
         JSONObject request = new JSONObject()
