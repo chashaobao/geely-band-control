@@ -10,7 +10,15 @@ try {
     Pop-Location
 }
 
-Push-Location (Join-Path $project 'band')
+$bandDir = Join-Path $project 'band'
+$bandIcon = Join-Path $bandDir 'src\common\icon.png'
+$localBandIcon = Join-Path $project '.local\band-res\icon.png'
+$backupBandIcon = $null
+if (Test-Path -LiteralPath $localBandIcon) {
+    $backupBandIcon = [IO.File]::ReadAllBytes($bandIcon)
+    Copy-Item -LiteralPath $localBandIcon -Destination $bandIcon -Force
+}
+Push-Location $bandDir
 try {
     & npm.cmd ci --no-audit --no-fund
     if ($LASTEXITCODE -ne 0) { throw 'Vela dependency installation failed.' }
@@ -19,6 +27,9 @@ try {
     & node --test test/garage.test.cjs
     if ($LASTEXITCODE -ne 0) { throw 'Vela protocol or control tests failed.' }
 } finally {
+    if ($null -ne $backupBandIcon) {
+        [IO.File]::WriteAllBytes($bandIcon, $backupBandIcon)
+    }
     Pop-Location
 }
 

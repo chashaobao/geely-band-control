@@ -703,13 +703,10 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     }
 
     private void applyVehicle(JSONObject vehicle, boolean cached) {
-        String total = WatchProtocol.rangeText(vehicle, "totalKm");
-        String electric = WatchProtocol.rangeText(vehicle, "electricKm");
-        String fuel = WatchProtocol.rangeText(vehicle, "fuelKm");
-        totalHeroView.setText(String.format(Locale.getDefault(), "%s km", total));
-        subrangeView.setText(String.format(Locale.getDefault(), "电 %s km · 油 %s km", electric, fuel));
-        electricText.setText(String.format(Locale.getDefault(), "%s km", electric));
-        fuelText.setText(String.format(Locale.getDefault(), "%s km", fuel));
+        totalHeroView.setText(WatchProtocol.heroDisplay(vehicle));
+        subrangeView.setText(WatchProtocol.subrangeDisplay(vehicle));
+        electricText.setText(WatchProtocol.energyDisplay(vehicle, "electricKm", "electricPercent"));
+        fuelText.setText(WatchProtocol.energyDisplay(vehicle, "fuelKm", "fuelPercent"));
         updateBar(electricFill, WatchProtocol.validPercent(vehicle, "electricPercent"));
         updateBar(fuelFill, WatchProtocol.validPercent(vehicle, "fuelPercent"));
         String motion = vehicle == null ? "" : vehicle.optString("motion");

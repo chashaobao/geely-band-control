@@ -18,8 +18,8 @@ android {
         applicationId 'com.garage.bandcontrol'
         minSdk 28
         targetSdk 35
-        versionCode 27
-        versionName '0.1.26'
+        versionCode 28
+        versionName '0.1.27'
     }
 
     signingConfigs {
@@ -41,6 +41,10 @@ android {
     }
     sourceSets {
         main.assets.srcDirs += ['../../band/src/common/images']
+        def localRes = new File(workspace, '.local/android-res')
+        if (localRes.isDirectory()) {
+            debug.res.srcDir localRes
+        }
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

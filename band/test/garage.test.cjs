@@ -729,3 +729,28 @@ test('vehicle name defaults to generic label, syncs from phone, persists in snap
   })
   assert.equal(reopened.page.vehicleName, '我的座驾')
 })
+
+test('energy readings fall back to battery percentage when kilometers are unavailable', () => {
+  const link = start()
+  link.hello()
+  link.reply({
+    vehicle: { totalKm: 643, electricPercent: 97, fuelKm: 517, fuelPercent: 48, motion: '已驻车', updatedAt: 1700000000000, updatedLabel: '20:20' }
+  })
+  assert.equal(link.page.total, '643')
+  assert.equal(link.page.totalUnit, '\u00a0km')
+  assert.equal(link.page.electric, '97')
+  assert.equal(link.page.electricUnit, '%')
+  assert.equal(link.page.fuel, '517')
+  assert.equal(link.page.fuelUnit, '\u00a0km')
+  assert.equal(link.page.watchSubrange, '电 97% · 油 517\u00a0km')
+
+  link.page.syncStatus()
+  link.reply({
+    vehicle: { electricPercent: 85, motion: '充电中', updatedAt: 1700000060000, updatedLabel: '20:21' }
+  })
+  assert.equal(link.page.total, '85')
+  assert.equal(link.page.totalUnit, '%')
+  assert.equal(link.page.electric, '85')
+  assert.equal(link.page.electricUnit, '%')
+  assert.equal(link.page.watchSubrange, '电 85%')
+})

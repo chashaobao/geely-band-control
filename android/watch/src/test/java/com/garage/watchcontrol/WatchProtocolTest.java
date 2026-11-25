@@ -57,4 +57,21 @@ public final class WatchProtocolTest {
         assertEquals(-1, VerticalPagerView.nextPageFromCrown(0, 2, -1.0f, 1100L, 1000L));
         assertEquals(-1, VerticalPagerView.nextPageFromCrown(0, 2, 0.0f, 1500L, 1000L));
     }
+
+    @Test public void fallsBackToPercentageWhenKilometersAreUnavailable() throws Exception {
+        JSONObject hybrid = new JSONObject()
+                .put("totalKm", 643)
+                .put("electricPercent", 97)
+                .put("fuelKm", 517)
+                .put("fuelPercent", 48);
+        assertEquals("643 km", WatchProtocol.heroDisplay(hybrid));
+        assertEquals("97%", WatchProtocol.energyDisplay(hybrid, "electricKm", "electricPercent"));
+        assertEquals("517 km", WatchProtocol.energyDisplay(hybrid, "fuelKm", "fuelPercent"));
+        assertEquals("电 97% · 油 517 km", WatchProtocol.subrangeDisplay(hybrid));
+
+        JSONObject ev = new JSONObject().put("electricPercent", 84);
+        assertEquals("84%", WatchProtocol.heroDisplay(ev));
+        assertEquals("电 84%", WatchProtocol.subrangeDisplay(ev));
+        assertEquals("— km", WatchProtocol.energyDisplay(ev, "fuelKm", "fuelPercent"));
+    }
 }

@@ -9,13 +9,13 @@
           </div>
           <image class="{{ ui.vehicleImage }}" src="{{ carImageSrc }}" @error="onCarImageError"></image>
           <div class="{{ ui.totalEnergy }}" if="{{ showTotalRange }}">
-            <text class="{{ ui.distance }}"><span class="{{ ui.totalLabel }}">总里程: </span>{{ total }}<span class="{{ ui.unit }}"> km</span></text>
+            <text class="{{ ui.distance }}"><span class="{{ ui.totalLabel }}">总里程: </span>{{ total }}<span class="{{ ui.unit }}">{{ totalUnit }}</span></text>
           </div>
           <div class="{{ ui.split }}" if="{{ !showTotalRange }}">
             <div class="{{ ui.energy }}">
               <div class="{{ ui.energyReading }}">
                 <image class="{{ ui.energyIcon }}" src="/common/images/energy-electric.png"></image>
-                <text class="{{ electric.length > 3 ? ui.distanceCompact : ui.distance }}">{{ electric }}<span class="{{ ui.unit }}"> km</span></text>
+                <text class="{{ electric.length > 3 ? ui.distanceCompact : ui.distance }}">{{ electric }}<span class="{{ ui.unit }}">{{ electricUnit }}</span></text>
               </div>
               <div class="{{ ui.energyTrack }}">
                 <div class="{{ ui.energyFill }} electric-fill" if="{{ electricPercent > 0 }}" style="width: {{ electricPercent }}%"></div>
@@ -24,7 +24,7 @@
             <div class="{{ ui.energy }}">
               <div class="{{ ui.energyReading }}">
                 <image class="{{ ui.energyIcon }}" src="/common/images/energy-fuel.png"></image>
-                <text class="{{ fuel.length > 3 ? ui.distanceCompact : ui.distance }}">{{ fuel }}<span class="{{ ui.unit }}"> km</span></text>
+                <text class="{{ fuel.length > 3 ? ui.distanceCompact : ui.distance }}">{{ fuel }}<span class="{{ ui.unit }}">{{ fuelUnit }}</span></text>
               </div>
               <div class="{{ ui.energyTrack }}">
                 <div class="{{ ui.energyFill }} fuel-fill" if="{{ fuelPercent > 0 }}" style="width: {{ fuelPercent }}%"></div>
@@ -83,14 +83,14 @@
             <text class="watch-model">{{ vehicleName }}</text>
             <div class="watch-range-tap" @click="toggleRange">
               <div class="watch-hero-block" if="{{ !showTotalRange }}">
-                <text class="watch-hero">{{ total }}<span class="watch-hero-unit"> km</span></text>
-                <text class="watch-subrange">电 {{ electric }} · 油 {{ fuel }} km</text>
+                <text class="watch-hero">{{ total }}<span class="watch-hero-unit">{{ totalUnit }}</span></text>
+                <text class="watch-subrange">{{ watchSubrange }}</text>
               </div>
               <div class="split split-circle watch-split" if="{{ showTotalRange }}">
                 <div class="energy energy-circle">
                   <div class="energy-reading energy-reading-circle">
                     <image class="energy-icon energy-icon-circle" src="/common/images/energy-electric.png"></image>
-                    <text class="{{ electric.length > 3 ? 'distance compact distance-circle compact-circle' : 'distance distance-circle' }}">{{ electric }}<span class="unit unit-circle"> km</span></text>
+                    <text class="{{ electric.length > 3 ? 'distance compact distance-circle compact-circle' : 'distance distance-circle' }}">{{ electric }}<span class="unit unit-circle">{{ electricUnit }}</span></text>
                   </div>
                   <div class="energy-track energy-track-circle">
                     <div class="energy-fill energy-fill-circle electric-fill" if="{{ electricPercent > 0 }}" style="width: {{ electricPercent }}%"></div>
@@ -99,7 +99,7 @@
                 <div class="energy energy-circle">
                   <div class="energy-reading energy-reading-circle">
                     <image class="energy-icon energy-icon-circle" src="/common/images/energy-fuel.png"></image>
-                    <text class="{{ fuel.length > 3 ? 'distance compact distance-circle compact-circle' : 'distance distance-circle' }}">{{ fuel }}<span class="unit unit-circle"> km</span></text>
+                    <text class="{{ fuel.length > 3 ? 'distance compact distance-circle compact-circle' : 'distance distance-circle' }}">{{ fuel }}<span class="unit unit-circle">{{ fuelUnit }}</span></text>
                   </div>
                   <div class="energy-track energy-track-circle">
                     <div class="energy-fill energy-fill-circle fuel-fill" if="{{ fuelPercent > 0 }}" style="width: {{ fuelPercent }}%"></div>
@@ -274,6 +274,31 @@ function validPercent(value) {
   return typeof value === 'number' && value >= 0 && value <= 100 ? value : null
 }
 
+function energyReading(km, percent) {
+  if (typeof km === 'number' && km >= 0) return { value: String(km), unit: '\u00a0km', compact: km + '\u00a0km' }
+  if (percent !== null) return { value: String(percent), unit: '%', compact: percent + '%' }
+  return { value: '—', unit: '\u00a0km', compact: '' }
+}
+
+function totalReading(data, electricPercent, fuelPercent) {
+  const totalKm = rangeText(data.totalKm)
+  if (totalKm !== '—') return { value: totalKm, unit: '\u00a0km' }
+  const electricKm = rangeText(data.electricKm)
+  const fuelKm = rangeText(data.fuelKm)
+  if (electricKm !== '—' && fuelKm === '—') return { value: electricKm, unit: '\u00a0km' }
+  if (electricPercent !== null && fuelPercent === null && fuelKm === '—') {
+    return { value: String(electricPercent), unit: '%' }
+  }
+  return { value: '—', unit: '\u00a0km' }
+}
+
+function formatSubrange(electric, fuel) {
+  const parts = []
+  if (electric.compact) parts.push('电 ' + electric.compact)
+  if (fuel.compact) parts.push('油 ' + fuel.compact)
+  return parts.length ? parts.join(' · ') : '电 —\u00a0km · 油 —\u00a0km'
+}
+
 function knownActions(ids) {
   if (!Array.isArray(ids)) return []
   return ids.filter((id, index) => ids.indexOf(id) === index && ACTIONS.some(action => action[0] === id))
@@ -367,8 +392,12 @@ export default {
     modeLabel: '待连接',
     showTotalRange: false,
     total: '—',
+    totalUnit: '\u00a0km',
     electric: '—',
+    electricUnit: '\u00a0km',
     fuel: '—',
+    fuelUnit: '\u00a0km',
+    watchSubrange: '电 —\u00a0km · 油 —\u00a0km',
     electricPercent: null,
     fuelPercent: null,
     motion: '状态未知',
@@ -1137,11 +1166,18 @@ export default {
   },
 
   showVehicle(data, cached) {
-    this.total = rangeText(data.totalKm)
-    this.electric = rangeText(data.electricKm)
-    this.fuel = rangeText(data.fuelKm)
     this.electricPercent = validPercent(data.electricPercent)
     this.fuelPercent = validPercent(data.fuelPercent)
+    const total = totalReading(data, this.electricPercent, this.fuelPercent)
+    const electric = energyReading(data.electricKm, this.electricPercent)
+    const fuel = energyReading(data.fuelKm, this.fuelPercent)
+    this.total = total.value
+    this.totalUnit = total.unit
+    this.electric = electric.value
+    this.electricUnit = electric.unit
+    this.fuel = fuel.value
+    this.fuelUnit = fuel.unit
+    this.watchSubrange = formatSubrange(electric, fuel)
     this.motion = typeof data.motion === 'string' && data.motion ? data.motion : '状态未知'
     this.updated = data.updatedLabel ? (cached ? '上次 ' : '') + data.updatedLabel : '等待车况'
   },

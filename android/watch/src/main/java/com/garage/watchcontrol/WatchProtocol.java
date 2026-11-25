@@ -167,4 +167,39 @@ final class WatchProtocol {
         int value = vehicle.optInt(key, -1);
         return value >= 0 && value <= 100 ? value : -1;
     }
+
+    static String energyDisplay(JSONObject vehicle, String kmKey, String percentKey) {
+        String km = rangeText(vehicle, kmKey);
+        if (!"—".equals(km)) return km + " km";
+        int percent = validPercent(vehicle, percentKey);
+        return percent >= 0 ? percent + "%" : "— km";
+    }
+
+    static String heroDisplay(JSONObject vehicle) {
+        String total = rangeText(vehicle, "totalKm");
+        if (!"—".equals(total)) return total + " km";
+        String electricKm = rangeText(vehicle, "electricKm");
+        String fuelKm = rangeText(vehicle, "fuelKm");
+        if (!"—".equals(electricKm) && "—".equals(fuelKm)) return electricKm + " km";
+        int electricPercent = validPercent(vehicle, "electricPercent");
+        int fuelPercent = validPercent(vehicle, "fuelPercent");
+        if (electricPercent >= 0 && fuelPercent < 0 && "—".equals(fuelKm)) return electricPercent + "%";
+        return "— km";
+    }
+
+    static String subrangeDisplay(JSONObject vehicle) {
+        String electric = energyPart("电 ", vehicle, "electricKm", "electricPercent");
+        String fuel = energyPart("油 ", vehicle, "fuelKm", "fuelPercent");
+        if (!electric.isEmpty() && !fuel.isEmpty()) return electric + " · " + fuel;
+        if (!electric.isEmpty()) return electric;
+        if (!fuel.isEmpty()) return fuel;
+        return "电 — km · 油 — km";
+    }
+
+    private static String energyPart(String prefix, JSONObject vehicle, String kmKey, String percentKey) {
+        String km = rangeText(vehicle, kmKey);
+        if (!"—".equals(km)) return prefix + km + " km";
+        int percent = validPercent(vehicle, percentKey);
+        return percent >= 0 ? prefix + percent + "%" : "";
+    }
 }
