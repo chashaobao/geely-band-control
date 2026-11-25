@@ -60,6 +60,15 @@ final class WatchProtocol {
         return request;
     }
 
+    static JSONObject buildCarImageRequest(String id, String hash, int index) throws JSONException {
+        return new JSONObject()
+                .put("v", PROTOCOL)
+                .put("id", id)
+                .put("type", "car_image")
+                .put("hash", hash)
+                .put("index", index);
+    }
+
     static String compatibilityMessage(JSONObject reply, String watchVersion) {
         if (reply.optInt("v") != PROTOCOL || reply.optInt("protocol") != PROTOCOL) {
             return "请将手机和手表更新到配套版本";

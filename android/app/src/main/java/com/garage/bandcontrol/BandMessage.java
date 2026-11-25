@@ -8,9 +8,15 @@ import java.nio.charset.StandardCharsets;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
-record BandMessage(String id, String type, CarAction action, String token, ControlDirection direction) {
+record BandMessage(String id, String type, CarAction action, String token, ControlDirection direction,
+                   String imageHash, int imageIndex) {
+    BandMessage(String id, String type, CarAction action, String token, ControlDirection direction) {
+        this(id, type, action, token, direction, "", -1);
+    }
+
     static final int MAX_BYTES = 2048;
     private static final Pattern ID = Pattern.compile("[a-zA-Z0-9_-]{6,48}");
+    private static final Pattern HASH = Pattern.compile("[a-zA-Z0-9_-]{6,32}");
     private static final int VERSION = 1;
 
     interface ReplyBuilder {
@@ -49,6 +55,11 @@ record BandMessage(String id, String type, CarAction action, String token, Contr
             case "execute":
                 return action == null || token.length() != 36 ? null : new BandMessage(id, type, action, token, null);
             case "cancel": return token.length() != 36 ? null : new BandMessage(id, type, null, token, null);
+            case "car_image":
+                String hash = input.optString("hash");
+                int index = input.optInt("index", -1);
+                if (!HASH.matcher(hash).matches() || index < 0 || index > 200) return null;
+                return new BandMessage(id, type, null, "", null, hash, index);
             default: return null;
         }
     }
@@ -58,9 +69,14 @@ record BandMessage(String id, String type, CarAction action, String token, Contr
                 .put("status", status).put("message", message);
     }
 
+    static JSONObject carImageReply(String id, String hash, int index, int total, String data) throws JSONException {
+        return envelope(id, "car_image_reply")
+                .put("hash", hash).put("index", index).put("total", total).put("data", data);
+    }
+
     static JSONObject helloReply(String id, String phoneApp) throws JSONException {
         return envelope(id, "hello-reply").put("phoneApp", phoneApp).put("protocol", VERSION)
-                .put("features", new JSONArray().put("confirm").put("cancel").put("refresh"));
+                .put("features", new JSONArray().put("confirm").put("cancel").put("refresh").put("car_image"));
     }
 
     static String encodeReply(String id, ReplyBuilder builder, Consumer<Exception> onError) {

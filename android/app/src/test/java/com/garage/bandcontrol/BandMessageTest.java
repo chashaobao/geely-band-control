@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 public final class BandMessageTest {
@@ -23,7 +24,22 @@ public final class BandMessageTest {
         assertEquals("test-123", reply.getString("id"));
         assertEquals(BuildConfig.VERSION_NAME, reply.getString("phoneApp"));
         assertEquals(1, reply.getInt("protocol"));
-        assertEquals("[\"confirm\",\"cancel\",\"refresh\"]", reply.getJSONArray("features").toString());
+        assertEquals("[\"confirm\",\"cancel\",\"refresh\",\"car_image\"]", reply.getJSONArray("features").toString());
+    }
+
+    @Test public void decodesCarImageChunkRequestAndEncodesBoundedReply() throws Exception {
+        BandMessage request = decode(new JSONObject().put("v", 1).put("id", "img_001")
+                .put("type", "car_image").put("hash", "abcDEF12_34-").put("index", 3));
+        assertEquals("car_image", request.type());
+        assertEquals("abcDEF12_34-", request.imageHash());
+        assertEquals(3, request.imageIndex());
+
+        assertNull(decode(new JSONObject().put("v", 1).put("id", "img_002").put("type", "car_image").put("hash", "bad!").put("index", 0)));
+        assertNull(decode(new JSONObject().put("v", 1).put("id", "img_003").put("type", "car_image").put("hash", "abcDEF12").put("index", -1)));
+
+        JSONObject reply = BandMessage.carImageReply("img_001", "abcDEF12_34-", 3, 5, "A".repeat(CarImage.CHUNK_CHARS));
+        assertEquals("car_image_reply", reply.getString("type"));
+        assertTrue(reply.toString().getBytes(StandardCharsets.UTF_8).length <= BandMessage.MAX_BYTES);
     }
 
     @Test public void allElevenControlsHaveDistinctWireNames() throws Exception {

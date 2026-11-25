@@ -22,6 +22,11 @@ public final class WatchProtocolTest {
         assertEquals("prepare", prepare.getString("type"));
         assertEquals("climate", prepare.getString("action"));
         assertEquals("open", prepare.getString("controlDirection"));
+
+        JSONObject carImg = WatchProtocol.buildCarImageRequest("abc_3", "hash1234", 2);
+        assertEquals("car_image", carImg.getString("type"));
+        assertEquals("hash1234", carImg.getString("hash"));
+        assertEquals(2, carImg.getInt("index"));
     }
 
     @Test public void validatesCompatibilityAndDirectionLabels() throws Exception {

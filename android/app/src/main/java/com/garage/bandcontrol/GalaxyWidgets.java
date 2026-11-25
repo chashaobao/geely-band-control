@@ -72,6 +72,8 @@ final class GalaxyWidgets {
         private Map<String, CarAction> lastMapped = Map.of();
         private VehicleStatus latest = VehicleStatus.EMPTY;
         private boolean validReading;
+        private long carImageRevision = -1;
+        private CarImage.Packaged carImage;
 
         Card(int id, HostedView view, List<Binding> bindings) {
             this.id = id;
@@ -294,6 +296,19 @@ final class GalaxyWidgets {
     VehicleStatus vehicle() {
         Card card = primary();
         return card == null ? VehicleStatus.EMPTY : card.latest;
+    }
+
+    CarImage.Packaged carImage() {
+        Card card = primary();
+        if (card == null || !hasNormalLayout(card) || WidgetTree.loading(card.view)) return null;
+        if (card.carImageRevision != card.view.revision) {
+            card.carImageRevision = card.view.revision;
+            layoutForScan(card);
+            var view = WidgetTree.vehicleImage(card.view);
+            CarImage.Packaged extracted = CarImage.extract(view);
+            if (extracted != null) card.carImage = extracted;
+        }
+        return card.carImage;
     }
 
     boolean showsLastReading() {

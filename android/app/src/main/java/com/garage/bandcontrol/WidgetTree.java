@@ -155,6 +155,48 @@ final class WidgetTree {
         return named(root, CONFIRMATION) != null;
     }
 
+    private static final List<String> NON_CAR_CONTAINERS = List.of(
+            "wgFun1Container", "wgFun2Container", "wgFun3Container", "wgFun4Container",
+            "wg_energy_container_electric", "wg_energy_container_oil",
+            "wg_energy_bar_electric", "wg_energy_bar_oil",
+            "wg_alarm_container", "wg_view_mileage", CONFIRMATION, SETTINGS, REFRESH);
+
+    static ImageView vehicleImage(ViewGroup root) {
+        if (root == null || root.getWidth() <= 0 || root.getHeight() <= 0) return null;
+        List<ImageView> candidates = new ArrayList<>();
+        collectVehicleImages(root, candidates);
+        ImageView best = null;
+        int bestScore = -1;
+        for (ImageView candidate : candidates) {
+            int w = candidate.getWidth();
+            int h = candidate.getHeight();
+            if (w < 48 || h < 24) continue;
+            if (w >= root.getWidth() * 0.92f && h >= root.getHeight() * 0.85f) continue;
+            if (w <= h * 1.15f && w < root.getWidth() * 0.25f) continue;
+            String name = resource(candidate).toLowerCase(java.util.Locale.ROOT);
+            int bonus = (name.contains("car") || name.contains("vehicle") || name.contains("model")) ? 100_000 : 0;
+            int score = bonus + w * h;
+            if (score > bestScore) {
+                bestScore = score;
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private static void collectVehicleImages(View view, List<ImageView> out) {
+        if (view == null || view.getVisibility() != View.VISIBLE) return;
+        String entry = resource(view);
+        if (NON_CAR_CONTAINERS.contains(entry)) return;
+        if (view instanceof ImageView image) {
+            if (image.getDrawable() != null && image.getWidth() > 0 && image.getHeight() > 0) {
+                out.add(image);
+            }
+        } else if (view instanceof ViewGroup group) {
+            for (int i = 0; i < group.getChildCount(); i++) collectVehicleImages(group.getChildAt(i), out);
+        }
+    }
+
     static OfficialConfirmation confirmation(ViewGroup root) {
         View panel = named(root, CONFIRMATION);
         View accept = named(panel, "wg_middle_confirm_btn_ok");

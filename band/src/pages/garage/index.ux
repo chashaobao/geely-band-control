@@ -7,7 +7,7 @@
             <text class="{{ ui.model }}">银河星耀 8</text>
             <text class="{{ ui.motion }}">{{ motion }}</text>
           </div>
-          <image class="{{ ui.vehicleImage }}" src="/common/images/starshine-8.png"></image>
+          <image class="{{ ui.vehicleImage }}" src="{{ carImageSrc }}" @error="onCarImageError"></image>
           <div class="{{ ui.totalEnergy }}" if="{{ showTotalRange }}">
             <text class="{{ ui.distance }}"><span class="{{ ui.totalLabel }}">总里程: </span>{{ total }}<span class="{{ ui.unit }}"> km</span></text>
           </div>
@@ -111,7 +111,7 @@
             <text class="watch-status-text">{{ modeLabel }} · {{ motion }}</text>
             <image class="watch-refresh-icon" src="/common/images/refresh.png"></image>
           </div>
-          <image class="watch-car" src="/common/images/starshine-8.png"></image>
+          <image class="watch-car" src="{{ carImageSrc }}" @error="onCarImageError"></image>
         </div>
         <div class="watch-page watch-controls-page">
           <div class="watch-top-pill" @click="refresh">
@@ -181,6 +181,7 @@
 <script>
 import { rangeText, readSnapshot, writeSnapshot } from '../../common/snapshot.js'
 import { actionIcon } from '../../common/action-icons.js'
+import { DEFAULT_CAR_IMAGE, readCachedCarImage, saveCarImage } from '../../common/car-image.js'
 import { DEFAULT_LAYOUT, detectDeviceProfile, layoutClasses, layoutConfig, variantClass } from '../../common/layout.js'
 import manifest from '../../manifest.json'
 
@@ -211,7 +212,9 @@ const EVENT_LOG_KEY = 'connection-events'
 const EVENT_LOG_LIMIT = 20
 const HAPTICS_KEY = 'control-haptics'
 const FAILURE_PULSE_GAP_MS = 200
-const REQUEST_FEATURES = { refresh: 'refresh', prepare: 'confirm', execute: 'confirm', cancel: 'cancel' }
+const REQUEST_FEATURES = {
+  refresh: 'refresh', prepare: 'confirm', execute: 'confirm', cancel: 'cancel', car_image: 'car_image'
+}
 const WINDOW_ACTIONS = ['window_vent', 'window_open']
 const SWITCH_LABELS = { climate: '空调', heat: '升温', cool: '降温', purify: '净化', defrost: '除霜', sentry: '哨兵' }
 const NO_ACTION = {
@@ -339,6 +342,7 @@ export default {
     layoutProfile: DEFAULT_LAYOUT,
     ui: layoutClasses(DEFAULT_LAYOUT),
     watchPage: 0,
+    carImageSrc: DEFAULT_CAR_IMAGE,
     displayRows: [],
     mode: '',
     modeLabel: '待连接',
@@ -413,8 +417,28 @@ export default {
     this.hapticsLoaded = false
     this.vibrator = undefined
     this.failurePulseTimer = null
+    this.carImageHash = ''
+    this.carImageUri = ''
+    this.failedCarImageHash = ''
+    this.imageSync = null
     this.layoutDetected = false
     this.detectLayout()
+  },
+
+  loadCarImageCache() {
+    if (this.carImageHash) return
+    readCachedCarImage((uri, hash) => {
+      if (!this.visible || this.carImageHash || this.failedCarImageHash === hash) return
+      this.carImageHash = hash
+      this.carImageUri = uri
+      this.carImageSrc = uri
+    })
+  },
+
+  onCarImageError() {
+    if (this.carImageSrc === DEFAULT_CAR_IMAGE) return
+    if (this.carImageHash) this.failedCarImageHash = this.carImageHash
+    this.carImageSrc = DEFAULT_CAR_IMAGE
   },
 
   detectLayout() {
@@ -450,6 +474,7 @@ export default {
       this.startTimer = null
       if (!this.visible) return
       if (!this.hasReply && this.storedSnapshot === null) this.loadSnapshot()
+      this.loadCarImageCache()
       this.loadEventLog()
       this.loadHapticsSetting()
       this.syncStatus()
@@ -849,7 +874,8 @@ export default {
       if (type === 'prepare' || type === 'execute') this.vibrateFailure()
       return
     }
-    if (this.pending && (this.pending.type !== 'status' || type === 'status')) return
+    if (this.pending && (this.pending.type !== 'status' && this.pending.type !== 'car_image'
+        || type === 'status' || type === 'car_image')) return
     if (this.pending) this.clearRequest()
     clearTimeout(this.pollTimer)
     this.pollTimer = null
@@ -859,12 +885,16 @@ export default {
       request.bandApp = manifest.versionName
       request.minPhoneApp = MIN_PHONE_APP
     }
+    if (type === 'car_image' && this.imageSync) {
+      request.hash = this.imageSync.hash
+      request.index = this.imageSync.chunks.length
+    }
     if (action) request.action = action
     if (token) request.token = token
     if (type === 'prepare' && this.controlDirections[action]) {
       request.controlDirection = this.controlDirections[action]
     }
-    this.busy = type !== 'status'
+    this.busy = type !== 'status' && type !== 'car_image'
     this.pending = request
     this.requestTimer = setTimeout(() => {
       if (this.pending !== request) return
@@ -939,6 +969,32 @@ export default {
         this.recordEvent('recv', request, 'hello-reply')
         this.finishHello(reply)
       }
+      return
+    }
+    if (request.type === 'car_image') {
+      if (reply.v !== PROTOCOL || reply.type !== 'car_image_reply') return
+      this.clearRequest()
+      if (!this.imageSync || reply.hash !== this.imageSync.hash || reply.index !== this.imageSync.chunks.length
+          || typeof reply.total !== 'number' || reply.total <= 0 || typeof reply.data !== 'string' || !reply.data) {
+        this.imageSync = null
+        this.scheduleStatus()
+        return
+      }
+      this.imageSync.chunks.push(reply.data)
+      if (this.imageSync.chunks.length < reply.total) {
+        this.request('car_image')
+        return
+      }
+      const completedHash = this.imageSync.hash
+      const base64Text = this.imageSync.chunks.join('')
+      this.imageSync = null
+      saveCarImage(completedHash, base64Text, this.carImageUri, (uri, savedHash) => {
+        if (!this.visible) return
+        this.carImageHash = savedHash
+        this.carImageUri = uri
+        this.carImageSrc = uri
+      })
+      this.scheduleStatus()
       return
     }
     if (reply.v !== PROTOCOL || reply.type !== 'reply') return
@@ -1020,6 +1076,16 @@ export default {
       this.clearToast()
       if (!this.controlPending || this.phoneConfirmation) this.showToast(this.controlNotice)
     }
+    const imageHash = typeof reply.carImageHash === 'string' ? reply.carImageHash : ''
+    const imageChunks = typeof reply.carImageChunks === 'number' ? reply.carImageChunks : 0
+    if (request.type === 'status' && this.supportsRequest('car_image') && !this.controlPending && !this.confirmTitle
+        && imageHash && imageChunks > 0 && imageHash !== this.carImageHash && imageHash !== this.failedCarImageHash) {
+      if (!this.imageSync || this.imageSync.hash !== imageHash) {
+        this.imageSync = { hash: imageHash, total: imageChunks, chunks: [] }
+      }
+      this.request('car_image')
+      return
+    }
     this.scheduleStatus()
   },
 
@@ -1060,6 +1126,7 @@ export default {
     if (this.visible || this.linked || request) this.recordEvent('disconnect', request, reason)
     this.clearRequest()
     this.clearConfirmation()
+    this.imageSync = null
     this.linkGeneration += 1
     clearTimeout(this.openTimer)
     this.openTimer = null

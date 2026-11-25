@@ -577,7 +577,8 @@ test('layout profile adapts to Band 10 capsule, circular Watch 5, and falls back
 
   for (const deviceInfo of [
     { screenWidth: 480, screenHeight: 480, screenShape: 'circle' },
-    { screenWidth: 480, screenHeight: 480 }
+    { screenWidth: 480, screenHeight: 480 },
+    { screenWidth: 240, screenHeight: 240 }
   ]) {
     const circle = start({
       native: {
@@ -616,4 +617,53 @@ test('layout profile adapts to Band 10 capsule, circular Watch 5, and falls back
     assert.equal(rect.page.displayRows.length, 2)
     assert.equal(rect.page.displayRows[0].first.labelStyle, 'tile-label')
   }
+})
+
+test('car image sync pulls chunks when hash changes, caches via system.file, and yields to user controls', () => {
+  const files = new Map()
+  const storage = new Map()
+  const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4, 5, 6, 7, 8])
+  const b64 = pngBytes.toString('base64')
+  const part0 = b64.slice(0, 8)
+  const part1 = b64.slice(8)
+  const link = start({
+    native: {
+      '@app-module/system.storage': {
+        get({ key, success }) { success(storage.get(key) || '') },
+        set({ key, value, complete }) { storage.set(key, value); if (complete) complete() }
+      },
+      '@app-module/system.file': {
+        writeArrayBuffer({ uri, buffer, success }) {
+          files.set(uri, Buffer.from(buffer))
+          success()
+        },
+        delete({ uri }) { files.delete(uri) }
+      }
+    }
+  })
+  link.hello({ features: ['confirm', 'cancel', 'refresh', 'car_image'] })
+  link.reply({ carImageHash: 'carhash01234', carImageChunks: 2 })
+  assert.equal(link.sent.at(-1).data.type, 'car_image')
+  assert.equal(link.sent.at(-1).data.hash, 'carhash01234')
+  assert.equal(link.sent.at(-1).data.index, 0)
+  assert.equal(link.page.busy, false)
+
+  link.receive({ v: 1, id: link.sent.at(-1).data.id, type: 'car_image_reply', hash: 'carhash01234', index: 0, total: 2, data: part0 })
+  assert.equal(link.sent.at(-1).data.type, 'car_image')
+  assert.equal(link.sent.at(-1).data.index, 1)
+
+  link.receive({ v: 1, id: link.sent.at(-1).data.id, type: 'car_image_reply', hash: 'carhash01234', index: 1, total: 2, data: part1 })
+  assert.equal(link.page.carImageSrc, 'internal://files/car_carhash01234.png')
+  assert.deepEqual(files.get('internal://files/car_carhash01234.png'), pngBytes)
+
+  link.page.syncStatus()
+  link.reply({ carImageHash: 'newhash99999', carImageChunks: 1 })
+  assert.equal(link.sent.at(-1).data.type, 'car_image')
+  link.page.select('climate')
+  assert.equal(link.sent.at(-1).data.type, 'prepare', 'User control must supersede background car_image fetch')
+  link.reply(CLIMATE_CONFIRMATION)
+  link.page.cancel()
+
+  link.page.onCarImageError()
+  assert.equal(link.page.carImageSrc, '/common/images/starshine-8.png')
 })

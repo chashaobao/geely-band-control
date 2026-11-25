@@ -8,6 +8,7 @@ import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -90,7 +91,7 @@ public final class GarageApp extends Application {
             uiEvents.clear();
         }
         widgets = new GalaxyWidgets(this, prefs, main, this::onWidgetChange);
-        link = new WearLink(this, main, this::onBandMessage, confirmations::disconnect, this::changed);
+        link = new WearLink(this, main, this::onBandMessage, confirmations::disconnect, this::changed, this::note);
     }
 
     boolean isArmed() {
@@ -104,6 +105,20 @@ public final class GarageApp extends Application {
     String voiceTestResult() { return voiceTestResult; }
 
     List<UiEvent> uiEvents() { return List.copyOf(uiEvents); }
+
+    String exportDiagnostics() {
+        String model = (Build.MANUFACTURER + " " + Build.MODEL).trim();
+        return WearDiagnostics.formatDiagnosticExport(
+                BuildConfig.VERSION_NAME,
+                Build.VERSION.SDK_INT,
+                model,
+                link.diagnosticSummary(),
+                serviceRunning,
+                link.status(),
+                link.canAuthorize(),
+                link.isAuthorizing(),
+                uiEvents);
+    }
 
     void clearUiEvents() {
         uiEvents.clear();
@@ -196,7 +211,7 @@ public final class GarageApp extends Application {
     private void changed() {
         if (link != null && !observedLink.equals(link.status())) {
             observedLink = link.status();
-            appendEvent("手环通信", observedLink, observedLink.contains("失败") || observedLink.contains("无法"));
+            appendEvent("手环通信", observedLink, WearDiagnostics.isWarningStatus(observedLink));
         }
         if (widgets != null) {
             GalaxyWidgets.Control lock = widgets.controls().get(CarAction.LOCK);
@@ -282,6 +297,7 @@ public final class GarageApp extends Application {
                 case "prepare" -> prepare(node, request);
                 case "execute" -> execute(node, request);
                 case "cancel" -> confirmations.cancel(node, request.token());
+                case "car_image" -> sendCarImageChunk(node, request);
             }
         } catch (JSONException invalid) {
             Log.w(TAG, "Invalid band message");
@@ -497,6 +513,20 @@ public final class GarageApp extends Application {
         send(node, request.id(), () -> BandMessage.reply(request.id(), state, note));
     }
 
+    private void sendCarImageChunk(String node, BandMessage request) {
+        CarImage.Packaged image = widgets.carImage();
+        String hash = request.imageHash();
+        int index = request.imageIndex();
+        String text = BandMessage.encodeReply(request.id(), () -> {
+            if (image == null || !image.hash().equals(hash) || index < 0 || index >= image.chunks().size()) {
+                return BandMessage.carImageReply(request.id(), hash, index, 0, "");
+            }
+            return BandMessage.carImageReply(request.id(), hash, index,
+                    image.chunks().size(), image.chunks().get(index));
+        }, error -> Log.e(TAG, "event=car_image_reply_failed id=" + request.id(), error));
+        link.send(node, text, reason -> Log.i(TAG, "event=car_image_send_failed id=" + request.id() + " reason=" + reason));
+    }
+
     private void send(String node, String id, BandMessage.ReplyBuilder builder) {
         String text = BandMessage.encodeReply(id, () -> withState(builder.build()),
                 error -> Log.e(TAG, "event=reply_state_failed id=" + id, error));
@@ -532,6 +562,10 @@ public final class GarageApp extends Application {
         }
         if (!notice.isEmpty()) response.put("controlNotice", notice);
         if (blocked.length() > 0) response.put("blocked", blocked);
+        CarImage.Packaged carImage = widgets.carImage();
+        if (carImage != null) {
+            response.put("carImageHash", carImage.hash()).put("carImageChunks", carImage.chunks().size());
+        }
         return response.put("controlDirections", directions)
                 .put("vehicleCached", widgets.showsLastReading())
                 .put("phoneConfirmation", pause == ControlPause.PHONE_CONFIRM)

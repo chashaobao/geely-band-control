@@ -18,6 +18,7 @@ import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.text.TextUtils;
+import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -31,6 +32,8 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -68,6 +71,8 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     private static final int BT_PERMISSION_REQUEST = 41;
     private static final String PREFS_NAME = "watch_garage";
     private static final String SNAPSHOT_KEY = "vehicle-snapshot";
+    private static final String CAR_IMAGE_HASH_KEY = "car-image-hash";
+    private static final String CAR_IMAGE_FILE_KEY = "car-image-file";
     private static final String EVENTS_KEY = "connection-events";
     private static final String HAPTICS_KEY = "control-haptics";
     private static final String PHONE_ADDR_KEY = "preferred-phone-address";
@@ -102,6 +107,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     private View fuelFill;
     private View connectionDot;
     private TextView statusSummaryView;
+    private ImageView carImageView;
     private TextView controlsRefreshView;
     private TextView emptyView;
     private LinearLayout gridContainer;
@@ -136,6 +142,11 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     private String confirmTitle = "";
     private String confirmIconAsset = "";
     private String storedSnapshot = "";
+    private String carImageHash = "";
+    private String failedCarImageHash = "";
+    private String imageSyncHash = "";
+    private int imageSyncTotal;
+    private final List<String> imageSyncChunks = new ArrayList<>();
 
     private List<String> mapped = new ArrayList<>();
     private List<String> available = new ArrayList<>();
@@ -163,6 +174,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         client.setPreferredAddress(prefs.getString(PHONE_ADDR_KEY, ""));
 
         setContentView(buildUi());
+        loadCachedCarImage();
         loadSnapshot();
         renderAll();
     }
@@ -289,8 +301,12 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         main.postDelayed(pollTask, delay);
     }
 
+    private boolean isBusy() {
+        return pending != null && !"status".equals(pending.type()) && !"car_image".equals(pending.type());
+    }
+
     private void triggerRefresh() {
-        if (pending != null || !confirmTitle.isEmpty()) return;
+        if (isBusy() || !confirmTitle.isEmpty()) return;
         if (controlPending) {
             showToast(controlNotice.isEmpty() ? "正在同步车况" : controlNotice);
             syncStatus();
@@ -312,7 +328,8 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             if ("prepare".equals(type) || "execute".equals(type)) vibrateFailure();
             return;
         }
-        if (pending != null && (!"status".equals(pending.type()) || "status".equals(type))) return;
+        if (pending != null && (!"status".equals(pending.type()) && !"car_image".equals(pending.type())
+                || "status".equals(type) || "car_image".equals(type))) return;
         clearPending();
         main.removeCallbacks(pollTask);
 
@@ -324,13 +341,19 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         long timeout = "hello".equals(type) ? HELLO_TIMEOUT_MS : "refresh".equals(type) ? 13_000 : 8_000;
         main.postDelayed(requestTimeoutTask, timeout);
         try {
-            String payload = WatchProtocol.buildRequest(id, type, action, token, direction, BuildConfig.VERSION_NAME).toString();
+            String payload = "car_image".equals(type)
+                    ? WatchProtocol.buildCarImageRequest(id, imageSyncHash, imageSyncChunks.size()).toString()
+                    : WatchProtocol.buildRequest(id, type, action, token, direction, BuildConfig.VERSION_NAME).toString();
             recordEvent("send", req, "");
             client.send(payload, () -> {
                 if (pending != req) return;
                 recordEvent("send_failed", req, "");
                 if ("hello".equals(type)) finishHello(null);
-                else disconnect("发送失败，请检查蓝牙连接", "send_failed", req);
+                else if ("car_image".equals(type)) {
+                    clearPending();
+                    resetImageSync();
+                    schedulePoll();
+                } else disconnect("发送失败，请检查蓝牙连接", "send_failed", req);
             });
         } catch (JSONException invalid) {
             clearPending();
@@ -396,6 +419,30 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
                 recordEvent("recv", request, "hello-reply");
                 finishHello(reply);
             }
+            return;
+        }
+        if ("car_image".equals(request.type())) {
+            if (reply.optInt("v") != WatchProtocol.PROTOCOL || !"car_image_reply".equals(reply.optString("type"))) return;
+            clearPending();
+            String hash = reply.optString("hash");
+            int index = reply.optInt("index", -1);
+            int total = reply.optInt("total", 0);
+            String data = reply.optString("data");
+            if (!hash.equals(imageSyncHash) || index != imageSyncChunks.size() || total <= 0 || data.isEmpty()) {
+                resetImageSync();
+                schedulePoll();
+                return;
+            }
+            imageSyncChunks.add(data);
+            if (imageSyncChunks.size() < total) {
+                sendRequest("car_image", null, null, null);
+                return;
+            }
+            String completedHash = imageSyncHash;
+            String joined = String.join("", imageSyncChunks);
+            resetImageSync();
+            saveAndDisplayCarImage(completedHash, joined);
+            schedulePoll();
             return;
         }
         if (reply.optInt("v") != WatchProtocol.PROTOCOL || !"reply".equals(reply.optString("type"))) return;
@@ -500,6 +547,18 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             if (!controlPending || phoneConfirmation) showToast(controlNotice);
         }
         renderAll();
+        String imgHash = reply.optString("carImageHash");
+        int imgChunks = reply.optInt("carImageChunks", 0);
+        if ("status".equals(request.type()) && supportsRequest("car_image") && !controlPending && confirmTitle.isEmpty()
+                && !imgHash.isEmpty() && imgChunks > 0 && !imgHash.equals(carImageHash) && !imgHash.equals(failedCarImageHash)) {
+            if (!imgHash.equals(imageSyncHash)) {
+                imageSyncHash = imgHash;
+                imageSyncTotal = imgChunks;
+                imageSyncChunks.clear();
+            }
+            sendRequest("car_image", null, null, null);
+            return;
+        }
         schedulePoll();
     }
 
@@ -510,7 +569,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     }
 
     private void selectAction(String action) {
-        if (pending != null || !confirmTitle.isEmpty()) return;
+        if (isBusy() || !confirmTitle.isEmpty()) return;
         if (!linked) {
             showToast("请先连接手机");
             vibrateFailure();
@@ -588,6 +647,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         recordEvent("disconnect", request, reason);
         clearPending();
         clearConfirmationState();
+        resetImageSync();
         handshakeComplete = false;
         features = null;
         compatibilityNotice = "";
@@ -630,6 +690,51 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         params.weight = Math.max(0, percent);
         fill.setLayoutParams(params);
         fill.setVisibility(percent > 0 ? View.VISIBLE : View.INVISIBLE);
+    }
+
+    private void resetImageSync() {
+        imageSyncHash = "";
+        imageSyncTotal = 0;
+        imageSyncChunks.clear();
+    }
+
+    private void loadCachedCarImage() {
+        String hash = prefs.getString(CAR_IMAGE_HASH_KEY, "");
+        String path = prefs.getString(CAR_IMAGE_FILE_KEY, "");
+        if (hash.isEmpty() || path.isEmpty()) return;
+        File file = new File(path);
+        if (!file.isFile()) return;
+        Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
+        if (bitmap != null) {
+            carImageHash = hash;
+            carImageView.setImageBitmap(bitmap);
+        }
+    }
+
+    private void saveAndDisplayCarImage(String hash, String base64Text) {
+        try {
+            byte[] png = Base64.decode(base64Text, Base64.DEFAULT);
+            Bitmap bitmap = BitmapFactory.decodeByteArray(png, 0, png.length);
+            if (bitmap == null) {
+                failedCarImageHash = hash;
+                return;
+            }
+            File target = new File(getFilesDir(), "car_" + hash + ".png");
+            try (FileOutputStream out = new FileOutputStream(target)) {
+                out.write(png);
+            }
+            String previousPath = prefs.getString(CAR_IMAGE_FILE_KEY, "");
+            if (!previousPath.isEmpty() && !previousPath.equals(target.getAbsolutePath())) {
+                //noinspection ResultOfMethodCallIgnored
+                new File(previousPath).delete();
+            }
+            prefs.edit().putString(CAR_IMAGE_HASH_KEY, hash)
+                    .putString(CAR_IMAGE_FILE_KEY, target.getAbsolutePath()).apply();
+            carImageHash = hash;
+            carImageView.setImageBitmap(bitmap);
+        } catch (IllegalArgumentException | IOException failed) {
+            failedCarImageHash = hash;
+        }
     }
 
     private void loadSnapshot() {
@@ -731,7 +836,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     private void renderMeta() {
         String refreshText = phoneConfirmation ? "请在手机确认"
                 : controlPending ? "同步中…"
-                : pending != null && !"status".equals(pending.type()) ? "请稍候…"
+                : pending != null && !"status".equals(pending.type()) && !"car_image".equals(pending.type()) ? "请稍候…"
                 : updatedLabel;
         statusSummaryView.setText(String.format(Locale.getDefault(), "%s · %s", modeLabel, motionLabel));
         controlsRefreshView.setText(refreshText);
@@ -1080,12 +1185,12 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         statusRow.setOnClickListener(v -> triggerRefresh());
         page.addView(statusRow, new LinearLayout.LayoutParams(-2, -2));
 
-        ImageView carImage = new ImageView(this);
-        carImage.setImageBitmap(assetBitmap("starshine-8.png"));
-        carImage.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        carImageView = new ImageView(this);
+        carImageView.setImageBitmap(assetBitmap("starshine-8.png"));
+        carImageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
         LinearLayout.LayoutParams carParams = new LinearLayout.LayoutParams(dp(170), dp(58));
         carParams.topMargin = dp(8);
-        page.addView(carImage, carParams);
+        page.addView(carImageView, carParams);
 
         return page;
     }

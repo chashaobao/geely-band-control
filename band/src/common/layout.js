@@ -75,13 +75,14 @@ const BASE_NAMES = {
 
 export function resolveLayoutProfile(info) {
   if (!info || typeof info !== 'object') return DEFAULT_LAYOUT
-  const width = Number(info.screenWidth) || 0
-  const height = Number(info.screenHeight) || 0
+  const width = Number(info.screenWidth || info.windowWidth) || 0
+  const height = Number(info.screenHeight || info.windowHeight) || 0
   const shape = typeof info.screenShape === 'string' ? info.screenShape.toLowerCase() : ''
-  if (shape === 'circle' || (width >= 400 && height >= 400 && Math.abs(width - height) <= 32)) {
+  if (shape === 'circle' || (width >= 200 && height >= 200 && Math.abs(width - height) <= 32)) {
     return 'circle'
   }
-  if (shape === 'pill-shaped' || shape === 'capsule' || (width > 0 && width <= 260 && height >= 360)) {
+  if (shape === 'pill-shaped' || shape === 'capsule'
+      || (width > 0 && width <= 260 && (height >= 360 || height / width >= 1.8))) {
     return 'capsule'
   }
   return DEFAULT_LAYOUT
