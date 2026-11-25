@@ -898,7 +898,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         emptyView.setVisibility(View.GONE);
         int count = mapped.size();
         int orbDp = count <= 1 ? 86 : count == 2 ? 74 : 58;
-        int iconDp = count <= 1 ? 44 : count == 2 ? 38 : 31;
+        int iconDp = count <= 1 ? 58 : count == 2 ? 50 : 40;
         int labelSp = count <= 1 ? 17 : count == 2 ? 16 : 14;
         for (int i = 0; i < count; i += 2) {
             String first = mapped.get(i);

@@ -2406,16 +2406,16 @@ export default {
   object-fit: contain;
 }
 .watch-orb-icon-hero {
-  width: 54px;
-  height: 54px;
+  width: 74px;
+  height: 74px;
 }
 .watch-orb-icon-pair {
-  width: 46px;
-  height: 46px;
+  width: 62px;
+  height: 62px;
 }
 .watch-orb-icon-grid {
-  width: 36px;
-  height: 36px;
+  width: 48px;
+  height: 48px;
 }
 .watch-cell-label {
   margin-top: 4px;
