@@ -16,8 +16,11 @@ function Write-Png([string]$relative, [int]$width, [int]$height, [scriptblock]$d
     }
 }
 
-function Draw-Mark($graphics, [int]$size) {
-    $graphics.ScaleTransform($size / 108.0, $size / 108.0)
+function Draw-Mark($graphics, [int]$size, [double]$paddingRatio = 0.10) {
+    $inset = $size * $paddingRatio
+    $inner = $size - 2.0 * $inset
+    $graphics.TranslateTransform($inset, $inset)
+    $graphics.ScaleTransform($inner / 108.0, $inner / 108.0)
     $background = New-Object Drawing.SolidBrush ([Drawing.ColorTranslator]::FromHtml('#143C3C'))
     $ink = New-Object Drawing.Pen ([Drawing.ColorTranslator]::FromHtml('#9AE8CE')),5
     $ink.StartCap = $ink.EndCap = [Drawing.Drawing2D.LineCap]::Round
@@ -36,7 +39,8 @@ function Draw-Mark($graphics, [int]$size) {
     }
 }
 
-Write-Png 'band/src/common/icon.png' 192 192 { param($g) Draw-Mark $g 192 }
+# Fit Band 8 Pro (336x480) unscaled launcher slots while keeping transparent padding for round/squircle masks.
+Write-Png 'band/src/common/icon.png' 96 96 { param($g) Draw-Mark $g 96 0.10 }
 
 Write-Png 'band/src/common/images/starshine-8.png' 488 158 {
     param($g)

@@ -69,6 +69,17 @@ public final class WidgetReadingsTest {
         assertEquals(Instant.parse("2026-11-25T08:48:00Z").toEpochMilli(), morningPm.updatedAt());
     }
 
+    @Test public void acceptsPercentOnlyReadingsAndParsesPercentageText() {
+        VehicleStatus ev = WidgetReadings.parse(distance("", ""), energy("82", "%", 82),
+                energy("", "", null), "已驻车", "11-24 09:15", NOW, SHANGHAI);
+        assertNull(ev.totalKm());
+        assertNull(ev.electricKm());
+        assertEquals(Integer.valueOf(82), ev.electricPercent());
+        assertEquals(Integer.valueOf(82), distance("82", "%").percent());
+        assertEquals(Integer.valueOf(100), distance("100%", "").percent());
+        assertNull(distance("120", "%").percent());
+    }
+
     private static WidgetReadings.Distance distance(String value, String unit) {
         return new WidgetReadings.Distance(value, unit);
     }

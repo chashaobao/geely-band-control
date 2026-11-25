@@ -10,6 +10,7 @@ import java.util.regex.Pattern;
 final class WidgetReadings {
     private static final Pattern RANGE = Pattern.compile(
             "(\\d{1,3}(?:,\\d{3})|\\d{1,5})\\s*(?:km|㎞|公里)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern PERCENT = Pattern.compile("(\\d{1,3})\\s*%");
     private static final Pattern UPDATED = Pattern.compile(
             "(?:(\\d{4})[-/年])?(\\d{1,2})[-/月](\\d{1,2})(?:\\s*日\\s*|\\s+)"
                     + "(凌晨|上午|早上|中午|下午|傍晚|晚上)?\\s*(\\d{1,2}):(\\d{2})(?:\\s*(AM|PM))?",
@@ -28,6 +29,15 @@ final class WidgetReadings {
             }
             return distance.matches() ? Integer.parseInt(distance.group(1).replace(",", "")) : null;
         }
+
+        Integer percent() {
+            String text = value.replace('\u00a0', ' ').trim();
+            String cleanedUnit = unit.replace('\u00a0', ' ').trim();
+            Matcher match = PERCENT.matcher(cleanedUnit.isEmpty() ? text : text + " " + cleanedUnit);
+            if (!match.matches()) return null;
+            int pct = Integer.parseInt(match.group(1));
+            return pct >= 0 && pct <= 100 ? pct : null;
+        }
     }
 
     record Energy(Distance distance, Integer percent) {}
@@ -44,11 +54,17 @@ final class WidgetReadings {
         Integer totalKm = total.kilometers();
         Integer electricKm = electric.distance().kilometers();
         Integer fuelKm = fuel.distance().kilometers();
-        if ("03-15 12:00".equals(label) && Integer.valueOf(364).equals(totalKm)
+        if ("03-15 12:00".equals(label)
+                && (Integer.valueOf(364).equals(totalKm)
+                || (totalKm == null && Integer.valueOf(37).equals(electric.percent())
+                && Integer.valueOf(37).equals(fuel.percent())))
                 && electricKm == null && fuelKm == null) {
             return VehicleStatus.EMPTY;
         }
-        if (totalKm == null && electricKm == null && fuelKm == null) return VehicleStatus.EMPTY;
+        if (totalKm == null && electricKm == null && fuelKm == null
+                && electric.percent() == null && fuel.percent() == null) {
+            return VehicleStatus.EMPTY;
+        }
         return new VehicleStatus(totalKm, electricKm, fuelKm, electric.percent(), fuel.percent(),
                 motion.trim(), updatedAt, label);
     }

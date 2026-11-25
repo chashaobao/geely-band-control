@@ -71,11 +71,14 @@ final class WidgetTree {
         View container = named(root, containerName);
         if (container == null) container = named(root, barName);
         Map<Integer, WidgetReadings.Distance> distances = new LinkedHashMap<>();
-        collectEnergyDistances(container, distances);
+        Map<Integer, Integer> percents = new LinkedHashMap<>();
+        collectEnergyReadings(container, distances, percents);
         WidgetReadings.Distance distance = distances.size() == 1 ? distances.values().iterator().next()
                 : new WidgetReadings.Distance("", "");
         View visibleBar = unique(container, view -> view instanceof ProgressBar && ENERGY_BARS.contains(resource(view)));
-        return new WidgetReadings.Energy(distance, progressPercent(visibleBar));
+        Integer barPercent = progressPercent(visibleBar);
+        Integer textPercent = percents.size() == 1 ? percents.values().iterator().next() : null;
+        return new WidgetReadings.Energy(distance, barPercent != null ? barPercent : textPercent);
     }
 
     private static Integer progressPercent(View view) {
@@ -87,8 +90,12 @@ final class WidgetTree {
         return (int) Math.round(100.0 * (progress - (long) minimum) / (maximum - (long) minimum));
     }
 
-    private static void collectEnergyDistances(View view, Map<Integer, WidgetReadings.Distance> distances) {
-        if (view == null || view.getVisibility() != View.VISIBLE || distances.size() > 1) return;
+    private static void collectEnergyReadings(
+            View view,
+            Map<Integer, WidgetReadings.Distance> distances,
+            Map<Integer, Integer> percents) {
+        if (view == null || view.getVisibility() != View.VISIBLE
+                || (distances.size() > 1 && percents.size() > 1)) return;
         if (view instanceof TextView) {
             String unit = "";
             if (ENERGY_VALUE.equals(resource(view)) && view.getParent() instanceof ViewGroup row) {
@@ -97,8 +104,12 @@ final class WidgetTree {
             WidgetReadings.Distance candidate = new WidgetReadings.Distance(text(view), unit);
             Integer km = candidate.kilometers();
             if (km != null) distances.putIfAbsent(km, candidate);
+            Integer pct = candidate.percent();
+            if (pct != null) percents.putIfAbsent(pct, pct);
         } else if (view instanceof ViewGroup group) {
-            for (int i = 0; i < group.getChildCount(); i++) collectEnergyDistances(group.getChildAt(i), distances);
+            for (int i = 0; i < group.getChildCount(); i++) {
+                collectEnergyReadings(group.getChildAt(i), distances, percents);
+            }
         }
     }
 
