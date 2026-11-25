@@ -594,6 +594,13 @@ test('layout profile adapts to Band 10 capsule, circular Watch 5, and falls back
     assert.equal(circle.page.displayRows.length, 2)
     assert.match(circle.page.displayRows[0].first.style, /tile-circle/)
     assert.match(circle.page.displayRows[0].second.style, /tile-circle/)
+    assert.equal(circle.page.displayRows[0].first.watchOrbStyle, 'watch-orb watch-orb-paused')
+    assert.equal(circle.page.displayRows[0].second.watchOrbStyle, 'watch-orb watch-orb-ready')
+    assert.equal(circle.page.watchPage, 0)
+    circle.page.onWatchPageChange({ index: 1 })
+    assert.equal(circle.page.watchPage, 1)
+    circle.page.setWatchPage(0)
+    assert.equal(circle.page.watchPage, 0)
   }
 
   for (const native of [

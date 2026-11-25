@@ -44,16 +44,15 @@ import java.util.Locale;
 import java.util.Map;
 
 public final class WatchActivity extends Activity implements BluetoothPhoneClient.Listener {
-    private static final int BG = Color.rgb(16, 22, 27);
+    private static final int BG = Color.rgb(14, 22, 29);
     private static final int PANEL = Color.rgb(24, 38, 44);
-    private static final int META = Color.rgb(33, 50, 57);
-    private static final int TILE_READY = Color.rgb(29, 53, 50);
-    private static final int TILE_PAUSED = Color.rgb(32, 44, 51);
-    private static final int TILE_UNASSIGNED = Color.rgb(25, 37, 44);
-    private static final int SYMBOL_BG = Color.rgb(44, 60, 68);
-    private static final int SYMBOL_READY = Color.rgb(48, 82, 72);
+    private static final int META = Color.rgb(25, 38, 48);
+    private static final int ORB_READY = Color.rgb(28, 91, 83);
+    private static final int ORB_PAUSED = Color.rgb(32, 46, 55);
+    private static final int ORB_UNASSIGNED = Color.rgb(27, 38, 45);
     private static final int INK = Color.rgb(244, 250, 248);
-    private static final int MUTED = Color.rgb(183, 201, 200);
+    private static final int SUB_INK = Color.rgb(183, 201, 212);
+    private static final int MUTED = Color.rgb(149, 171, 178);
     private static final int MINT = Color.rgb(158, 233, 206);
     private static final int ELECTRIC = Color.rgb(111, 231, 165);
     private static final int FUEL = Color.rgb(116, 183, 255);
@@ -84,25 +83,26 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     private SharedPreferences prefs;
     private Vibrator vibrator;
 
-    private ScrollView homeScroll;
+    private FrameLayout homeShell;
+    private VerticalPagerView homePager;
+    private View pagerDot0;
+    private View pagerDot1;
     private ScrollView settingsScroll;
     private LinearLayout confirmScreen;
     private FrameLayout toastBox;
     private TextView toastView;
 
-    private TextView motionView;
+    private LinearLayout heroBlock;
     private LinearLayout splitRow;
-    private LinearLayout totalRow;
-    private TextView totalText;
+    private TextView totalHeroView;
+    private TextView subrangeView;
     private TextView electricText;
     private TextView fuelText;
     private View electricFill;
     private View fuelFill;
-    private View dotPrimary;
-    private View dotSecondary;
-    private TextView updatedView;
     private View connectionDot;
-    private TextView modeView;
+    private TextView statusSummaryView;
+    private TextView controlsRefreshView;
     private TextView emptyView;
     private LinearLayout gridContainer;
 
@@ -114,7 +114,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
 
     private boolean visible;
     private boolean roundScreen;
-    private boolean showTotalRange;
+    private boolean showSplitDetail;
     private boolean settingsOpen;
     private boolean hapticsEnabled = true;
     private boolean handshakeComplete;
@@ -127,6 +127,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
 
     private String mode = "";
     private String modeLabel = "待连接";
+    private String motionLabel = "状态未知";
     private String updatedLabel = "等待车况";
     private String compatibilityNotice = "";
     private String controlNotice = "";
@@ -186,6 +187,10 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         if (settingsOpen) {
             settingsOpen = false;
             renderScreens();
+            return;
+        }
+        if (homePager.currentPage() > 0) {
+            homePager.setCurrentPage(0, true);
             return;
         }
         super.onBackPressed();
@@ -282,6 +287,21 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         long delay = phoneConfirmation ? PHONE_CONFIRM_INTERVAL_MS
                 : controlPending ? CONTROL_STATUS_INTERVAL_MS : STATUS_INTERVAL_MS;
         main.postDelayed(pollTask, delay);
+    }
+
+    private void triggerRefresh() {
+        if (pending != null || !confirmTitle.isEmpty()) return;
+        if (controlPending) {
+            showToast(controlNotice.isEmpty() ? "正在同步车况" : controlNotice);
+            syncStatus();
+            return;
+        }
+        if (!client.isConnected()) {
+            ensureBluetoothAndConnect();
+            return;
+        }
+        if (supportsRequest("refresh")) showToast("正在刷新车况…");
+        sendRequest("refresh", null, null, null);
     }
 
     private void sendRequest(String type, String action, String token, String direction) {
@@ -590,15 +610,17 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     }
 
     private void applyVehicle(JSONObject vehicle, boolean cached) {
-        totalText.setText(WatchProtocol.rangeText(vehicle, "totalKm") + " km");
-        electricText.setText(WatchProtocol.rangeText(vehicle, "electricKm") + " km");
-        fuelText.setText(WatchProtocol.rangeText(vehicle, "fuelKm") + " km");
-        int ePct = WatchProtocol.validPercent(vehicle, "electricPercent");
-        int fPct = WatchProtocol.validPercent(vehicle, "fuelPercent");
-        updateBar(electricFill, ePct);
-        updateBar(fuelFill, fPct);
+        String total = WatchProtocol.rangeText(vehicle, "totalKm");
+        String electric = WatchProtocol.rangeText(vehicle, "electricKm");
+        String fuel = WatchProtocol.rangeText(vehicle, "fuelKm");
+        totalHeroView.setText(String.format(Locale.getDefault(), "%s km", total));
+        subrangeView.setText(String.format(Locale.getDefault(), "电 %s km · 油 %s km", electric, fuel));
+        electricText.setText(String.format(Locale.getDefault(), "%s km", electric));
+        fuelText.setText(String.format(Locale.getDefault(), "%s km", fuel));
+        updateBar(electricFill, WatchProtocol.validPercent(vehicle, "electricPercent"));
+        updateBar(fuelFill, WatchProtocol.validPercent(vehicle, "fuelPercent"));
         String motion = vehicle == null ? "" : vehicle.optString("motion");
-        motionView.setText(motion.isEmpty() ? "状态未知" : motion);
+        motionLabel = motion.isEmpty() ? "状态未知" : motion;
         String updated = vehicle == null ? "" : vehicle.optString("updatedLabel");
         updatedLabel = updated.isEmpty() ? "等待车况" : (cached ? "上次 " : "") + updated;
     }
@@ -692,7 +714,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         boolean showConfirm = !confirmTitle.isEmpty();
         confirmScreen.setVisibility(showConfirm ? View.VISIBLE : View.GONE);
         settingsScroll.setVisibility(!showConfirm && settingsOpen ? View.VISIBLE : View.GONE);
-        homeScroll.setVisibility(!showConfirm && !settingsOpen ? View.VISIBLE : View.GONE);
+        homeShell.setVisibility(!showConfirm && !settingsOpen ? View.VISIBLE : View.GONE);
         if (showConfirm) {
             confirmTitleView.setText(confirmTitle);
             confirmIconView.setImageBitmap(assetBitmap(confirmIconAsset));
@@ -702,7 +724,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             updatePhoneTargetLabel();
             settingsScroll.requestFocus();
         } else {
-            homeScroll.requestFocus();
+            homePager.requestFocus();
         }
     }
 
@@ -711,8 +733,8 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
                 : controlPending ? "同步中…"
                 : pending != null && !"status".equals(pending.type()) ? "请稍候…"
                 : updatedLabel;
-        updatedView.setText(refreshText);
-        modeView.setText(modeLabel);
+        statusSummaryView.setText(String.format(Locale.getDefault(), "%s · %s", modeLabel, motionLabel));
+        controlsRefreshView.setText(refreshText);
         boolean online = "已连接".equals(modeLabel) || "演示".equals(modeLabel);
         GradientDrawable dotBg = (GradientDrawable) connectionDot.getBackground();
         dotBg.setColor(online ? MINT : Color.rgb(120, 134, 140));
@@ -736,55 +758,57 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             String second = i + 1 < mapped.size() ? mapped.get(i + 1) : null;
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(-1, -2);
-            rowParams.topMargin = dp(8);
-            row.addView(buildTile(first), new LinearLayout.LayoutParams(0, dp(56), 1));
+            if (i > 0) rowParams.topMargin = dp(8);
+            row.addView(buildOrbTile(first), new LinearLayout.LayoutParams(0, -2, 1));
             if (second != null) {
-                LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(0, dp(56), 1);
-                secondParams.setMarginStart(dp(6));
-                row.addView(buildTile(second), secondParams);
+                LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(0, -2, 1);
+                secondParams.setMarginStart(dp(8));
+                row.addView(buildOrbTile(second), secondParams);
             }
             gridContainer.addView(row, rowParams);
         }
     }
 
-    private View buildTile(String action) {
+    private View buildOrbTile(String action) {
         boolean isAvailable = available.contains(action);
         String direction = controlDirections.get(action);
         String label = WatchProtocol.controlLabel(action, direction);
         String hint = !linked ? "待连接" : (!isAvailable && !controlPending ? "暂不可用" : "");
 
-        LinearLayout tile = new LinearLayout(this);
-        tile.setOrientation(LinearLayout.HORIZONTAL);
-        tile.setGravity(Gravity.CENTER_VERTICAL);
-        tile.setPadding(dp(8), 0, dp(8), 0);
-        tile.setBackground(rounded(isAvailable ? TILE_READY : linked ? TILE_PAUSED : TILE_UNASSIGNED, 12));
-        tile.setOnClickListener(view -> selectAction(action));
+        LinearLayout cell = new LinearLayout(this);
+        cell.setOrientation(LinearLayout.VERTICAL);
+        cell.setGravity(Gravity.CENTER_HORIZONTAL);
+        cell.setOnClickListener(view -> selectAction(action));
 
-        FrameLayout symbol = new FrameLayout(this);
-        symbol.setBackground(rounded(isAvailable ? SYMBOL_READY : SYMBOL_BG, 8));
+        FrameLayout orb = new FrameLayout(this);
+        GradientDrawable orbBg = new GradientDrawable();
+        orbBg.setShape(GradientDrawable.OVAL);
+        orbBg.setColor(isAvailable ? ORB_READY : linked ? ORB_PAUSED : ORB_UNASSIGNED);
+        orb.setBackground(orbBg);
+
         ImageView icon = new ImageView(this);
         icon.setImageBitmap(assetBitmap(WatchProtocol.iconAsset(action, direction)));
-        icon.setAlpha(isAvailable ? 1f : 0.68f);
-        FrameLayout.LayoutParams iconParams = new FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER);
-        symbol.addView(icon, iconParams);
-        tile.addView(symbol, new LinearLayout.LayoutParams(dp(26), dp(26)));
+        icon.setAlpha(isAvailable ? 1f : 0.65f);
+        orb.addView(icon, new FrameLayout.LayoutParams(dp(26), dp(26), Gravity.CENTER));
+        cell.addView(orb, new LinearLayout.LayoutParams(dp(56), dp(56)));
 
-        LinearLayout copy = new LinearLayout(this);
-        copy.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams copyParams = new LinearLayout.LayoutParams(0, -2, 1);
-        copyParams.setMarginStart(dp(6));
-        TextView labelView = text(label, 14, INK, true);
+        TextView labelView = text(label, 12, INK, true);
         labelView.setSingleLine(true);
         labelView.setEllipsize(TextUtils.TruncateAt.END);
-        copy.addView(labelView);
+        labelView.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-2, -2);
+        labelParams.topMargin = dp(4);
+        cell.addView(labelView, labelParams);
+
         if (!hint.isEmpty()) {
-            TextView hintView = text(hint, 10, MUTED, false);
+            TextView hintView = text(hint, 9, MUTED, false);
             hintView.setSingleLine(true);
-            copy.addView(hintView);
+            hintView.setGravity(Gravity.CENTER);
+            cell.addView(hintView);
         }
-        tile.addView(copy, copyParams);
-        return tile;
+        return cell;
     }
 
     private void renderDiagnostics() {
@@ -842,166 +866,58 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
                 .show();
     }
 
+    private void updatePagerDots(int page) {
+        updateDot(pagerDot0, page == 0);
+        updateDot(pagerDot1, page == 1);
+    }
+
+    private void updateDot(View dot, boolean active) {
+        int size = dp(active ? 7 : 5);
+        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) dot.getLayoutParams();
+        params.width = size;
+        params.height = size;
+        dot.setLayoutParams(params);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.OVAL);
+        bg.setColor(active ? MINT : Color.rgb(79, 99, 110));
+        dot.setBackground(bg);
+    }
+
     private View buildUi() {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(BG);
 
-        int hPad = dp(roundScreen ? 28 : 14);
-        int vPad = dp(roundScreen ? 36 : 14);
+        int hPad = dp(roundScreen ? 26 : 14);
+        int vPad = dp(roundScreen ? 20 : 14);
 
-        homeScroll = new ScrollView(this);
-        homeScroll.setFocusable(true);
-        homeScroll.setFocusableInTouchMode(true);
-        homeScroll.setVerticalScrollBarEnabled(false);
-        LinearLayout homeContent = new LinearLayout(this);
-        homeContent.setOrientation(LinearLayout.VERTICAL);
-        homeContent.setPadding(hPad, vPad, hPad, vPad);
-        homeScroll.addView(homeContent, new ScrollView.LayoutParams(-1, -2));
+        homeShell = new FrameLayout(this);
+        homePager = new VerticalPagerView(this);
+        homePager.addView(buildMileagePage(hPad, vPad));
+        homePager.addView(buildControlsPage(hPad, vPad));
+        homePager.setOnPageChangeListener(this::updatePagerDots);
+        homeShell.addView(homePager, new FrameLayout.LayoutParams(-1, -1));
 
-        LinearLayout rangeCard = new LinearLayout(this);
-        rangeCard.setOrientation(LinearLayout.VERTICAL);
-        rangeCard.setGravity(Gravity.CENTER_HORIZONTAL);
-        rangeCard.setPadding(dp(10), dp(8), dp(10), dp(6));
-        rangeCard.setBackground(rounded(PANEL, 16));
-        rangeCard.setOnClickListener(view -> {
-            showTotalRange = !showTotalRange;
-            splitRow.setVisibility(showTotalRange ? View.GONE : View.VISIBLE);
-            totalRow.setVisibility(showTotalRange ? View.VISIBLE : View.GONE);
-            updateIndicators();
-        });
+        LinearLayout pagerDots = new LinearLayout(this);
+        pagerDots.setOrientation(LinearLayout.VERTICAL);
+        pagerDots.setGravity(Gravity.CENTER_HORIZONTAL);
+        pagerDot0 = new View(this);
+        pagerDot1 = new View(this);
+        pagerDots.addView(pagerDot0, new LinearLayout.LayoutParams(dp(7), dp(7)));
+        LinearLayout.LayoutParams dot1Params = new LinearLayout.LayoutParams(dp(5), dp(5));
+        dot1Params.topMargin = dp(6);
+        pagerDots.addView(pagerDot1, dot1Params);
+        pagerDot0.setOnClickListener(v -> homePager.setCurrentPage(0, true));
+        pagerDot1.setOnClickListener(v -> homePager.setCurrentPage(1, true));
+        updatePagerDots(0);
 
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(text("银河星耀 8", 13, INK, true), new LinearLayout.LayoutParams(0, -2, 1));
-        motionView = text("状态未知", 12, MUTED, false);
-        header.addView(motionView);
-        rangeCard.addView(header, new LinearLayout.LayoutParams(-1, -2));
-
-        ImageView carImage = new ImageView(this);
-        carImage.setImageBitmap(assetBitmap("starshine-8.png"));
-        carImage.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        LinearLayout.LayoutParams carParams = new LinearLayout.LayoutParams(-1, dp(46));
-        carParams.topMargin = dp(4);
-        rangeCard.addView(carImage, carParams);
-
-        totalRow = new LinearLayout(this);
-        totalRow.setGravity(Gravity.CENTER);
-        totalRow.setVisibility(View.GONE);
-        totalText = text("— km", 18, INK, true);
-        totalRow.addView(totalText);
-        LinearLayout.LayoutParams totalParams = new LinearLayout.LayoutParams(-1, dp(36));
-        totalParams.topMargin = dp(4);
-        rangeCard.addView(totalRow, totalParams);
-
-        splitRow = new LinearLayout(this);
-        splitRow.setOrientation(LinearLayout.HORIZONTAL);
-        electricText = text("— km", 15, INK, true);
-        fuelText = text("— km", 15, INK, true);
-        electricFill = new View(this);
-        fuelFill = new View(this);
-        splitRow.addView(buildEnergyBox("energy-electric.png", electricText, electricFill, ELECTRIC),
-                new LinearLayout.LayoutParams(0, -2, 1));
-        LinearLayout.LayoutParams fuelBoxParams = new LinearLayout.LayoutParams(0, -2, 1);
-        fuelBoxParams.setMarginStart(dp(6));
-        splitRow.addView(buildEnergyBox("energy-fuel.png", fuelText, fuelFill, FUEL), fuelBoxParams);
-        LinearLayout.LayoutParams splitParams = new LinearLayout.LayoutParams(-1, -2);
-        splitParams.topMargin = dp(4);
-        rangeCard.addView(splitRow, splitParams);
-
-        LinearLayout indicators = new LinearLayout(this);
-        indicators.setGravity(Gravity.CENTER);
-        dotPrimary = new View(this);
-        dotSecondary = new View(this);
-        indicators.addView(dotPrimary, new LinearLayout.LayoutParams(dp(10), dp(3)));
-        LinearLayout.LayoutParams secondDotParams = new LinearLayout.LayoutParams(dp(5), dp(3));
-        secondDotParams.setMarginStart(dp(4));
-        indicators.addView(dotSecondary, secondDotParams);
-        updateIndicators();
-        LinearLayout.LayoutParams indParams = new LinearLayout.LayoutParams(-1, -2);
-        indParams.topMargin = dp(5);
-        rangeCard.addView(indicators, indParams);
-        homeContent.addView(rangeCard, new LinearLayout.LayoutParams(-1, -2));
-
-        LinearLayout metaBar = new LinearLayout(this);
-        metaBar.setOrientation(LinearLayout.HORIZONTAL);
-        metaBar.setGravity(Gravity.CENTER_VERTICAL);
-        metaBar.setBackground(rounded(META, 10));
-        metaBar.setPadding(dp(8), dp(6), dp(8), dp(6));
-
-        LinearLayout refreshBox = new LinearLayout(this);
-        refreshBox.setGravity(Gravity.CENTER_VERTICAL);
-        ImageView refreshIcon = new ImageView(this);
-        refreshIcon.setImageBitmap(assetBitmap("refresh.png"));
-        refreshBox.addView(refreshIcon, new LinearLayout.LayoutParams(dp(14), dp(14)));
-        updatedView = text("等待车况", 12, MUTED, false);
-        updatedView.setSingleLine(true);
-        updatedView.setEllipsize(TextUtils.TruncateAt.END);
-        LinearLayout.LayoutParams updParams = new LinearLayout.LayoutParams(0, -2, 1);
-        updParams.setMarginStart(dp(4));
-        refreshBox.addView(updatedView, updParams);
-        refreshBox.setOnClickListener(view -> {
-            if (pending != null || !confirmTitle.isEmpty()) return;
-            if (controlPending) {
-                showToast(controlNotice.isEmpty() ? "正在同步车况" : controlNotice);
-                syncStatus();
-                return;
-            }
-            if (!client.isConnected()) {
-                ensureBluetoothAndConnect();
-                return;
-            }
-            if (supportsRequest("refresh")) showToast("正在刷新车况…");
-            sendRequest("refresh", null, null, null);
-        });
-        metaBar.addView(refreshBox, new LinearLayout.LayoutParams(0, -2, 1));
-
-        View divider = new View(this);
-        divider.setBackgroundColor(Color.rgb(65, 86, 93));
-        LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(dp(1), dp(16));
-        divParams.setMargins(dp(6), 0, dp(6), 0);
-        metaBar.addView(divider, divParams);
-
-        LinearLayout connBox = new LinearLayout(this);
-        connBox.setGravity(Gravity.CENTER_VERTICAL);
-        connectionDot = new View(this);
-        connectionDot.setBackground(rounded(Color.rgb(120, 134, 140), 4));
-        connBox.addView(connectionDot, new LinearLayout.LayoutParams(dp(6), dp(6)));
-        modeView = text("待连接", 11, MUTED, false);
-        modeView.setSingleLine(true);
-        LinearLayout.LayoutParams modeParams = new LinearLayout.LayoutParams(-2, -2);
-        modeParams.setMarginStart(dp(4));
-        modeParams.setMarginEnd(dp(4));
-        connBox.addView(modeView, modeParams);
-        ImageView gear = new ImageView(this);
-        gear.setImageBitmap(assetBitmap("settings.png"));
-        connBox.addView(gear, new LinearLayout.LayoutParams(dp(15), dp(15)));
-        connBox.setOnClickListener(view -> {
-            if (pending != null || !confirmTitle.isEmpty()) return;
-            settingsOpen = true;
-            renderScreens();
-        });
-        metaBar.addView(connBox, new LinearLayout.LayoutParams(-2, -2));
-
-        LinearLayout.LayoutParams metaParams = new LinearLayout.LayoutParams(-1, -2);
-        metaParams.topMargin = dp(6);
-        homeContent.addView(metaBar, metaParams);
-
-        emptyView = text("连接手机后显示已映射车控", 13, MUTED, false);
-        emptyView.setGravity(Gravity.CENTER);
-        emptyView.setBackground(rounded(TILE_UNASSIGNED, 12));
-        emptyView.setPadding(dp(10), dp(18), dp(10), dp(18));
-        LinearLayout.LayoutParams emptyParams = new LinearLayout.LayoutParams(-1, -2);
-        emptyParams.topMargin = dp(8);
-        homeContent.addView(emptyView, emptyParams);
-
-        gridContainer = new LinearLayout(this);
-        gridContainer.setOrientation(LinearLayout.VERTICAL);
-        homeContent.addView(gridContainer, new LinearLayout.LayoutParams(-1, -2));
+        FrameLayout.LayoutParams dotsParams = new FrameLayout.LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL);
+        dotsParams.setMarginEnd(dp(10));
+        homeShell.addView(pagerDots, dotsParams);
 
         confirmScreen = new LinearLayout(this);
         confirmScreen.setOrientation(LinearLayout.VERTICAL);
         confirmScreen.setGravity(Gravity.CENTER);
-        confirmScreen.setPadding(hPad, vPad, hPad, vPad);
+        confirmScreen.setPadding(hPad, dp(28), hPad, dp(28));
         confirmScreen.setVisibility(View.GONE);
         LinearLayout confirmHeader = new LinearLayout(this);
         confirmHeader.setGravity(Gravity.CENTER);
@@ -1031,7 +947,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         settingsScroll.setVisibility(View.GONE);
         LinearLayout settingsContent = new LinearLayout(this);
         settingsContent.setOrientation(LinearLayout.VERTICAL);
-        settingsContent.setPadding(hPad, vPad, hPad, vPad);
+        settingsContent.setPadding(hPad, dp(34), hPad, dp(34));
         settingsScroll.addView(settingsContent, new ScrollView.LayoutParams(-1, -2));
 
         settingsContent.addView(text("设置", 18, INK, true));
@@ -1089,13 +1005,146 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         toastView.setGravity(Gravity.CENTER);
         toastBox.addView(toastView, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
 
-        root.addView(homeScroll, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(homeShell, new FrameLayout.LayoutParams(-1, -1));
         root.addView(settingsScroll, new FrameLayout.LayoutParams(-1, -1));
         root.addView(confirmScreen, new FrameLayout.LayoutParams(-1, -1));
         FrameLayout.LayoutParams toastParams = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
         toastParams.setMargins(hPad, 0, hPad, 0);
         root.addView(toastBox, toastParams);
         return root;
+    }
+
+    private View buildMileagePage(int hPad, int vPad) {
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setGravity(Gravity.CENTER_HORIZONTAL);
+        page.setPadding(hPad, vPad, hPad, vPad);
+
+        page.addView(text("银河星耀 8", 13, SUB_INK, true));
+
+        FrameLayout rangeArea = new FrameLayout(this);
+        rangeArea.setOnClickListener(v -> {
+            showSplitDetail = !showSplitDetail;
+            heroBlock.setVisibility(showSplitDetail ? View.GONE : View.VISIBLE);
+            splitRow.setVisibility(showSplitDetail ? View.VISIBLE : View.GONE);
+        });
+
+        heroBlock = new LinearLayout(this);
+        heroBlock.setOrientation(LinearLayout.VERTICAL);
+        heroBlock.setGravity(Gravity.CENTER_HORIZONTAL);
+        totalHeroView = text("— km", 34, INK, true);
+        totalHeroView.setSingleLine(true);
+        subrangeView = text("电 — km · 油 — km", 11, MUTED, false);
+        subrangeView.setSingleLine(true);
+        heroBlock.addView(totalHeroView);
+        LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(-2, -2);
+        subParams.topMargin = dp(2);
+        heroBlock.addView(subrangeView, subParams);
+        rangeArea.addView(heroBlock, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
+
+        splitRow = new LinearLayout(this);
+        splitRow.setOrientation(LinearLayout.HORIZONTAL);
+        splitRow.setVisibility(View.GONE);
+        electricText = text("— km", 14, INK, true);
+        fuelText = text("— km", 14, INK, true);
+        electricFill = new View(this);
+        fuelFill = new View(this);
+        splitRow.addView(buildEnergyBox("energy-electric.png", electricText, electricFill, ELECTRIC),
+                new LinearLayout.LayoutParams(0, -2, 1));
+        LinearLayout.LayoutParams fuelBoxParams = new LinearLayout.LayoutParams(0, -2, 1);
+        fuelBoxParams.setMarginStart(dp(6));
+        splitRow.addView(buildEnergyBox("energy-fuel.png", fuelText, fuelFill, FUEL), fuelBoxParams);
+        rangeArea.addView(splitRow, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
+
+        LinearLayout.LayoutParams rangeParams = new LinearLayout.LayoutParams(-1, 0, 1);
+        rangeParams.topMargin = dp(4);
+        page.addView(rangeArea, rangeParams);
+
+        LinearLayout statusRow = new LinearLayout(this);
+        statusRow.setOrientation(LinearLayout.HORIZONTAL);
+        statusRow.setGravity(Gravity.CENTER_VERTICAL);
+        statusRow.setBackground(rounded(META, 12));
+        statusRow.setPadding(dp(10), dp(4), dp(10), dp(4));
+        connectionDot = new View(this);
+        connectionDot.setBackground(rounded(Color.rgb(120, 134, 140), 4));
+        statusRow.addView(connectionDot, new LinearLayout.LayoutParams(dp(6), dp(6)));
+        statusSummaryView = text("待连接 · 状态未知", 11, INK, false);
+        statusSummaryView.setSingleLine(true);
+        LinearLayout.LayoutParams sumParams = new LinearLayout.LayoutParams(-2, -2);
+        sumParams.setMarginStart(dp(5));
+        sumParams.setMarginEnd(dp(5));
+        statusRow.addView(statusSummaryView, sumParams);
+        ImageView refreshIcon = new ImageView(this);
+        refreshIcon.setImageBitmap(assetBitmap("refresh.png"));
+        statusRow.addView(refreshIcon, new LinearLayout.LayoutParams(dp(12), dp(12)));
+        statusRow.setOnClickListener(v -> triggerRefresh());
+        page.addView(statusRow, new LinearLayout.LayoutParams(-2, -2));
+
+        ImageView carImage = new ImageView(this);
+        carImage.setImageBitmap(assetBitmap("starshine-8.png"));
+        carImage.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams carParams = new LinearLayout.LayoutParams(dp(170), dp(58));
+        carParams.topMargin = dp(8);
+        page.addView(carImage, carParams);
+
+        return page;
+    }
+
+    private View buildControlsPage(int hPad, int vPad) {
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setGravity(Gravity.CENTER_HORIZONTAL);
+        page.setPadding(hPad, vPad, hPad, vPad);
+
+        LinearLayout topPill = new LinearLayout(this);
+        topPill.setOrientation(LinearLayout.HORIZONTAL);
+        topPill.setGravity(Gravity.CENTER_VERTICAL);
+        topPill.setBackground(rounded(META, 12));
+        topPill.setPadding(dp(10), dp(4), dp(10), dp(4));
+        ImageView refreshIcon = new ImageView(this);
+        refreshIcon.setImageBitmap(assetBitmap("refresh.png"));
+        topPill.addView(refreshIcon, new LinearLayout.LayoutParams(dp(12), dp(12)));
+        controlsRefreshView = text("等待车况", 11, SUB_INK, false);
+        controlsRefreshView.setSingleLine(true);
+        LinearLayout.LayoutParams crParams = new LinearLayout.LayoutParams(-2, -2);
+        crParams.setMarginStart(dp(4));
+        topPill.addView(controlsRefreshView, crParams);
+        topPill.setOnClickListener(v -> triggerRefresh());
+        page.addView(topPill, new LinearLayout.LayoutParams(-2, -2));
+
+        FrameLayout centerArea = new FrameLayout(this);
+        emptyView = text("连接手机后显示已映射车控", 13, MUTED, false);
+        emptyView.setGravity(Gravity.CENTER);
+        emptyView.setBackground(rounded(ORB_UNASSIGNED, 14));
+        emptyView.setPadding(dp(12), dp(16), dp(12), dp(16));
+        centerArea.addView(emptyView, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
+
+        gridContainer = new LinearLayout(this);
+        gridContainer.setOrientation(LinearLayout.VERTICAL);
+        gridContainer.setGravity(Gravity.CENTER);
+        centerArea.addView(gridContainer, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
+        page.addView(centerArea, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        LinearLayout settingsPill = new LinearLayout(this);
+        settingsPill.setOrientation(LinearLayout.HORIZONTAL);
+        settingsPill.setGravity(Gravity.CENTER_VERTICAL);
+        settingsPill.setBackground(rounded(META, 14));
+        settingsPill.setPadding(dp(12), dp(5), dp(12), dp(5));
+        ImageView gear = new ImageView(this);
+        gear.setImageBitmap(assetBitmap("settings.png"));
+        settingsPill.addView(gear, new LinearLayout.LayoutParams(dp(13), dp(13)));
+        TextView settingsLabel = text("设置", 11, SUB_INK, false);
+        LinearLayout.LayoutParams slParams = new LinearLayout.LayoutParams(-2, -2);
+        slParams.setMarginStart(dp(4));
+        settingsPill.addView(settingsLabel, slParams);
+        settingsPill.setOnClickListener(v -> {
+            if (pending != null || !confirmTitle.isEmpty()) return;
+            settingsOpen = true;
+            renderScreens();
+        });
+        page.addView(settingsPill, new LinearLayout.LayoutParams(-2, -2));
+
+        return page;
     }
 
     private LinearLayout buildEnergyBox(String iconName, TextView valueView, View fillView, int fillColor) {
@@ -1125,19 +1174,6 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         trackParams.topMargin = dp(4);
         box.addView(track, trackParams);
         return box;
-    }
-
-    private void updateIndicators() {
-        GradientDrawable first = rounded(showTotalRange ? Color.rgb(83, 104, 107) : MINT, 2);
-        GradientDrawable second = rounded(showTotalRange ? MINT : Color.rgb(83, 104, 107), 2);
-        dotPrimary.setBackground(first);
-        dotSecondary.setBackground(second);
-        LinearLayout.LayoutParams p1 = (LinearLayout.LayoutParams) dotPrimary.getLayoutParams();
-        LinearLayout.LayoutParams p2 = (LinearLayout.LayoutParams) dotSecondary.getLayoutParams();
-        p1.width = dp(showTotalRange ? 5 : 10);
-        p2.width = dp(showTotalRange ? 10 : 5);
-        dotPrimary.setLayoutParams(p1);
-        dotSecondary.setLayoutParams(p2);
     }
 
     private TextView actionButton(String label, int bg, int fg, boolean bold, View.OnClickListener listener) {

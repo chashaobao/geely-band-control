@@ -1,6 +1,6 @@
 <template>
   <stack class="page">
-    <scroll class="{{ ui.scrollPage }}" scroll-y="true" if="{{ !confirmTitle && !settingsOpen }}">
+    <scroll class="{{ ui.scrollPage }}" scroll-y="true" if="{{ !confirmTitle && !settingsOpen && layoutProfile !== 'circle' }}">
       <div class="{{ ui.homeScreen }}">
         <div class="{{ ui.range }}" @click="toggleRange">
           <div class="{{ ui.rangeHeader }}">
@@ -76,6 +76,79 @@
         </div>
       </div>
     </scroll>
+    <stack class="watch-shell" if="{{ !confirmTitle && !settingsOpen && layoutProfile === 'circle' }}">
+      <swiper class="watch-swiper" vertical="true" indicator="false" loop="false" index="{{ watchPage }}" @change="onWatchPageChange">
+        <div class="watch-page watch-mileage-page">
+          <text class="watch-model">银河星耀 8</text>
+          <div class="watch-range-tap" @click="toggleRange">
+            <div class="watch-hero-block" if="{{ !showTotalRange }}">
+              <text class="watch-hero">{{ total }}<span class="watch-hero-unit"> km</span></text>
+              <text class="watch-subrange">电 {{ electric }} km · 油 {{ fuel }} km</text>
+            </div>
+            <div class="split split-circle watch-split" if="{{ showTotalRange }}">
+              <div class="energy energy-circle">
+                <div class="energy-reading energy-reading-circle">
+                  <image class="energy-icon energy-icon-circle" src="/common/images/energy-electric.png"></image>
+                  <text class="{{ electric.length > 3 ? 'distance compact distance-circle compact-circle' : 'distance distance-circle' }}">{{ electric }}<span class="unit unit-circle"> km</span></text>
+                </div>
+                <div class="energy-track energy-track-circle">
+                  <div class="energy-fill energy-fill-circle electric-fill" if="{{ electricPercent > 0 }}" style="width: {{ electricPercent }}%"></div>
+                </div>
+              </div>
+              <div class="energy energy-circle">
+                <div class="energy-reading energy-reading-circle">
+                  <image class="energy-icon energy-icon-circle" src="/common/images/energy-fuel.png"></image>
+                  <text class="{{ fuel.length > 3 ? 'distance compact distance-circle compact-circle' : 'distance distance-circle' }}">{{ fuel }}<span class="unit unit-circle"> km</span></text>
+                </div>
+                <div class="energy-track energy-track-circle">
+                  <div class="energy-fill energy-fill-circle fuel-fill" if="{{ fuelPercent > 0 }}" style="width: {{ fuelPercent }}%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="watch-status-row" @click="refresh">
+            <div class="{{ modeLabel === '已连接' || modeLabel === '演示' ? 'dot dot-circle online' : 'dot dot-circle' }}"></div>
+            <text class="watch-status-text">{{ modeLabel }} · {{ motion }}</text>
+            <image class="watch-refresh-icon" src="/common/images/refresh.png"></image>
+          </div>
+          <image class="watch-car" src="/common/images/starshine-8.png"></image>
+        </div>
+        <div class="watch-page watch-controls-page">
+          <div class="watch-top-pill" @click="refresh">
+            <image class="watch-refresh-icon" src="/common/images/refresh.png"></image>
+            <text class="watch-top-text">{{ refreshText }}</text>
+          </div>
+          <text class="watch-empty" if="{{ compatibilityNotice }}">{{ compatibilityNotice }}</text>
+          <div class="watch-grid" if="{{ !compatibilityNotice }}">
+            <div class="watch-control-row" for="{{ displayRows }}" tid="id">
+              <div class="watch-cell" @click="select($item.first.id)">
+                <div class="{{ $item.first.watchOrbStyle }}">
+                  <image class="{{ $item.first.watchOrbIconStyle }}" src="{{ $item.first.icon }}"></image>
+                </div>
+                <text class="watch-cell-label">{{ $item.first.label }}</text>
+                <text if="{{ $item.first.hint }}" class="watch-cell-hint">{{ $item.first.hint }}</text>
+              </div>
+              <div if="{{ $item.second.id }}" class="watch-cell" @click="select($item.second.id)">
+                <div class="{{ $item.second.watchOrbStyle }}">
+                  <image class="{{ $item.second.watchOrbIconStyle }}" src="{{ $item.second.icon }}"></image>
+                </div>
+                <text class="watch-cell-label">{{ $item.second.label }}</text>
+                <text if="{{ $item.second.hint }}" class="watch-cell-hint">{{ $item.second.hint }}</text>
+              </div>
+            </div>
+            <text class="watch-empty" if="{{ displayRows.length === 0 }}">{{ emptyLabel }}</text>
+          </div>
+          <div class="watch-settings-pill" @click="openSettings">
+            <image class="watch-settings-icon" src="/common/images/settings.png"></image>
+            <text class="watch-settings-text">设置</text>
+          </div>
+        </div>
+      </swiper>
+      <div class="watch-pager">
+        <div class="{{ watchPage === 0 ? 'watch-pager-dot watch-pager-active' : 'watch-pager-dot' }}" @click="setWatchPage(0)"></div>
+        <div class="{{ watchPage === 1 ? 'watch-pager-dot watch-pager-active' : 'watch-pager-dot' }}" @click="setWatchPage(1)"></div>
+      </div>
+    </stack>
     <div class="{{ ui.confirmation }}" if="{{ confirmTitle }}">
       <div class="{{ ui.confirmAction }}">
         <image class="{{ ui.confirmIcon }}" src="{{ confirmIcon }}"></image>
@@ -142,7 +215,8 @@ const REQUEST_FEATURES = { refresh: 'refresh', prepare: 'confirm', execute: 'con
 const WINDOW_ACTIONS = ['window_vent', 'window_open']
 const SWITCH_LABELS = { climate: '空调', heat: '升温', cool: '降温', purify: '净化', defrost: '除霜', sentry: '哨兵' }
 const NO_ACTION = {
-  id: '', label: '', style: '', icon: '', iconStyle: '', symbolStyle: '', labelStyle: '', hintStyle: '', hint: ''
+  id: '', label: '', style: '', icon: '', iconStyle: '', symbolStyle: '', labelStyle: '', hintStyle: '',
+  watchOrbStyle: '', watchOrbIconStyle: '', hint: ''
 }
 
 function versionParts(value) {
@@ -240,7 +314,9 @@ function actionRows(ids, available, linked, controlPending, directions, profile 
       iconStyle: variantClass(isAvailable ? 'tile-icon' : 'tile-icon muted-icon', profile),
       symbolStyle: variantClass(isAvailable ? 'tile-symbol symbol-ready' : 'tile-symbol', profile),
       labelStyle: variantClass('tile-label', profile),
-      hintStyle: variantClass('tile-hint', profile)
+      hintStyle: variantClass('tile-hint', profile),
+      watchOrbStyle: isAvailable ? 'watch-orb watch-orb-ready' : linked ? 'watch-orb watch-orb-paused' : 'watch-orb',
+      watchOrbIconStyle: isAvailable ? 'watch-orb-icon' : 'watch-orb-icon muted-icon'
     }
   }
 
@@ -262,6 +338,7 @@ export default {
   private: {
     layoutProfile: DEFAULT_LAYOUT,
     ui: layoutClasses(DEFAULT_LAYOUT),
+    watchPage: 0,
     displayRows: [],
     mode: '',
     modeLabel: '待连接',
@@ -676,6 +753,18 @@ export default {
 
   toggleRange() {
     this.showTotalRange = !this.showTotalRange
+  },
+
+  onWatchPageChange(event) {
+    if (event && (event.index === 0 || event.index === 1)) {
+      this.watchPage = event.index
+    }
+  },
+
+  setWatchPage(index) {
+    if (index === 0 || index === 1) {
+      this.watchPage = index
+    }
   },
 
   refresh() {
@@ -1899,5 +1988,201 @@ export default {
   margin-top: 10px;
   border-radius: 12px;
   font-size: 15px;
+}
+.watch-shell {
+  width: 100%;
+  height: 100%;
+  background-color: #0e161d;
+}
+.watch-swiper {
+  width: 100%;
+  height: 100%;
+}
+.watch-page {
+  width: 336px;
+  height: 336px;
+  flex-direction: column;
+  align-items: center;
+}
+.watch-mileage-page {
+  padding: 26px 36px 26px;
+  justify-content: space-between;
+}
+.watch-model {
+  color: #b7c9d4;
+  font-size: 14px;
+  font-weight: bold;
+  lines: 1;
+}
+.watch-range-tap {
+  width: 244px;
+  min-height: 68px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.watch-hero-block {
+  flex-direction: column;
+  align-items: center;
+}
+.watch-hero {
+  color: #f4faf8;
+  font-size: 38px;
+  font-weight: bold;
+  lines: 1;
+}
+.watch-hero-unit {
+  color: #b7c9d4;
+  font-size: 16px;
+  font-weight: normal;
+}
+.watch-subrange {
+  margin-top: 2px;
+  color: #8fa6b2;
+  font-size: 11px;
+  lines: 1;
+}
+.watch-split {
+  margin-top: 4px;
+}
+.watch-status-row {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background-color: #192630;
+  align-items: center;
+  justify-content: center;
+}
+.watch-status-text {
+  color: #cde0df;
+  font-size: 12px;
+  lines: 1;
+}
+.watch-refresh-icon {
+  width: 13px;
+  height: 13px;
+  margin-left: 5px;
+  object-fit: contain;
+}
+.watch-car {
+  width: 224px;
+  height: 74px;
+  object-fit: contain;
+}
+.watch-controls-page {
+  padding: 20px 44px 20px;
+  justify-content: space-between;
+}
+.watch-top-pill {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background-color: #192630;
+  align-items: center;
+  justify-content: center;
+}
+.watch-top-text {
+  color: #cde0df;
+  font-size: 11px;
+  margin-left: 4px;
+  lines: 1;
+}
+.watch-grid {
+  width: 224px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.watch-control-row {
+  width: 224px;
+  margin-top: 8px;
+  justify-content: space-around;
+}
+.watch-cell {
+  width: 102px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.watch-orb {
+  width: 58px;
+  height: 58px;
+  border-radius: 29px;
+  background-color: #1b262d;
+  align-items: center;
+  justify-content: center;
+}
+.watch-orb-paused {
+  background-color: #202e37;
+}
+.watch-orb-ready {
+  background-color: #1c5b53;
+}
+.watch-orb-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+.watch-cell-label {
+  margin-top: 4px;
+  color: #f4faf8;
+  font-size: 13px;
+  font-weight: bold;
+  text-align: center;
+  lines: 1;
+}
+.watch-cell-hint {
+  color: #95abb2;
+  font-size: 10px;
+  text-align: center;
+  lines: 1;
+}
+.watch-empty {
+  width: 220px;
+  padding: 14px 10px;
+  border-radius: 14px;
+  background-color: #18232b;
+  color: #a9bcbf;
+  font-size: 13px;
+  text-align: center;
+}
+.watch-settings-pill {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background-color: #1d2c35;
+  align-items: center;
+  justify-content: center;
+}
+.watch-settings-icon {
+  width: 14px;
+  height: 14px;
+  margin-right: 4px;
+  object-fit: contain;
+}
+.watch-settings-text {
+  color: #d4e4e2;
+  font-size: 12px;
+}
+.watch-pager {
+  width: 10px;
+  height: 28px;
+  right: 11px;
+  top: 154px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+.watch-pager-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 3px;
+  background-color: #4f636e;
+}
+.watch-pager-active {
+  width: 7px;
+  height: 7px;
+  border-radius: 4px;
+  background-color: #9ee9ce;
 }
 </style>
