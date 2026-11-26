@@ -405,10 +405,14 @@ class GalaxyWidgets {
             String lockState = "";
             String blockedReason = "";
             ControlDirection direction = button.match() == null ? null : button.match().direction();
-            if (config.slotMode == BrandConfig.SlotMode.CONFIGURABLE && binding.mark() != null) {
-                direction = ControlDirection.fromId(binding.mark().direction());
-                lockState = binding.mark().category();
-                title += " · 车主标记：" + lockState + (direction == null ? " · 请核对方向" : " · " + direction.id);
+            if (config.slotMode == BrandConfig.SlotMode.CONFIGURABLE) {
+                if (binding.mark() != null) {
+                    direction = ControlDirection.fromId(binding.mark().direction());
+                    lockState = binding.mark().category();
+                    title += " · 车主标记：" + lockState + (direction == null ? " · 请核对方向" : " · " + direction.id);
+                } else if (button.lynkIcon() != null) {
+                    title = button.lynkIcon().label() + " · 请核对方向";
+                }
             }
             if (action == CarAction.LOCK) {
                 lockState = binding.lockState();

@@ -69,6 +69,7 @@ public final class MainActivity extends Activity {
     private String renderedLogs = "";
     private LinearLayout controlPanel;
     private TextView mappingStatus;
+    private TextView lynkIconStatus;
     private TextView batteryStatus;
     private TextView voiceStatus;
     private Button connection;
@@ -185,6 +186,10 @@ public final class MainActivity extends Activity {
         mappingStatus = text("", 13, MINT, true);
         controlHeader.addView(mappingStatus);
         add(controlPanel, controlHeader, 0);
+
+        lynkIconStatus = text("", 13, MUTED, false);
+        lynkIconStatus.setVisibility(View.GONE);
+        add(controlPanel, lynkIconStatus, 4);
 
         controlStatus = text("", 14, MUTED, false);
         add(controlPanel, controlStatus, 4);
@@ -387,7 +392,19 @@ public final class MainActivity extends Activity {
     private void updateBandControls(Map<CarAction, GalaxyWidgets.Control> controls) {
         boolean armed = app.isArmed();
         boolean hasReady = controls.values().stream().anyMatch(GalaxyWidgets.Control::ready);
-        mappingStatus.setText("功能已同步 · " + controls.size() + "/" + app.brand.slots.size());
+        mappingStatus.setText(app.brand == BrandConfig.LYNKCO
+                ? "已同步 " + controls.size() + " 个功能"
+                : "功能已同步 · " + controls.size() + "/" + app.brand.slots.size());
+        List<String> recognized = new ArrayList<>();
+        if (app.brand == BrandConfig.LYNKCO) {
+            for (GalaxyWidgets.Control control : controls.values()) {
+                if (control.target() == null) continue;
+                LynkWidgetIcons.Kind icon = control.target().button().lynkIcon();
+                if (icon != null && !recognized.contains(icon.label())) recognized.add(icon.label());
+            }
+        }
+        lynkIconStatus.setVisibility(recognized.isEmpty() ? View.GONE : View.VISIBLE);
+        if (!recognized.isEmpty()) lynkIconStatus.setText("自动识别 · " + String.join("、", recognized));
         controlStatus.setText(armed ? "车控已授权 · 可用米家语音或穿戴端控车"
                 : hasReady ? "车控未授权 · 点击下方允许后即可控车" : "请先刷新车况或点按上方预览卡片补标按钮");
         liveControl.setText(armed ? "关闭车控" : "允许车控");
@@ -578,7 +595,8 @@ public final class MainActivity extends Activity {
     private void labelButton(GalaxyWidgets.Card card, WidgetTree.Button target) {
         if (app.brand == BrandConfig.LYNKCO && target.role().isEmpty()) {
             String[] choices = java.util.stream.Stream.concat(LynkMark.CATEGORIES.stream(), java.util.stream.Stream.of("清除标记")).toArray(String[]::new);
-            new AlertDialog.Builder(this).setTitle("车主明确标记：" + target.slot() + "\n描述：" + target.label() + "\n签名：" + target.fingerprint())
+            String detected = target.lynkIcon() == null ? "" : "自动识别：" + target.lynkIcon().label() + "\n";
+            new AlertDialog.Builder(this).setTitle(detected + "车主明确标记：" + target.slot() + "\n描述：" + target.label() + "\n签名：" + target.fingerprint())
                     .setItems(choices, (dialog, index) -> {
                         if (index == LynkMark.CATEGORIES.size()) { saveBinding(card, target, "", ""); return; }
                         String category = choices[index];
@@ -644,6 +662,7 @@ public final class MainActivity extends Activity {
         CarAction action = binding == null ? null : CarAction.fromId(binding.action());
         if (action == null) return target.label().isEmpty() ? "待标记" : target.label() + "（待标记）";
         if (binding.mark() != null) return action.label + " · 车主标记：" + binding.mark().category() + " · " + binding.mark().direction();
+        if (target.lynkIcon() != null) return target.lynkIcon().label() + " · 请核对方向";
         String source = target.match() != null ? "自动识别" : "手动标记";
         String state = switch (binding.lockState()) {
             case WidgetTree.LOCKED -> "，已上锁";
