@@ -24,7 +24,12 @@ final class LynkWidgetIcons {
         WINDOW_VENT("车窗", "微开"),
         WINDOW_OPEN("车窗", "全开"),
         TRUNK("后备箱", ""),
-        FIND("寻车", "");
+        FIND("寻车", ""),
+        ENGINE("发动机", ""),
+        SUNROOF("天窗", ""),
+        HEAT("快速升温", ""),
+        COOL("快速降温", ""),
+        CHARGE_PORT("充电口", "");
 
         final String category;
         final String detail;
@@ -55,12 +60,19 @@ final class LynkWidgetIcons {
 
     private static Kind fromDescription(String value) {
         return switch (value) {
-            case "车锁", "锁车", "上锁", "解锁", "解锁车门", "上锁车门", "车门已解锁", "车门已上锁" -> Kind.LOCK;
+            case "车锁", "锁车", "上锁", "解锁", "闭锁", "锁定车辆", "上锁车辆", "解锁车辆", "解锁车门",
+                    "上锁车门", "车门已解锁", "车门已上锁", "车门未锁", "车辆已解锁", "车辆已上锁" -> Kind.LOCK;
             case "车窗", "关窗", "关闭车窗" -> Kind.WINDOW;
             case "车窗微开", "微开车窗" -> Kind.WINDOW_VENT;
             case "车窗全开", "全开车窗" -> Kind.WINDOW_OPEN;
-            case "后备箱", "打开后备箱", "关闭后备箱" -> Kind.TRUNK;
+            case "后备箱", "打开后备箱", "开启后备箱", "关闭后备箱",
+                    "尾门", "打开尾门", "开启尾门", "关闭尾门", "电动尾门" -> Kind.TRUNK;
             case "寻车" -> Kind.FIND;
+            case "发动机", "启动发动机", "关闭发动机" -> Kind.ENGINE;
+            case "天窗", "打开天窗", "开启天窗", "关闭天窗" -> Kind.SUNROOF;
+            case "快速升温", "极速升温" -> Kind.HEAT;
+            case "快速降温", "极速降温" -> Kind.COOL;
+            case "充电口", "充电口盖", "打开充电口", "关闭充电口", "打开充电口盖", "关闭充电口盖" -> Kind.CHARGE_PORT;
             default -> null;
         };
     }
@@ -78,10 +90,20 @@ final class LynkWidgetIcons {
         Catalog catalog = catalogs.get(resources);
         if (catalog == null || !catalog.version().equals(providerVersion) || catalog.density() != density) {
             List<Icon> icons = new ArrayList<>();
-            add(resources, icons, Kind.CLOSED_LOCK, "ic_ck_js_off", "ic_ck_js_off2");
-            add(resources, icons, Kind.OPEN_LOCK, "ic_ck_js_on", "ic_ck_js_on2");
-            add(resources, icons, Kind.WINDOW, "ic_ck_cc_off", "ic_ck_cc_off2", "ic_ck_cc_on", "ic_ck_cc_on2");
-            add(resources, icons, Kind.TRUNK, "ic_ck_hbx_off3", "ic_ck_hbx_on3");
+            add(resources, icons, Kind.CLOSED_LOCK, "ic_ck_js_off", "ic_ck_js_off2", "ic_ck_js_offs", "ic_kjck_js_off");
+            add(resources, icons, Kind.OPEN_LOCK, "ic_ck_js_on", "ic_ck_js_on2", "ic_ck_js_ons", "ic_kjck_js_on");
+            add(resources, icons, Kind.WINDOW, "ic_ck_cc_off", "ic_ck_cc_off2", "ic_ck_cc_offs",
+                    "ic_ck_cc_on", "ic_ck_cc_on2", "ic_ck_cc_ons", "ic_kjck_ccqk_off", "ic_kjck_ccqk_on");
+            add(resources, icons, Kind.TRUNK, "ic_ck_hbx_off", "ic_ck_hbx_off2", "ic_ck_hbx_off3",
+                    "ic_ck_hbx_on", "ic_ck_hbx_on2", "ic_ck_hbx_on3");
+            add(resources, icons, Kind.FIND, "ic_kjck_cx");
+            add(resources, icons, Kind.ENGINE, "ic_ck_yq_off", "ic_ck_yq_off2", "ic_ck_yq_offs",
+                    "ic_ck_yq_on", "ic_ck_yq_on2", "ic_ck_yq_ons");
+            add(resources, icons, Kind.SUNROOF, "ic_ck_tc_off", "ic_ck_tc_off2", "ic_ck_tc_on", "ic_ck_tc_on2");
+            add(resources, icons, Kind.HEAT, "ic_hj_jssw_off", "ic_hj_jssw_off2", "ic_hj_jssw_on", "ic_hj_jssw_on2");
+            add(resources, icons, Kind.COOL, "ic_hj_jsjw_off", "ic_hj_jsjw_off2", "ic_hj_jsjw_on", "ic_hj_jsjw_on2");
+            add(resources, icons, Kind.CHARGE_PORT, "icon_vehicle_widget_charging_port_close", "icon_vehicle_widget_charging_port_close2",
+                    "icon_vehicle_widget_charging_port_open", "icon_vehicle_widget_charging_port_open2");
             catalog = new Catalog(providerVersion, density, icons);
             catalogs.put(resources, catalog);
         }

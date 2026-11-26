@@ -504,7 +504,7 @@ public final class GarageApp extends Application {
             } else if (!widgets.hasValidReading(target.cardId())) {
                 lynkFallback = "本次派发前没有读到有效的领克车况";
             } else if (expected == null) {
-                lynkFallback = "当前槽位未识别为可切换的车锁或车窗，也没有已核对的动作方向";
+                lynkFallback = "当前槽位未识别为可切换的车锁、车窗或后备箱，也没有已核对的动作方向";
             } else {
                 approval = new LynkApproval(expected, revision, SystemClock.elapsedRealtime() + CONTROL_WAIT_MS,
                         lynkAuthorization, fromVoice);
@@ -529,6 +529,7 @@ public final class GarageApp extends Application {
         if (marked == null && allowToggle) {
             if (target.isLynkWindow()) return LynkConfirmation.WINDOW_TOGGLE;
             if (target.isLynkLock()) return LynkConfirmation.LOCK_TOGGLE;
+            if (target.isLynkTrunk()) return LynkConfirmation.TRUNK_TOGGLE;
         }
         return marked;
     }
@@ -565,7 +566,13 @@ public final class GarageApp extends Application {
     /** An empty result means the matching official confirmation was submitted. */
     private String confirmLynkDispatch(Dispatch finished) {
         LynkApproval approval = finished.lynkApproval();
-        if (approval == null) return finished.lynkFallback();
+        if (approval == null) {
+            GalaxyWidgets.Card card = widgets.primary();
+            WidgetTree.OfficialConfirmation prompt = card != null && card.id == finished.cardId()
+                    ? widgets.officialConfirmation(card) : null;
+            return prompt == null ? finished.lynkFallback()
+                    : finished.lynkFallback() + "，官方弹窗为「" + prompt.title() + "」";
+        }
         if (!isArmed() || approval.authorization() != lynkAuthorization
                 || (approval.fromVoice() ? !voiceEnabled : !serviceRunning)) return "车控授权或连接已变化";
         if (SystemClock.elapsedRealtime() >= approval.expiresAt()) return "官方确认超过 5 秒";

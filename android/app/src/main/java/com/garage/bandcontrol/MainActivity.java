@@ -639,7 +639,7 @@ public final class MainActivity extends Activity {
                     .setItems(choices, (dialog, index) -> {
                         if (index == LynkMark.CATEGORIES.size()) { saveBinding(card, target, "", ""); return; }
                         String category = choices[index];
-                        if ("寻车".equals(category)) {
+                        if ("寻车".equals(category) || "充电口".equals(category)) {
                             saveBinding(card, target, LynkWidgets.binding(target).action(), category + ":");
                             return;
                         }

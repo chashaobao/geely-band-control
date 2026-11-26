@@ -1,7 +1,8 @@
 const LYNK_ICONS = {
   '车锁': 'lock', '上锁': 'lock-open', '解锁': 'lock',
   '车窗': 'window_open', '窗全开': 'window_open', '窗微开': 'window_vent', '关窗': 'window_open',
-  '后备箱': 'trunk', '寻车': 'find', '快升温': 'heat', '快降温': 'cool'
+  '后备箱': 'trunk', '寻车': 'find', '快升温': 'heat', '快降温': 'cool',
+  '发动机': 'lynk-engine', '天窗': 'lynk-sunroof', '充电口': 'lynk-charge-port'
 }
 
 export function actionIcon(action, direction, lynkLabel) {

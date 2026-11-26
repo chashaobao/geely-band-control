@@ -1,3 +1,5 @@
+param([switch]$LynkControlsOnly)
+
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $project = Split-Path -Parent $PSScriptRoot
@@ -39,6 +41,7 @@ function Draw-Mark($graphics, [int]$size, [double]$paddingRatio = 0.10) {
     }
 }
 
+if (!$LynkControlsOnly) {
 # Fit Band 8 Pro (336x480) unscaled launcher slots while keeping transparent padding for round/squircle masks.
 Write-Png 'band/src/common/icon.png' 96 96 { param($g) Draw-Mark $g 96 0.10 }
 
@@ -64,8 +67,14 @@ Write-Png 'band/src/common/images/starshine-8.png' 488 158 {
         $body.Dispose(); $glass.Dispose(); $wheel.Dispose(); $rim.Dispose(); $light.Dispose()
     }
 }
+}
 
-$icons = @('lock','lock-open','window_open','window_vent','trunk','find','heat','cool','purify','defrost','sentry','refresh','settings','energy-electric','energy-fuel','climate')
+$lynkControls = @('lynk-engine','lynk-sunroof','lynk-charge-port')
+$icons = if ($LynkControlsOnly) {
+    $lynkControls
+} else {
+    @('lock','lock-open','window_open','window_vent','trunk','find','heat','cool','purify','defrost','sentry','refresh','settings','energy-electric','energy-fuel','climate') + $lynkControls
+}
 foreach ($name in $icons) {
     $destination = "band/src/common/images/$name.png"
     Write-Png $destination 96 96 {
@@ -163,6 +172,32 @@ foreach ($name in $icons) {
                         $g.DrawLine($pen,$x,64,$x,39)
                         $g.DrawLine($pen,$x,39,($x - 5),46); $g.DrawLine($pen,$x,39,($x + 5),46)
                     }
+                }
+                'lynk-engine' {
+                    $g.DrawPolygon($pen,[Drawing.Point[]]@(
+                        [Drawing.Point]::new(20,40),[Drawing.Point]::new(30,40),[Drawing.Point]::new(36,32),
+                        [Drawing.Point]::new(58,32),[Drawing.Point]::new(66,42),[Drawing.Point]::new(76,42),
+                        [Drawing.Point]::new(76,67),[Drawing.Point]::new(66,67),[Drawing.Point]::new(59,73),
+                        [Drawing.Point]::new(37,73),[Drawing.Point]::new(29,65),[Drawing.Point]::new(20,65)))
+                    $g.DrawLine($pen,13,44,13,60); $g.DrawLine($pen,13,52,20,52)
+                    $g.DrawLine($pen,44,23,59,23); $g.DrawLine($pen,51,23,51,32)
+                    $g.DrawLine($pen,76,54,84,54)
+                }
+                'lynk-sunroof' {
+                    $g.DrawEllipse($pen,26,11,44,74)
+                    $g.DrawPolygon($pen,[Drawing.Point[]]@(
+                        [Drawing.Point]::new(35,36),[Drawing.Point]::new(61,36),
+                        [Drawing.Point]::new(60,57),[Drawing.Point]::new(36,57)))
+                    $g.DrawLine($pen,29,31,67,31); $g.DrawLine($pen,30,62,66,62)
+                }
+                'lynk-charge-port' {
+                    $g.DrawEllipse($pen,15,15,66,66)
+                    $g.DrawLines($pen,[Drawing.Point[]]@(
+                        [Drawing.Point]::new(38,39),[Drawing.Point]::new(38,47),[Drawing.Point]::new(43,53),
+                        [Drawing.Point]::new(53,53),[Drawing.Point]::new(58,47),[Drawing.Point]::new(58,39),
+                        [Drawing.Point]::new(38,39)))
+                    $g.DrawLine($pen,42,31,42,39); $g.DrawLine($pen,54,31,54,39)
+                    $g.DrawLine($pen,48,53,48,65)
                 }
             }
         } finally {

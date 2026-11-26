@@ -60,6 +60,11 @@ class GalaxyWidgets {
             return button.lynkIcon() != null && "车锁".equals(button.lynkIcon().category);
         }
 
+        boolean isLynkTrunk() {
+            if (!lockState.isEmpty()) return "后备箱".equals(lockState);
+            return button.lynkIcon() == LynkWidgetIcons.Kind.TRUNK;
+        }
+
         String lynkShortLabel() {
             String category = lockState;
             if (category.isEmpty() && button.lynkIcon() != null) {
@@ -76,7 +81,7 @@ class GalaxyWidgets {
                 case "车窗全开" -> direction == ControlDirection.CLOSE ? "关窗" : "窗全开";
                 case "快速降温" -> "快降温";
                 case "快速升温" -> "快升温";
-                case "车窗", "发动机", "天窗", "后备箱", "寻车" -> category;
+                case "车窗", "发动机", "天窗", "后备箱", "寻车", "充电口" -> category;
                 default -> "";
             };
         }

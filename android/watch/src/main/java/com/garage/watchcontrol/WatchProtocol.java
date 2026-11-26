@@ -274,6 +274,9 @@ final class WatchProtocol {
             case "寻车" -> "find.png";
             case "快升温" -> "heat.png";
             case "快降温" -> "cool.png";
+            case "发动机" -> "lynk-engine.png";
+            case "天窗" -> "lynk-sunroof.png";
+            case "充电口" -> "lynk-charge-port.png";
             default -> "settings.png";
         };
         return action + ".png";
