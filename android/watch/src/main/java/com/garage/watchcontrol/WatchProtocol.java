@@ -288,6 +288,15 @@ final class WatchProtocol {
         return "— km";
     }
 
+    static String heroNumber(String heroDisplay) {
+        if (heroDisplay == null || heroDisplay.isEmpty()) return "—";
+        return heroDisplay.endsWith(" km") ? heroDisplay.substring(0, heroDisplay.length() - 3) : heroDisplay;
+    }
+
+    static String heroUnit(String heroDisplay) {
+        return heroDisplay != null && heroDisplay.endsWith(" km") ? " km" : "";
+    }
+
     static String subrangeDisplay(JSONObject vehicle) {
         String electric = energyPart("电 ", vehicle, "electricKm", "electricPercent");
         String fuel = energyPart("油 ", vehicle, "fuelKm", "fuelPercent");

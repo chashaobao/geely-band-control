@@ -83,7 +83,11 @@
             <text class="{{ watchHomeUi.model }}">{{ vehicleName }}</text>
             <div class="{{ watchHomeUi.rangeTap }}" @click="toggleRange">
               <div class="watch-hero-block" if="{{ !showTotalRange }}">
-                <text class="{{ watchHomeUi.hero }}">{{ total }}<span class="watch-hero-unit">{{ totalUnit }}</span></text>
+                <div class="watch-hero-num-row">
+                  <text class="watch-hero-unit-ghost" if="{{ totalUnit === '\u00a0km' }}">{{ totalUnit }}</text>
+                  <text class="{{ watchHomeUi.hero }}">{{ total }}</text>
+                  <text class="watch-hero-unit" if="{{ totalUnit }}">{{ totalUnit }}</text>
+                </div>
                 <text class="{{ watchHomeUi.subrange }}">{{ watchSubrange }}</text>
               </div>
               <div class="split split-circle watch-split" if="{{ showTotalRange }}">
@@ -2195,7 +2199,7 @@ export default {
 .watch-shell {
   width: 100%;
   height: 100%;
-  background-color: #0b121e;
+  background-color: #000000;
 }
 .watch-swiper {
   width: 100%;
@@ -2208,64 +2212,69 @@ export default {
   align-items: center;
 }
 .watch-mileage-page {
-  padding: 18px 24px 12px;
-  justify-content: space-between;
-  background-color: #0b121e;
-  background: linear-gradient(to bottom, #0f1b2e 0%, #182c4d 45%, #080d16 100%);
+  padding: 16px 14px 8px;
+  justify-content: flex-start;
+  background-color: #000000;
+  background: linear-gradient(to bottom, #13387a 0%, #0b214d 36%, #030812 68%, #000000 88%, #000000 100%);
 }
 .watch-mileage-page-compact {
-  padding: 14px 20px 10px;
+  padding: 13px 12px 6px;
 }
 .watch-mileage-page-large {
-  padding: 22px 26px 14px;
+  padding: 19px 14px 10px;
 }
 .watch-hero-header {
-  width: 268px;
+  width: 288px;
   flex-direction: column;
   align-items: center;
 }
 .watch-hero-header-compact {
-  width: 256px;
+  width: 278px;
 }
 .watch-hero-header-large {
-  width: 272px;
+  width: 294px;
 }
 .watch-model {
-  max-width: 204px;
-  color: #c8d7eb;
-  font-size: 15px;
+  max-width: 196px;
+  color: #eef4ff;
+  font-size: 20px;
   font-weight: bold;
   text-align: center;
   lines: 1;
   text-overflow: ellipsis;
 }
 .watch-model-compact {
-  max-width: 196px;
-  font-size: 16px;
+  max-width: 188px;
+  font-size: 20px;
 }
 .watch-model-large {
-  max-width: 214px;
-  font-size: 15px;
+  max-width: 204px;
+  font-size: 20px;
 }
 .watch-range-tap {
-  width: 256px;
-  min-height: 68px;
+  width: 284px;
+  min-height: 74px;
   margin-top: 2px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 .watch-range-tap-compact {
-  width: 248px;
-  min-height: 64px;
+  width: 274px;
+  min-height: 70px;
 }
 .watch-range-tap-large {
-  width: 260px;
-  min-height: 70px;
+  width: 290px;
+  min-height: 76px;
 }
 .watch-hero-block {
   flex-direction: column;
   align-items: center;
+}
+.watch-hero-num-row {
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: center;
 }
 .watch-hero {
   color: #f6f9ff;
@@ -2277,33 +2286,39 @@ export default {
   font-size: 46px;
 }
 .watch-hero-large {
-  font-size: 44px;
+  font-size: 46px;
 }
-.watch-hero-unit {
+.watch-hero-unit, .watch-hero-unit-ghost {
   color: #c8d7eb;
   font-size: 17px;
   font-weight: normal;
+  padding-bottom: 7px;
+  lines: 1;
+}
+.watch-hero-unit-ghost {
+  opacity: 0;
 }
 .watch-subrange {
-  margin-top: 1px;
-  color: #8ea6c5;
-  font-size: 11px;
+  margin-top: 2px;
+  color: #9cb2cf;
+  font-size: 14px;
+  letter-spacing: 0.6px;
   lines: 1;
 }
 .watch-subrange-compact {
-  font-size: 12px;
+  font-size: 14px;
 }
 .watch-subrange-large {
-  font-size: 11px;
+  font-size: 14px;
 }
 .watch-split {
   margin-top: 4px;
 }
 .watch-status-row {
-  height: 24px;
-  margin-top: 4px;
-  padding: 0 11px;
-  border-radius: 12px;
+  height: 26px;
+  margin-top: 5px;
+  padding: 0 12px;
+  border-radius: 13px;
   border-width: 1px;
   border-color: #253b5a;
   background-color: #142236;
@@ -2311,23 +2326,23 @@ export default {
   justify-content: center;
 }
 .watch-status-row-compact {
-  height: 24px;
-  padding: 0 10px;
+  height: 25px;
+  padding: 0 11px;
 }
 .watch-status-row-large {
-  height: 25px;
-  padding: 0 12px;
+  height: 26px;
+  padding: 0 13px;
 }
 .watch-status-text {
   color: #dce7f7;
-  font-size: 12px;
+  font-size: 13px;
   lines: 1;
 }
 .watch-status-text-compact {
   font-size: 13px;
 }
 .watch-status-text-large {
-  font-size: 12px;
+  font-size: 13px;
 }
 .watch-refresh-icon {
   width: 13px;
@@ -2344,18 +2359,18 @@ export default {
   height: 13px;
 }
 .watch-car {
-  width: 288px;
-  height: 124px;
-  margin-top: 2px;
+  width: 308px;
+  height: 148px;
+  margin-top: 4px;
   object-fit: contain;
 }
 .watch-car-compact {
-  width: 272px;
-  height: 114px;
+  width: 296px;
+  height: 138px;
 }
 .watch-car-large {
-  width: 284px;
-  height: 126px;
+  width: 312px;
+  height: 152px;
 }
 .watch-controls-page {
   padding: 15px 36px 15px;

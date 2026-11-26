@@ -17,12 +17,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
-import android.text.SpannableStringBuilder;
-import android.text.Spanned;
 import android.text.TextUtils;
-import android.text.style.ForegroundColorSpan;
-import android.text.style.RelativeSizeSpan;
-import android.text.style.StyleSpan;
 import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
@@ -115,7 +110,9 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     private LinearLayout heroBlock;
     private LinearLayout splitRow;
     private TextView vehicleNameView;
+    private TextView totalHeroGhostView;
     private TextView totalHeroView;
+    private TextView totalHeroUnitView;
     private TextView subrangeView;
     private TextView electricText;
     private TextView fuelText;
@@ -727,15 +724,22 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
 
     private void applyVehicle(JSONObject vehicle, boolean cached) {
         String hero = WatchProtocol.heroDisplay(vehicle);
-        if (roundScreen && hero.endsWith(" km")) {
-            SpannableStringBuilder span = new SpannableStringBuilder(hero);
-            int unitStart = hero.length() - 3;
-            span.setSpan(new RelativeSizeSpan(17f / 46f), unitStart, hero.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            span.setSpan(new StyleSpan(Typeface.NORMAL), unitStart, hero.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            span.setSpan(new ForegroundColorSpan(SUB_INK), unitStart, hero.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            totalHeroView.setText(span);
+        if (roundScreen) {
+            String unit = WatchProtocol.heroUnit(hero);
+            totalHeroView.setText(WatchProtocol.heroNumber(hero));
+            if (unit.isEmpty()) {
+                totalHeroGhostView.setVisibility(View.GONE);
+                totalHeroUnitView.setVisibility(View.GONE);
+            } else {
+                totalHeroGhostView.setText(unit);
+                totalHeroUnitView.setText(unit);
+                totalHeroGhostView.setVisibility(View.INVISIBLE);
+                totalHeroUnitView.setVisibility(View.VISIBLE);
+            }
         } else {
             totalHeroView.setText(hero);
+            totalHeroGhostView.setVisibility(View.GONE);
+            totalHeroUnitView.setVisibility(View.GONE);
         }
         subrangeView.setText(WatchProtocol.subrangeDisplay(vehicle));
         electricText.setText(WatchProtocol.energyDisplay(vehicle, "electricKm", "electricPercent"));
@@ -1077,21 +1081,27 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     }
 
     private void updateDot(View dot, boolean active) {
-        int size = r(active ? 7 : 5);
+        int size = roundScreen ? r(active ? 6 : 4) : r(active ? 7 : 5);
         LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) dot.getLayoutParams();
         params.width = size;
         params.height = size;
         dot.setLayoutParams(params);
         GradientDrawable bg = new GradientDrawable();
         bg.setShape(GradientDrawable.OVAL);
-        bg.setColor(active ? MINT : Color.rgb(79, 99, 110));
+        int activeColor = roundScreen ? Color.argb(210, 158, 233, 206) : MINT;
+        int idleColor = roundScreen ? Color.argb(110, 142, 166, 197) : Color.rgb(79, 99, 110);
+        bg.setColor(active ? activeColor : idleColor);
         dot.setBackground(bg);
     }
 
     private View buildUi() {
         FrameLayout root = new FrameLayout(this);
-        root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{Color.rgb(15, 27, 46), Color.rgb(24, 44, 77), Color.rgb(8, 13, 22)}));
+        if (roundScreen) {
+            root.setBackgroundColor(Color.rgb(10, 16, 27));
+        } else {
+            root.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[]{Color.rgb(15, 27, 46), Color.rgb(24, 44, 77), Color.rgb(8, 13, 22)}));
+        }
 
         homeShell = new FrameLayout(this);
         homePager = new VerticalPagerView(this);
@@ -1223,13 +1233,18 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         LinearLayout page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setGravity(Gravity.CENTER_HORIZONTAL);
-        page.setPadding(u(24, 14), u(18, 14), u(24, 14), u(12, 14));
+        page.setPadding(u(14, 14), u(18, 14), u(14, 14), u(8, 14));
+        if (roundScreen) {
+            page.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[]{Color.rgb(19, 56, 122), Color.rgb(11, 33, 77), Color.rgb(3, 8, 18), Color.BLACK, Color.BLACK}));
+        }
 
-        vehicleNameView = text(vehicleName, 15, 14, SUB_INK, true);
+        vehicleNameView = text(vehicleName, 20, 14, Color.rgb(238, 244, 255), true);
         vehicleNameView.setSingleLine(true);
         vehicleNameView.setEllipsize(TextUtils.TruncateAt.END);
-        if (roundScreen) vehicleNameView.setMaxWidth(r(204));
-        page.addView(vehicleNameView);
+        vehicleNameView.setGravity(Gravity.CENTER);
+        if (roundScreen) vehicleNameView.setMaxWidth(r(196));
+        page.addView(vehicleNameView, new LinearLayout.LayoutParams(-2, -2));
 
         FrameLayout rangeArea = new FrameLayout(this);
         rangeArea.setOnClickListener(v -> {
@@ -1241,13 +1256,28 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         heroBlock = new LinearLayout(this);
         heroBlock.setOrientation(LinearLayout.VERTICAL);
         heroBlock.setGravity(Gravity.CENTER_HORIZONTAL);
-        totalHeroView = text("— km", 46, 40, INK, true);
+        LinearLayout heroNumRow = new LinearLayout(this);
+        heroNumRow.setOrientation(LinearLayout.HORIZONTAL);
+        heroNumRow.setGravity(Gravity.CENTER_HORIZONTAL);
+        heroNumRow.setBaselineAligned(true);
+        totalHeroGhostView = text(" km", 17, 17, Color.TRANSPARENT, false);
+        totalHeroGhostView.setSingleLine(true);
+        totalHeroGhostView.setVisibility(roundScreen ? View.INVISIBLE : View.GONE);
+        totalHeroView = text(roundScreen ? "—" : "— km", 46, 40, INK, true);
         totalHeroView.setSingleLine(true);
-        subrangeView = text("电 — · 油 — km", 11, 11, MUTED, false);
+        totalHeroUnitView = text(" km", 17, 17, SUB_INK, false);
+        totalHeroUnitView.setSingleLine(true);
+        totalHeroUnitView.setVisibility(roundScreen ? View.VISIBLE : View.GONE);
+        heroNumRow.addView(totalHeroGhostView);
+        heroNumRow.addView(totalHeroView);
+        heroNumRow.addView(totalHeroUnitView);
+        heroBlock.addView(heroNumRow, new LinearLayout.LayoutParams(-2, -2));
+
+        subrangeView = text("电 — · 油 — km", 14, 11, Color.rgb(156, 178, 207), false);
         subrangeView.setSingleLine(true);
-        heroBlock.addView(totalHeroView);
+        if (roundScreen) subrangeView.setLetterSpacing(0.04f);
         LinearLayout.LayoutParams subParams = new LinearLayout.LayoutParams(-2, -2);
-        subParams.topMargin = r(1);
+        subParams.topMargin = r(2);
         heroBlock.addView(subrangeView, subParams);
         rangeArea.addView(heroBlock, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
 
@@ -1263,23 +1293,23 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         LinearLayout.LayoutParams fuelBoxParams = new LinearLayout.LayoutParams(0, -2, 1);
         fuelBoxParams.setMarginStart(r(6));
         splitRow.addView(buildEnergyBox("energy-fuel.png", fuelText, fuelFill, FUEL), fuelBoxParams);
-        rangeArea.addView(splitRow, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
+        rangeArea.addView(splitRow, new FrameLayout.LayoutParams(roundScreen ? r(216) : -1, -2, Gravity.CENTER));
 
-        LinearLayout.LayoutParams rangeParams = new LinearLayout.LayoutParams(-1, -2);
+        LinearLayout.LayoutParams rangeParams = new LinearLayout.LayoutParams(roundScreen ? r(284) : -1, -2);
         rangeParams.topMargin = r(2);
         page.addView(rangeArea, rangeParams);
 
         LinearLayout statusRow = new LinearLayout(this);
         statusRow.setOrientation(LinearLayout.HORIZONTAL);
         statusRow.setGravity(Gravity.CENTER_VERTICAL);
-        GradientDrawable statusBg = rounded(META, 12);
+        GradientDrawable statusBg = rounded(META, 13);
         statusBg.setStroke(Math.max(1, r(1)), META_BORDER);
         statusRow.setBackground(statusBg);
-        statusRow.setPadding(u(11, 10), r(4), u(11, 10), r(4));
+        statusRow.setPadding(u(12, 10), r(5), u(12, 10), r(5));
         connectionDot = new View(this);
         connectionDot.setBackground(rounded(Color.rgb(120, 134, 140), 4));
         statusRow.addView(connectionDot, new LinearLayout.LayoutParams(r(6), r(6)));
-        statusSummaryView = text("待连接 | 状态未知", 12, 11, INK, false);
+        statusSummaryView = text("待连接 | 状态未知", 13, 11, INK, false);
         statusSummaryView.setSingleLine(true);
         LinearLayout.LayoutParams sumParams = new LinearLayout.LayoutParams(-2, -2);
         sumParams.setMarginStart(r(5));
@@ -1291,14 +1321,15 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         statusRow.addView(refreshIcon, new LinearLayout.LayoutParams(statusIconSize, statusIconSize));
         statusRow.setOnClickListener(v -> triggerRefresh());
         LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(-2, -2);
-        statusParams.topMargin = r(4);
+        statusParams.topMargin = u(5, 4);
         page.addView(statusRow, statusParams);
 
         carImageView = new ImageView(this);
         carImageView.setImageBitmap(assetBitmap("starshine-8.png"));
         carImageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        if (roundScreen) carImageView.setPadding(0, 0, 0, r(8));
         LinearLayout.LayoutParams carParams = new LinearLayout.LayoutParams(-1, 0, 1);
-        carParams.topMargin = u(2, 4);
+        carParams.topMargin = u(4, 4);
         page.addView(carImageView, carParams);
 
         return page;

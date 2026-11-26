@@ -78,6 +78,10 @@ public final class WatchProtocolTest {
 
         JSONObject ev = new JSONObject().put("electricPercent", 84);
         assertEquals("84%", WatchProtocol.heroDisplay(ev));
+        assertEquals("84%", WatchProtocol.heroNumber("84%"));
+        assertEquals("", WatchProtocol.heroUnit("84%"));
+        assertEquals("301", WatchProtocol.heroNumber("301 km"));
+        assertEquals(" km", WatchProtocol.heroUnit("301 km"));
         assertEquals("电 84%", WatchProtocol.subrangeDisplay(ev));
         assertEquals("— km", WatchProtocol.energyDisplay(ev, "fuelKm", "fuelPercent"));
     }
