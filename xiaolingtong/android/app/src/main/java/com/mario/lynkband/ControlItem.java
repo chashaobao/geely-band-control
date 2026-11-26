@@ -21,6 +21,7 @@ record ControlItem(ControlCategory category, String state, String action, int ma
     }
     String label() {
         if (category == ControlCategory.OTHER) return "选择按钮类型";
+        if (state.equals("momentary")) return category.title;
         return category.title + "." + switch (state) {
             case "open" -> "开";
             case "closed" -> "关";
@@ -33,9 +34,12 @@ record ControlItem(ControlCategory category, String state, String action, int ma
         org.json.JSONObject item = new org.json.JSONObject().put("slot", slot.id()).put("key", slot.signature())
                 .put("label", action.isEmpty() ? label() : action);
         if (withState) {
-            item.put("category", category.name()).put("displayLabel", label()).put("controlState", state)
+            item.put("category", category.name()).put("displayLabel", label())
                     .put("controlName", category == ControlCategory.OTHER ? "待选择" : category.title)
                     .put("enabled", permitted && slot.target() != null && !action.isEmpty());
+            // Previous watch and band versions already support action-only captions.
+            if (state.equals("momentary")) item.put("momentary", true);
+            else item.put("controlState", state);
         }
         return item;
     }
@@ -45,6 +49,20 @@ record ControlItem(ControlCategory category, String state, String action, int ma
         if (slot.loading()) return new ControlItem(category, "loading", "");
         if (category == ControlCategory.OTHER || slot.icon() == null)
             return new ControlItem(category, "unknown", "");
+        if (category == ControlCategory.FIND) {
+            ImageView icon = slot.icon();
+            if (icon.getDrawable() == null) return new ControlItem(category, "unknown", "");
+            int[] actual = pixels(icon.getDrawable());
+            for (String name : new String[]{"ic_ck_xc", "ic_ck_xc2", "ic_ck_xcs"}) {
+                int id = icon.getResources().getIdentifier(name, "mipmap", LynkWidget.OWNER);
+                if (id != 0 && matches(icon.getResources(), id, actual)) {
+                    return new ControlItem(category, "momentary", slot.target() == null ? "" : category.title, id);
+                }
+            }
+            if (category.title.equals(CardContent.describedAction(slot)))
+                return new ControlItem(category, "momentary", slot.target() == null ? "" : category.title);
+            return new ControlItem(category, "unknown", "");
+        }
         String[] pair = switch (category) {
             case WINDOW -> new String[]{"cc", "开车窗", "关车窗"};
             case CLIMATE -> new String[]{"kt", "开空调", "关空调"};
@@ -71,20 +89,13 @@ record ControlItem(ControlCategory category, String state, String action, int ma
 
     private static Match recognizedIcon(ImageView icon, String prefix) {
         Resources res = icon.getResources();
-        var config = new android.content.res.Configuration(res.getConfiguration());
         int[] actual = pixels(icon.getDrawable());
         String result = "";
         int matchedId = 0;
         for (String suffix : ICON_SUFFIXES) {
             int id = res.getIdentifier("ic_ck_" + prefix + "_" + suffix, "mipmap", LynkWidget.OWNER);
             if (id == 0) continue;
-            Reference key = new Reference(res, config, id);
-            int[] reference = ReferenceIcons.cache.get(key);
-            if (reference == null) {
-                reference = pixels(res.getDrawable(id, null));
-                ReferenceIcons.cache.put(key, reference);
-            }
-            if (Arrays.equals(actual, reference)) {
+            if (matches(res, id, actual)) {
                 String matched = suffix.startsWith("on") ? "open" : "closed";
                 if (!result.isEmpty() && !result.equals(matched)) return new Match("", 0);
                 matchedId = result.isEmpty() ? id : 0;
@@ -92,6 +103,16 @@ record ControlItem(ControlCategory category, String state, String action, int ma
             }
         }
         return new Match(result, matchedId);
+    }
+
+    private static boolean matches(Resources res, int id, int[] actual) {
+        Reference key = new Reference(res, new android.content.res.Configuration(res.getConfiguration()), id);
+        int[] reference = ReferenceIcons.cache.get(key);
+        if (reference == null) {
+            reference = pixels(res.getDrawable(id, null));
+            ReferenceIcons.cache.put(key, reference);
+        }
+        return Arrays.equals(actual, reference);
     }
 
     private static int[] pixels(Drawable drawable) {

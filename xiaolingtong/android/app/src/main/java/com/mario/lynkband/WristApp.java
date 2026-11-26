@@ -2,6 +2,7 @@ package com.mario.lynkband;
 
 import com.mario.lynkband.solar.ThemeSync;
 import com.mario.lynkband.transport.ControlCategory;
+import com.mario.lynkband.transport.WatchIconCodec;
 
 import android.app.Application;
 import android.content.SharedPreferences;
@@ -24,6 +25,7 @@ public class WristApp extends Application {
     private final CardOperation operation = new CardOperation();
     private String operationNode = "";
     private final Runnable operationExpiry = () -> { observeOperation(); changed(); };
+    private final java.util.Set<String> bandThemeSubscribers = new java.util.HashSet<>();
     private String receiptNode = "";
     private String cardReceipt = "";
     private final android.util.LruCache<String, String> watchIcons = new android.util.LruCache<>(16);
@@ -50,11 +52,30 @@ public class WristApp extends Application {
             labels.edit().putString("wearType", hasWatch() || !card.bound() ? "apk" : "rpk").apply();
         }
         link = new XiaomiLink(this, main, this::receive, node -> {
+            bandThemeSubscribers.remove("band:" + node);
             forgetDevice("band:" + node);
             changed();
         }, this::changed);
         watch = new WatchServer(this, main, this::reply,
                 () -> forgetDevice(watchNode()), this::changed);
+    }
+
+    void selectPhoneLandscape(PhoneLandscape scene) {
+        SharedPreferences prefs = PhoneLandscape.preferences(this);
+        scene.select(prefs);
+        if (!service || bandThemeSubscribers.isEmpty()) return;
+        JSONObject state = ThemeSync.snapshot(prefs, PhoneLandscape.KEY, true);
+        try {
+            String message = new JSONObject().put("v", 1).put("type", "bandThemeChanged")
+                    .put("theme", state.getString("scene")).put("bandThemeRevision", state.getLong("revision")).toString();
+            for (String node : bandThemeSubscribers) {
+                if (permitsWearable(node)) sendBandTheme(node.substring(5), message);
+            }
+        } catch (JSONException invalid) { throw new IllegalStateException(invalid); }
+    }
+
+    void sendBandTheme(String node, String message) {
+        link.send(node, message, failure -> android.util.Log.i("WristLynkHost", "Band theme will sync on next status"));
     }
 
     void screen(boolean visible, Runnable listener) {
@@ -68,7 +89,7 @@ public class WristApp extends Application {
         if (active == service) return;
         service = active;
         if (active) syncTransports();
-        else { watch.stop(); disarm(); link.stop(); }
+        else { bandThemeSubscribers.clear(); watch.stop(); disarm(); link.stop(); }
         card.listening(screen || active);
         if (active && !card.bound() && card.autoBind() && !card.binding()) card.bind(null);
         changed();
@@ -145,7 +166,7 @@ public class WristApp extends Application {
         return VOICE.equals(node) ? voiceEnabled() && voiceAccess() : permitsWearable(node);
     }
 
-    private boolean permitsWearable(String node) {
+    boolean permitsWearable(String node) {
         if (node.startsWith("watch:"))
             return androidWear() && hasWatch() && watchNode().equals(node);
         return usesBand() && node.startsWith("band:") && link.canReceive(node.substring(5));
@@ -169,7 +190,7 @@ public class WristApp extends Application {
 
     private void syncBand() {
         if (service && usesBand()) link.start();
-        else link.stop();
+        else { bandThemeSubscribers.clear(); link.stop(); }
     }
 
     String connectionStatus() {
@@ -279,7 +300,7 @@ public class WristApp extends Application {
 
     private void refreshWhileLocked(String node) {
         long now = elapsed();
-        if (now < nextLockedRefresh || !node.startsWith("watch:") || !permitsWearable(node)
+        if (now < nextLockedRefresh || !permitsWearable(node)
                 || !card.bound() || operation.active() || followUp.waiting(now)
                 || getSystemService(android.os.PowerManager.class).isInteractive()) return;
         View root = card.content();
@@ -341,9 +362,39 @@ public class WristApp extends Application {
             if (id.isEmpty() || id.length() > 80 || request.optInt("v") != 1) return null;
             JSONObject out = new JSONObject().put("v", 1).put("id", id);
             String type = request.optString("type");
-            boolean compact = node.startsWith("watch:") && "execute".equals(type)
-                    && Boolean.TRUE.equals(request.opt("compactExecuteAck"));
+            boolean band = node.startsWith("band:");
+            boolean compact = (node.startsWith("watch:") || (band && permitsWearable(node)))
+                    && "execute".equals(type) && Boolean.TRUE.equals(request.opt("compactExecuteAck"));
             if (compact) out.put("accepted", false);
+            boolean solarStatus = "status".equals(type) && permitsWearable(node)
+                    && Boolean.TRUE.equals(request.opt(band ? "bandTheme" : "watchSolar"));
+            if (solarStatus) {
+                SharedPreferences prefs = PhoneLandscape.preferences(this);
+                com.mario.lynkband.solar.SolarController.Snapshot solar =
+                        com.mario.lynkband.solar.SolarController.current(this, prefs);
+                out.put("themeNight", solar.night()).put("solarInfo", solar.info());
+            }
+            if (band && "status".equals(type)) {
+                if (solarStatus && Boolean.TRUE.equals(request.opt("bandThemePush"))) bandThemeSubscribers.add(node);
+                else bandThemeSubscribers.remove(node);
+            }
+            if (solarStatus && band) {
+                SharedPreferences prefs = PhoneLandscape.preferences(this);
+                JSONObject theme = ThemeSync.snapshot(prefs, PhoneLandscape.KEY, true);
+                long revision = theme.getLong("revision");
+                Object choice = request.opt("bandThemeChoice");
+                for (PhoneLandscape scene : PhoneLandscape.values()) {
+                    if (!scene.name().equals(choice) || scene.name().equals(theme.getString("scene"))) continue;
+                    if (request.has("bandThemeBaseRevision") && request.optLong("bandThemeBaseRevision", -1) != revision) {
+                        out.put("bandThemeConflict", true);
+                    } else {
+                        scene.select(prefs);
+                        theme = ThemeSync.snapshot(prefs, PhoneLandscape.KEY, true);
+                    }
+                    break;
+                }
+                out.put("theme", theme.getString("scene")).put("bandThemeRevision", theme.getLong("revision"));
+            }
             // A paired watch can sync its landscape even when the vehicle widget is unavailable.
             if ("status".equals(type) && node.startsWith("watch:") && permitsWearable(node)
                     && request.opt("landscapeSync") instanceof JSONObject peer) {
@@ -370,7 +421,7 @@ public class WristApp extends Application {
             } catch (RuntimeException unavailable) {
                 // A provider view can disappear or fail to draw during a card transition.
                 android.util.Log.w("WristLynkHost", "Card unavailable for " + type, unavailable);
-                if (!node.startsWith("watch:")) throw unavailable;
+                if (!node.startsWith("watch:") && !compact) throw unavailable;
                 tickets.forget(node);
                 out.remove("token");
                 out.remove("label");
@@ -395,22 +446,29 @@ public class WristApp extends Application {
         boolean permitted = permits(node);
         boolean visual = node.startsWith("watch:") && request.optBoolean("visualActions");
         boolean listSelected = visual || (node.startsWith("band:") && request.optBoolean("selectedActions"));
+        String bandIconKey = node.startsWith("band:") && "status".equals(request.opt("type"))
+                && request.opt("bandIconKey") instanceof String key && !key.isEmpty()
+                && !BandPhoto.requested(request) && permitsWearable(node) ? key : null;
         if (permitted || listSelected) {
             for (CardContent.Slot slot : listSelected ? CardContent.visibleSlots(view, card.identity()) : slots()) {
                 ControlItem control = control(slot);
                 if (control.action().isEmpty() && !listSelected) continue;
                 JSONObject item = control.wireAction(slot, listSelected, permitted);
-                if (visual && slot.icon() != null) {
-                    boolean hd = request.optBoolean(com.mario.lynkband.transport.WatchIconCodec.HD_CAPABILITY);
-                    String iconKey = slot.signature() + "/" + control.matchedDrawable() + (hd ? "/hd" : "/legacy");
+                boolean bandIcon = slot.signature().equals(bandIconKey);
+                if ((visual && slot.icon() != null) || bandIcon) {
+                    WatchIconCodec.Profile profile = bandIcon ? WatchIconCodec.Profile.BAND
+                            : request.optBoolean(WatchIconCodec.HD_CAPABILITY) ? WatchIconCodec.Profile.HD
+                            : WatchIconCodec.Profile.LEGACY;
+                    String iconKey = slot.signature() + "/" + control.matchedDrawable() + "/" + profile.name();
                     try {
                         String icon = watchIcons.get(iconKey);
                         if (icon == null) {
-                            icon = CardContent.watchIcon(slot.icon(), control.matchedDrawable(), hd);
+                            icon = CardContent.controlIcon(slot.icon(), control.matchedDrawable(), profile);
                             watchIcons.put(iconKey, icon);
                         }
-                        item.put("icon", icon);
+                        item.put(bandIcon ? "bandIconPng" : "icon", icon);
                     } catch (RuntimeException unavailable) {
+                        if (bandIcon) item.put("bandIconPng", "");
                         android.util.Log.w("WristLynkHost", "Action icon unavailable", unavailable);
                     }
                 }
@@ -422,9 +480,19 @@ public class WristApp extends Application {
                 : !CardContent.readable(view) ? "等待领克卡片数据"
                 : permitted ? "已允许穿戴车控" : "车况只读";
         JSONObject data = CardContent.snapshot(view);
-        if (node.startsWith("watch:") && permitsWearable(node) && request.opt("carPhotoId") instanceof String knownId) {
+        out.put("data", data).put("status", status).put("controlsAllowed", permitted).put("actions", actions);
+        if (node.startsWith("band:")) out.put("appearance", PhoneLandscape.night(this) ? "dark" : "light");
+        if (node.startsWith("band:") && BandPhoto.requested(request) && permitsWearable(node)) {
+            VehiclePhoto.Image photo = null;
             try {
-                VehiclePhoto.Image photo = card.vehiclePhoto();
+                photo = card.vehiclePhoto(VehiclePhoto.Target.BAND);
+            } catch (RuntimeException unavailable) {
+                android.util.Log.w("WristLynkHost", "Vehicle photo unavailable", unavailable);
+            }
+            BandPhoto.append(out, request, photo);
+        } else if (node.startsWith("watch:") && permitsWearable(node) && request.opt("carPhotoId") instanceof String knownId) {
+            try {
+                VehiclePhoto.Image photo = card.vehiclePhoto(VehiclePhoto.Target.WATCH);
                 if (photo != null) {
                     data.put("carPhotoId", photo.id());
                     if (!photo.id().equals(knownId)) data.put("carPhoto", photo.base64());
@@ -433,8 +501,6 @@ public class WristApp extends Application {
                 android.util.Log.w("WristLynkHost", "Vehicle photo unavailable", unavailable);
             }
         }
-        out.put("data", data).put("status", status).put("controlsAllowed", permitted).put("actions", actions);
-        if (node.startsWith("band:")) out.put("appearance", PhoneLandscape.night(this) ? "dark" : "light");
         return out.toString();
     }
 

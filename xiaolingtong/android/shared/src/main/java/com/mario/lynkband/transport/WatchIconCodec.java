@@ -13,17 +13,36 @@ import java.io.ByteArrayOutputStream;
 public final class WatchIconCodec {
     // Four HD icons take at most 15,360 base64 bytes of a 32 KiB reply, leaving
     // space for the vehicle photo (8 KiB before base64) and action/status metadata.
-    private static final int HD_PNG = 2880, LEGACY_PNG = 960;
-    private static final int[] HD_SIZES = {96, 80, 64, 48, 36, 24, 16, 12};
-    private static final int[] LEGACY_SIZES = {48, 36, 24, 16, 12};
+    private static final int HD_PNG = 2880;
     public static final int SOURCE_LIMIT = 512;
     public static final String HD_CAPABILITY = "hdActionIcons";
     private static final int FLAGS = Base64.URL_SAFE | Base64.NO_WRAP;
+
+    public enum Profile {
+        LEGACY(960, FLAGS, 1, 48, 36, 24, 16, 12),
+        HD(HD_PNG, FLAGS, 1, 96, 80, 64, 48, 36, 24, 16, 12),
+        // Vela data URIs use standard base64. 1536 bytes encode to 2048 characters.
+        BAND(1536, Base64.NO_WRAP, 32, 72, 64, 56, 48, 40, 36, 32);
+
+        private final int bytes, flags, minEdge;
+        private final int[] sizes;
+
+        Profile(int bytes, int flags, int minEdge, int... sizes) {
+            this.bytes = bytes;
+            this.flags = flags;
+            this.minEdge = minEdge;
+            this.sizes = sizes;
+        }
+    }
 
     private WatchIconCodec() {}
 
     /** Load the matched packaged bitmap at native resolution, independent of phone DPI. */
     public static String encodeResource(Resources res, int drawableId, boolean hd) {
+        return encodeResource(res, drawableId, hd ? Profile.HD : Profile.LEGACY);
+    }
+
+    public static String encodeResource(Resources res, int drawableId, Profile profile) {
         if (drawableId == 0) return "";
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inScaled = false;
@@ -37,7 +56,7 @@ public final class WatchIconCodec {
             options.inJustDecodeBounds = false;
             Bitmap bitmap = BitmapFactory.decodeResource(res, drawableId, options);
             if (bitmap == null) return "";
-            try { return encode(bitmap, hd); }
+            try { return encode(bitmap, profile); }
             finally { bitmap.recycle(); }
         } catch (Resources.NotFoundException unavailable) { return ""; }
     }
@@ -46,28 +65,33 @@ public final class WatchIconCodec {
 
     /** Crop at source resolution before fitting the glyph to the negotiated pixel/byte budget. */
     public static String encode(Bitmap source, boolean hd) {
+        return encode(source, hd ? Profile.HD : Profile.LEGACY);
+    }
+
+    public static String encode(Bitmap source, Profile profile) {
         if (source == null || source.isRecycled()) return "";
         int largest = Math.max(source.getWidth(), source.getHeight());
         if (largest > SOURCE_LIMIT) {
             float scale = (float) SOURCE_LIMIT / largest;
             Bitmap bounded = Bitmap.createScaledBitmap(source, Math.max(1, Math.round(source.getWidth() * scale)),
                     Math.max(1, Math.round(source.getHeight() * scale)), true);
-            try { return encode(bounded, hd); }
+            try { return encode(bounded, profile); }
             finally { bounded.recycle(); }
         }
         if (source.getConfig() == Bitmap.Config.HARDWARE) {
             Bitmap readable = source.copy(Bitmap.Config.ARGB_8888, false);
             if (readable == null) return "";
-            try { return encode(readable, hd); }
+            try { return encode(readable, profile); }
             finally { readable.recycle(); }
         }
         Rect crop = visibleBounds(source);
         if (crop.isEmpty()) return "";
         int longest = Math.max(crop.width(), crop.height());
+        if (longest < profile.minEdge) return "";
         int previous = 0;
         Paint filter = new Paint(Paint.FILTER_BITMAP_FLAG);
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        for (int size : hd ? HD_SIZES : LEGACY_SIZES) {
+        for (int size : profile.sizes) {
             int edge = Math.min(longest, size);
             if (edge == previous) continue;
             previous = edge;
@@ -77,8 +101,8 @@ public final class WatchIconCodec {
             try {
                 new Canvas(sample).drawBitmap(source, crop, new Rect(0, 0, width, height), filter);
                 bytes.reset();
-                if (sample.compress(Bitmap.CompressFormat.PNG, 100, bytes) && bytes.size() <= (hd ? HD_PNG : LEGACY_PNG))
-                    return Base64.encodeToString(bytes.toByteArray(), FLAGS);
+                if (sample.compress(Bitmap.CompressFormat.PNG, 100, bytes) && bytes.size() <= profile.bytes)
+                    return Base64.encodeToString(bytes.toByteArray(), profile.flags);
             } finally { sample.recycle(); }
         }
         return "";
@@ -111,7 +135,7 @@ public final class WatchIconCodec {
             bounds.inJustDecodeBounds = true;
             BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
             if (!"image/png".equals(bounds.outMimeType) || bounds.outWidth <= 0 || bounds.outHeight <= 0
-                    || Math.max(bounds.outWidth, bounds.outHeight) > HD_SIZES[0]) return null;
+                    || Math.max(bounds.outWidth, bounds.outHeight) > Profile.HD.sizes[0]) return null;
             return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
         } catch (IllegalArgumentException malformed) {
             return null;

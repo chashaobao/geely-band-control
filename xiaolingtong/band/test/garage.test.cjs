@@ -6,6 +6,8 @@ const vm = require('node:vm')
 
 const source = readFileSync(path.resolve(__dirname, '../build/pages/garage/index.js'), 'utf8')
   .trim().replace(/^export default /, '')
+const appSource = readFileSync(path.resolve(__dirname, '../build/app.js'), 'utf8')
+  .trim().replace(/^export default /, '')
 const slot = {slot:'fr_window', key:'card/vehicle/window/pixels', label:'关窗'}
 
 const square = {screenShape:'rect', screenWidth:336, screenHeight:336}
@@ -27,12 +29,13 @@ const aiot = {
   __ce__(tag, {__opts__: opts}, children) {
     if (opts.show && !opts.show()) return []
     return {tag, type:opts.type, children:Array.from(children.flat(Infinity)), click:opts.events?.click,
+      complete:opts.events?.complete, error:opts.events?.error,
       value:binding(opts.value), src:binding(opts.src), disabled:binding(opts.disabled),
       classes:Array.from(binding(opts.classList) || []), style:opts.style?.() || {}}
   }
 }
 
-function setup(device = {getInfo: ({success}) => success(square)}, offline = false, hour = 12, store) {
+function setup(device = {getInfo: ({success}) => success(square)}, offline = false, hour = 12, store, file) {
   const sent = []
   const timers = new Map()
   let now = 100000
@@ -41,40 +44,206 @@ function setup(device = {getInfo: ({success}) => success(square)}, offline = fal
   const runtime = {
     Date: class extends Date { static now() { return now } getHours() { return hour } },
     aiot,
-    $translateStyle$: css => Object.fromEntries(css.split(';').map(s => s.trim().split(/:\s*/))),
     $app_require$: name => ({
       '@app-module/system.interconnect':offline ? undefined : {instance: () => connection},
-      '@app-module/system.storage':store, '@app-module/system.device':device
+      '@app-module/system.storage':store, '@app-module/system.device':device, '@app-module/system.file':file
     })[name],
     setTimeout(fn, delay) { timers.set(++next, {fn, delay}); return next },
     clearTimeout(timer) { timers.delete(timer) }
   }
   const exports = {}
-  vm.runInNewContext('(' + source + ')', runtime)(runtime, runtime, runtime, exports, null)
+  const context = vm.createContext(runtime)
+  vm.runInContext('Object.fromEntries = undefined', context)
+  vm.runInContext('(' + appSource + ')', context)(runtime, runtime, runtime, {}, null)
+  vm.runInContext('(' + source + ')', context)(runtime, runtime, runtime, exports, null)
   const component = {}
   exports.entry(component)
   const page = Object.assign(component.default, component.default.private || component.default.data || {})
   page.onInit()
+  assert.equal(page.template(page).style.backgroundImage, undefined)
+  page.onReady()
   page.onShow()
   function reply(payload = {}) {
     connection.onmessage({data: JSON.stringify({v:1, id:sent.at(-1).id, actions:[slot],
       data:{vehicle:'测试车辆', range:'320', battery:'52%', fuel:'17L', time:'14:30'}, ...payload})})
   }
-  return {page, sent, reply, connection, timers, feed: () => page.template(page).children[1].children[0], advance(ms) { now += ms }}
+  return {page, sent, reply, connection, timers, visibleRows: () => page.layout.single ? page.singleRows : page.pairedRows, feed: () => page.template(page).children[0], advance(ms) { now += ms }}
 }
+
+// A real PNG exercises byte-for-byte transport, including the native file module's input type.
+const png = readFileSync(path.resolve(__dirname, '../src/common/metrics/battery.png'))
+const encoded = png.toString('base64')
+function photoSession(device) {
+  const writes = [], truncated = [], deleted = []
+  const s = setup(device, false, 12, undefined, {
+    writeText({uri, text, append, success}) { assert.equal(text, ' '); assert.equal(append, false); truncated.push(uri); success() },
+    writeArrayBuffer(options) { writes.push(options) },
+    delete(options) { deleted.push(options.uri); options.complete() }
+  })
+  const {reply} = s
+  const replyPhoto = (payload = {}) => reply({actions:[], ...payload})
+  return Object.assign(s, {writes, truncated, deleted, reply:replyPhoto, row: () => s.feed().children.find(row => row.type === 'carPhoto'),
+    poll() {
+      const timer = s.timers.get(s.page.pollTimer)
+      assert.ok(timer)
+      s.advance(timer.delay); timer.fn()
+      return s.sent.at(-1)
+    },
+    chunk(id, from = 0, to = encoded.length, overrides = {}, actions = []) {
+      replyPhoto({actions, data:{vehicle:'测试车辆', condition:'已停稳', carPhotoId:id, carPhotoChunk:encoded.slice(from, to),
+        carPhotoMime:'image/png', carPhotoOffset:from, carPhotoLength:encoded.length, ...overrides}})
+    }})
+}
+
+function assertNoPhotoFields(request) {
+  for (const key of ['bandPhoto','carPhotoId','photoOffset','photoTransferId']) assert.equal(key in request, false, key)
+}
+
+test('standard home assembles a PNG, reuses its cached URI and unmounts stale photos', () => {
+  const s = photoSession()
+  assert.equal(s.sent[0].bandPhoto, true)
+  assert.equal(s.sent[0].carPhotoId, '')
+  assert.equal(s.sent[0].photoTransferId, '')
+  assert.equal(s.sent[0].photoOffset, 0)
+  assert.equal(s.row(), undefined)
+  s.chunk('first', 0, 713)
+  assert.equal(s.row(), undefined)
+  const next = s.poll()
+  assert.equal(next.photoTransferId, 'first')
+  assert.equal(next.photoOffset, 713)
+  assert.equal(next.carPhotoId, '')
+  s.chunk('first', 713, encoded.length, {}, [{...slot, key:''}])
+  assert.equal(s.row(), undefined)
+  assert.equal(s.writes.length, 1)
+  const write = s.writes[0]
+  assert.deepEqual(s.truncated, [write.uri])
+  assert.equal(Object.prototype.toString.call(write.buffer), '[object ArrayBuffer]')
+  assert.deepEqual(Buffer.from(write.buffer), png)
+  write.success()
+  assert.match(s.row().children[0].src, /^internal:\/\/cache\/garage-car-[01]\.png$/)
+  const types = s.feed().children.map(row => row.type)
+  assert.ok(types.indexOf('condition') < types.indexOf('carPhoto') && types.indexOf('carPhoto') < types.indexOf('actionpair'))
+  assert.equal(s.poll().carPhotoId, 'first')
+  s.reply({data:{vehicle:'测试车辆', carPhotoId:'first'}})
+  assert.equal(s.row().children[0].src, write.uri)
+  assert.equal(s.writes.length, 1)
+  s.poll(); s.chunk('second', 0, 320)
+  assert.equal(s.row(), undefined)
+  assert.deepEqual(s.deleted, [write.uri])
+  assert.equal(s.poll().photoTransferId, 'second')
+  s.reply({data:{carPhotoId:'', vehicle:'测试车辆'}})
+  assert.equal(s.poll().photoOffset, 0)
+  s.reply() // Legacy phone without photo support.
+  assert.equal(s.row(), undefined)
+  assert.equal(s.timers.get(s.page.pollTimer).delay, 5000)
+})
+
+test('photo writer retries a type error once with the documented byte view and hides on I/O failure', () => {
+  for (const code of [202, 300]) {
+    const s = photoSession()
+    s.chunk('native')
+    s.writes[0].fail('native failure', code)
+    assert.equal(s.row(), undefined)
+    if (code === 202) {
+      assert.equal(s.writes.length, 2)
+      assert.equal(Object.prototype.toString.call(s.writes[1].buffer), '[object Uint8Array]')
+      assert.deepEqual(Buffer.from(s.writes[1].buffer), png)
+      s.writes[1].success()
+      assert.equal(s.row().children[0].src, s.writes[0].uri)
+    } else {
+      assert.equal(s.writes.length, 1)
+      assert.deepEqual(s.deleted, [s.writes[0].uri])
+    }
+  }
+})
+
+test('pill and undetected layouts ignore even unsolicited valid photos', () => {
+  for (const device of [{}, {getInfo:({success}) => success({screenShape:'pill-shaped', screenWidth:192, screenHeight:490})}]) {
+    const s = photoSession(device)
+    assertNoPhotoFields(s.sent[0]); s.chunk('unsolicited')
+    assert.equal(s.writes.length, 0)
+    assert.equal(s.row(), undefined)
+    assertNoPhotoFields(s.poll())
+  }
+})
+
+test('controls and refresh preempt in-flight photo statuses and ignore their late replies', () => {
+  const s = photoSession()
+  s.chunk('a', 0, 100, {}, [slot])
+  const next = s.poll()
+  if (next.bandIconKey) s.reply({actions:[{...slot, bandIconPng:''}]})
+  const stale = next.bandPhoto ? next : s.poll()
+  assert.equal(stale.bandPhoto, true)
+  assert.equal(stale.photoOffset, 100)
+  s.page.prepare(slot.slot)
+  assert.equal(s.sent.at(-1).type, 'prepare')
+  assertNoPhotoFields(s.sent.at(-1))
+  s.reply({id:stale.id, data:{carPhotoId:''}})
+  assert.equal(s.page.pending.type, 'prepare')
+  s.reply({actions:[slot], token:'one', label:slot.label})
+  s.advance(600); s.page.confirm()
+  assert.equal(s.sent.at(-1).type, 'execute')
+  assertNoPhotoFields(s.sent.at(-1)); s.reply()
+  assert.equal(s.poll().photoOffset, 100)
+  s.page.refresh()
+  assert.equal(s.sent.at(-1).type, 'refresh')
+  assertNoPhotoFields(s.sent.at(-1))
+})
+
+test('bad metadata, oversized, reordered or mixed chunks discard partial transfers', () => {
+  for (const bad of [{carPhotoMime:'image/jpeg'}, {carPhotoOffset:0}, {carPhotoOffset:1.5}, {carPhotoLength:32772},
+    {carPhotoLength:encoded.length + 4}, {carPhotoLength:14}, {carPhotoChunk:''}, {carPhotoChunk:'*'},
+    {carPhotoChunk:'A'.repeat(2049)}, {carPhotoId:'swapped'}, {carPhotoId:null}]) {
+    const s = photoSession()
+    s.chunk('a', 0, 100); s.poll(); s.chunk('a', 100, encoded.length, bad)
+    assert.equal(s.writes.length, 0, JSON.stringify(bad))
+    assert.equal(s.row(), undefined)
+    assert.equal(s.timers.get(s.page.pollTimer).delay, 5000)
+    assert.equal(s.poll().photoOffset, 0)
+  }
+  const s = photoSession()
+  s.chunk('junk', 0, encoded.length, {carPhotoChunk:'A'.repeat(encoded.length)})
+  assert.equal(s.writes.length, 0)
+})
+
+test('late cache writes cannot revive photos after revocation, hiding or disconnect', () => {
+  for (const invalidate of ['empty','legacy','vehicle','hide','disconnect']) {
+    const s = photoSession()
+    s.chunk('a')
+    if (invalidate === 'hide') s.page.onHide()
+    else if (invalidate === 'disconnect') s.connection.onclose()
+    else if (invalidate === 'vehicle') { s.page.refresh(); s.reply({data:{vehicle:'另一辆车'}}) }
+    else { s.poll(); s.reply({data:{vehicle:'测试车辆', ...(invalidate === 'empty' ? {carPhotoId:''} : {})}}) }
+    s.writes[0].success()
+    assert.equal(s.row(), undefined)
+    assert.deepEqual(s.deleted, [s.writes[0].uri])
+  }
+})
+
+test('paced photo retries have a bounded burst even if a peer sends a character per status', () => {
+  const s = photoSession()
+  const delays = []
+  for (let i = 0; i < 10; i++) {
+    s.chunk('small', i, i + 1)
+    delays.push(s.timers.get(s.page.pollTimer).delay)
+    assert.equal(s.poll().photoOffset, i + 1)
+  }
+  assert.ok(delays.every(delay => delay >= 300))
+  assert.ok(delays.includes(5000))
+})
 
 test('home uses only current widget slots and refuses read-only actions', () => {
   const s = setup()
   assert.equal(s.sent[0].selectedActions, true)
   s.reply({actions:[{...slot, category:'WINDOW', enabled:false}]})
-  assert.equal(s.page.rows.length, 1)
-  assert.equal(s.page.rows[0].left.controlName, '关窗')
-  assert.equal(s.page.rows[0].right.slot, '')
+  assert.equal(s.visibleRows().length, 1)
+  assert.equal(s.visibleRows()[0].left.controlName, '关窗')
+  assert.equal(s.visibleRows()[0].right.slot, '')
   s.page.prepare(slot.slot)
   assert.deepEqual(s.sent.map(m=>m.type), ['status'])
   s.page.refresh()
   s.reply({actions:[]})
-  assert.equal(s.page.rows.length, 0)
+  assert.equal(s.visibleRows().length, 0)
 })
 
 test('both tiles show only control names; confirmation and wire payload use the action label', () => {
@@ -83,8 +252,8 @@ test('both tiles show only control names; confirmation and wire payload use the 
   const loading = {...slot, displayLabel:'车窗.加载'} // Older companion without controlState or controlName.
   const actions = [loading, climate]
   s.reply({actions})
-  assert.equal(s.page.rows[0].left.controlName, '车窗')
-  assert.equal(s.page.rows[0].right.controlName, '前排空调')
+  assert.equal(s.visibleRows()[0].left.controlName, '车窗')
+  assert.equal(s.visibleRows()[0].right.controlName, '前排空调')
   s.page.prepare(loading.slot)
   assert.equal(s.sent.length, 1)
   s.page.prepare(climate.slot)
@@ -148,7 +317,7 @@ test('disconnected watch drops actionable slots and reports uncertain dispatch',
 for (const [shape, w, h, columns] of [
   ['circle', 466, 466, 2], ['rect', 336, 336, 2], ['pill-shaped', 192, 490, 1],
   ['rect', 336, 396, 1], ['rect', 396, 336, 1], [undefined, 336, 396, 1],
-  ['rect', 192, 490, 1], [undefined, 192, 490, 1],
+  ['rect', 192, 490, 1], [undefined, 192, 490, 1], ['pill-shaped', 212, 520, 1],
   ['circle', 240, 240, 1], ['rect', 240, 240, 1], ['pill-shaped', 152, 486, 1]
 ]) {
   test(`scrollable home and confirmation on ${shape || 'unreported'} ${w}x${h}`, () => {
@@ -167,21 +336,26 @@ for (const [shape, w, h, columns] of [
       assert.ok(Math.hypot(width / 2, Math.max(0, (height - (h - w)) / 2)) <= w / 2)
     }
     const energy = feed.children.find(row => row.type === 'energy')
-    assert.equal(energy.style['flex-direction'], columns === 1 ? 'column' : 'row')
-    assert.equal(energy.children[0].value, '电量 100%')
-    const rows = feed.children.filter(row => row.type === 'actionpair')
+    assert.equal(energy.style.flexDirection, w >= 180 ? 'row' : 'column')
+    assert.equal(energy.children[0].children[1].value, '100%')
+    const rows = feed.children.filter(row => row.type === (columns === 1 ? 'actionSingle' : 'actionpair'))
     assert.deepEqual(rows.map(row => row.children.length), columns === 1 ? [1,1,1,1,1] : [2,2,1])
     const tiles = rows.flatMap(row => row.children)
     for (const [i, tile] of tiles.entries()) {
+      if (columns === 1) {
+        assert.ok(tile.classes.includes('singleTile'))
+        assert.ok(parseFloat(tile.style.width) * w / designWidth >= width * .95)
+        assert.equal(compiledRule(s.page, 'singleTile').flexDirection, 'row')
+      }
       assert.equal(tile.children[0].children[0].tag, 'image')
       assert.equal(tile.children[1].value, '车窗' + i)
       assert.ok(parseFloat(tile.style.height) * w / designWidth >= 44)
-      assert.ok(parseFloat(tile.children[1].style['font-size']) * w / designWidth >= 16)
+      assert.ok(parseFloat(tile.children[1].style.fontSize) * w / designWidth >= 16)
     }
     const refresh = feed.children.at(-1).children[0]
     assert.equal(refresh.value, '刷新车况')
     assert.ok(parseFloat(refresh.style.height) * w / designWidth >= 44)
-    assert.ok(parseFloat(refresh.style['font-size']) * w / designWidth >= 16)
+    assert.ok(parseFloat(refresh.style.fontSize) * w / designWidth >= 16)
     tiles.at(-1).click()
     assert.equal(s.sent.at(-1).slot, 's4')
     s.reply({actions, token:'t', label:'关闭车窗'})
@@ -203,11 +377,11 @@ test('missing device API stays usable; late device info reflows existing actions
   for (const device of [{}, {getInfo: options => { detected = options.success }}]) {
     const s = setup(device)
     s.reply({actions:[slot, {...slot, slot:'other'}]})
-    assert.equal(s.page.rows.length, 2)
+    assert.equal(s.visibleRows().length, 2)
     if (detected) {
       detected(square)
-      assert.equal(s.page.rows.length, 1)
-      assert.equal(s.page.rows[0].right.slot, 'other')
+      assert.equal(s.visibleRows().length, 1)
+      assert.equal(s.visibleRows()[0].right.slot, 'other')
       assert.equal(s.sent.length, 1)
     }
   }
@@ -221,7 +395,7 @@ test('icon badge uses reported state with either phone appearance; loading and u
     s.reply({actions, appearance})
     const tiles = s.feed().children.filter(row => row.type === 'actionpair').flatMap(row => row.children)
     const colors = {on:'#59cf91',tile:'#192b3e',loading:'#ffcc46',unknown:'#a2abb6'}
-    assert.deepEqual(tiles.map(tile => tile.children[0].style['background-color']),
+    assert.deepEqual(tiles.map(tile => tile.children[0].style.backgroundColor),
       [colors.on, colors.tile, colors.loading, colors.unknown, colors.unknown])
     assert.deepEqual(tiles.map(tile => tile.disabled), [false,false,true,true,true])
     for (const [i, tile] of tiles.entries()) {
@@ -267,7 +441,7 @@ test('execute starts five seconds of status-only polling; unchanged loading keep
   s.advance(501); s.page.confirm()
   const loading = {...slot, controlName:'车窗', controlState:'loading'}
   s.reply({actions:[loading]})
-  const rows = s.page.rows
+  const rows = s.visibleRows()
   for (let tick = 1; tick <= 10; tick++) {
     const timer = s.timers.get(s.page.pollTimer)
     assert.equal(timer.delay, 500)
@@ -275,14 +449,134 @@ test('execute starts five seconds of status-only polling; unchanged loading keep
     assert.equal(s.sent.at(-1).type, 'status')
     assert.equal('token' in s.sent.at(-1), false)
     s.reply({actions:[tick === 10 ? {...loading, controlState:'closed'} : loading]})
-    if (tick < 10) assert.equal(s.page.rows, rows)
+    if (tick < 10) assert.equal(s.visibleRows(), rows)
   }
-  assert.equal(s.page.rows[0].left.state, 'closed')
+  assert.equal(s.visibleRows()[0].left.state, 'closed')
   assert.equal(s.timers.get(s.page.pollTimer).delay, 5000)
   assert.equal(s.sent.filter(m => m.type === 'execute').length, 1)
   s.page.onHide()
-  assert.equal(s.page.rows.length, 0)
+  assert.equal(s.visibleRows().length, 0)
   assert.equal(s.timers.size, 0)
+})
+
+const windowOpen = {...slot, category:'WINDOW', controlName:'车窗', controlState:'open'}
+const windowClosed = {...windowOpen, key:'closed-window', label:'开窗', controlState:'closed'}
+const findCar = {slot:'find', key:'find-car', category:'FIND', controlName:'寻车', label:'寻车', momentary:true}
+
+function startOperation(s, item, actions = [item]) {
+  s.reply({actions})
+  s.page.prepare(item.slot)
+  s.reply({actions, token:'one-use', label:item.label})
+  s.advance(501)
+  s.page.confirm()
+  assert.equal(s.sent.at(-1).compactExecuteAck, true)
+}
+
+test('compact acceptance keeps the current dashboard and polls until the original control changes', () => {
+  const s = setup()
+  startOperation(s, windowOpen, [windowOpen, findCar])
+  assert.equal(s.visibleRows()[0].left.state, 'loading')
+  assert.equal(s.visibleRows()[0].right.enabled, false)
+  s.reply({type:'executeAck', accepted:true, note:'已转交', actions:[], data:{}})
+  assert.equal(s.page.range, '320')
+  assert.equal(s.sent.at(-1).type, 'status')
+  s.reply({controlsAllowed:false, status:'请在手机领克卡片确认', actions:[], data:{}})
+  assert.equal(s.visibleRows()[0].left.state, 'loading')
+  s.timers.get(s.page.pollTimer).fn()
+  s.reply({actions:[{...windowClosed, category:'LOCK'}, findCar]})
+  assert.equal(s.visibleRows().flatMap(row => [row.left, row.right]).filter(tile => tile.state === 'loading').length, 1)
+  s.timers.get(s.page.pollTimer).fn()
+  s.reply({actions:[windowClosed, findCar]})
+  assert.equal(s.page.note, '车窗 · 已完成')
+  assert.equal(s.visibleRows()[0].left.state, 'closed')
+  assert.equal(s.visibleRows()[0].right.enabled, true)
+  assert.equal(s.sent.filter(request => request.type === 'execute').length, 1)
+})
+
+test('refused dispatches and successful momentary controls unlock after a fresh snapshot', () => {
+  for (const [item, accepted] of [[windowOpen, false], [findCar, true]]) {
+    const s = setup()
+    startOperation(s, item)
+    s.reply({type:'executeAck', accepted, note:'手机已响应'})
+    assert.equal(s.visibleRows()[0].left.enabled, false)
+    assert.equal(s.visibleRows()[0].left.state, item.controlState || 'legacy')
+    assert.equal(s.sent.at(-1).type, 'status')
+    s.page.prepare(item.slot)
+    assert.equal(s.sent.at(-1).type, 'status')
+    s.reply({actions:[item]})
+    assert.equal(s.visibleRows()[0].left.enabled, true)
+  }
+})
+
+test('unchanged and ambiguous operations expire or disconnect with an uncertain result, without replay', () => {
+  for (const outcome of ['timeout', 'disconnect', 'vehicle-changed']) {
+    const s = setup()
+    startOperation(s, windowOpen)
+    s.reply({type:'executeAck', accepted:null, note:'手机正在核对'})
+    if (outcome === 'timeout') {
+      s.advance(44900)
+      s.reply({actions:[windowOpen]})
+      assert.equal(s.timers.get(s.page.pollTimer).delay, 100)
+      s.advance(100)
+      s.timers.get(s.page.pollTimer).fn()
+      s.reply({actions:[windowOpen]})
+      assert.equal(s.visibleRows()[0].left.enabled, true)
+    } else if (outcome === 'disconnect') {
+      s.connection.onclose()
+      s.timers.get(s.page.pollTimer).fn()
+      s.reply({actions:[windowOpen]})
+    } else {
+      s.reply({actions:[windowClosed], data:{vehicle:'另一辆车'}})
+    }
+    assert.match(s.page.note, /结果待核对/)
+    assert.equal(s.sent.filter(request => request.type === 'execute').length, 1)
+  }
+})
+
+test('legacy full execute snapshots keep a stateful action pending after five seconds', () => {
+  const s = setup()
+  startOperation(s, windowOpen)
+  s.reply({actions:[windowOpen], note:'已转交领克卡片'})
+  s.advance(5500)
+  s.timers.get(s.page.pollTimer).fn()
+  s.reply({actions:[windowOpen]})
+  assert.equal(s.visibleRows()[0].left.state, 'loading')
+  assert.equal(s.timers.get(s.page.pollTimer).delay, 500)
+  s.timers.get(s.page.pollTimer).fn()
+  s.reply({actions:[windowClosed]})
+  assert.equal(s.page.note, '车窗 · 已完成')
+})
+
+test('pill queues refresh during status and revalidates a queued control against the new snapshot', () => {
+  const device = {getInfo: ({success}) => success({screenShape:'pill-shaped', screenWidth:192, screenHeight:490})}
+  for (const [latest, expected] of [[windowOpen, 'prepare'], [windowClosed, 'refresh']]) {
+    const s = setup(device)
+    s.reply({actions:[windowOpen]})
+    s.timers.get(s.page.pollTimer).fn()
+    const time = s.feed().children.find(row => row.type === 'receipt').children[0]
+    time.click()
+    time.click()
+    s.page.prepare(windowOpen.slot)
+    assert.deepEqual(s.sent.map(msg => msg.type), ['status', 'status'])
+    s.reply({actions:[latest]})
+    assert.equal(s.sent.at(-1).type, expected)
+    if (expected === 'prepare') {
+      s.reply({actions:[latest], token:'valid', label:latest.label})
+      s.page.cancel()
+    }
+    assert.equal(s.sent.filter(msg => msg.type === 'refresh').length, 1)
+    assert.equal(s.sent.filter(msg => msg.type === 'execute').length, 0)
+  }
+})
+
+test('manual refresh after a disconnect waits for a new snapshot before sending the request', () => {
+  const s = setup()
+  s.reply()
+  s.connection.onclose()
+  s.page.refresh()
+  assert.equal(s.sent.at(-1).type, 'status')
+  s.reply()
+  assert.equal(s.sent.at(-1).type, 'refresh')
 })
 
 test('refresh is followed by a new status read', () => {
@@ -311,7 +605,7 @@ test('home paints a single readable default with missing firmware modules and ei
   const offline = setup({}, true)
   const title = offline.feed().children[0]
   assert.equal(title.children[0].value, '小领通')
-  assert.match(title.children[1].value, /连接/)
+  assert.match(offline.feed().children.find(row => row.type === 'connection').children.at(-1).value, /连接/)
   assert.equal(offline.sent.length, 0)
   const s = setup()
   for (const appearance of ['light', 'dark']) {
@@ -338,29 +632,358 @@ test('a lost connection retries immediately, backs off and never repeats a prepa
   assert.equal(s.sent.filter(message => message.type === 'execute').length, 0)
 })
 
-test('band sky backgrounds and manual presets stay available offline', () => {
-  const s = setup({}, true)
-  assert.equal(s.page.skyMode, 'auto')
+test('offline standard screen has two solar settings and a manual time picker', () => {
+  const s = setup(undefined, true)
+  assert.equal(s.page.skyMode, 'follow')
+  assert.equal(s.page.template(s.page).tag, 'div')
   const theme = s.feed().children.find(row => row.type === 'theme').children[0]
   theme.click()
-  assert.equal(s.page.template(s.page).children[0].src, '/common/sky/day.png')
-  theme.click()
-  assert.equal(s.page.template(s.page).children[0].src, '/common/sky/night.png')
-  theme.click()
-  assert.equal(s.page.skyMode, 'auto')
+  assert.ok(s.feed().children.some(row => row.type === 'solarTitle'))
+  assert.match(s.page.solarInfo, /本机/);
+  assert.equal(s.feed().children.some(row => row.type === 'auto'), false)
+  s.feed().children.find(row => row.type === 'manual').children[0].click()
+  assert.equal(s.feed().children.find(row => row.type === 'sunrise').children[1].tag, 'picker')
+  s.page.setSunrise({hour:13, minute:0})
+  assert.equal(s.page.riseTime, '13:00')
+  assert.equal(s.page.template(s.page).style.backgroundImage, '/common/sky/night.png')
+  s.page.setSunset({hour:13, minute:0})
+  assert.equal(s.page.setTime, '18:00')
+  assert.equal(compiledRule(s.page, 'page').backgroundSize, 'cover')
 })
 
-test('automatic sky uses local daylight boundaries and a failed theme store cannot prevent startup', () => {
+test('standard screen follows the shared scene and phone sunrise/sunset with a local override', () => {
+  const s = setup()
+  const image = () => s.page.template(s.page).style.backgroundImage
+  const solarInfo = '日出 06:29 · 日落 17:11'
+  assert.equal(s.sent[0].bandTheme, true)
+  s.reply({theme:'COAST', themeNight:true, solarInfo})
+  assert.equal(s.page.solarInfo, solarInfo)
+  assert.equal(image(), '/common/sky/coast-night.png')
+  s.page.setSkyMode('manual')
+  assert.equal(image(), '/common/sky/coast-day.png')
+  s.feed().children.find(row => row.type === 'scene').children[0].click()
+  const options = s.feed().children.filter(row => row.type === 'sceneOption').map(row => row.children[0])
+  assert.deepEqual(options.map(button => button.value), ['蓝天与星空','山脊营地','城市天际线','海岸灯塔','雪山映湖'])
+  options.at(-1).click()
+  assert.equal(s.page.mode, 'home')
+  assert.equal(s.sent.at(-1).bandThemeChoice, 'ALPINE')
+  s.reply({theme:'ALPINE', themeNight:true, solarInfo})
+  assert.equal(image(), '/common/sky/alpine-day.png')
+  s.page.setSkyMode('follow')
+  assert.equal(image(), '/common/sky/alpine-night.png')
+  s.page.open()
+  assert.equal('bandThemeChoice' in s.sent.at(-1), false)
+})
+
+function selectScene(s, scene) {
+  s.feed().children.find(row => row.type === 'scene').children[0].click()
+  s.page.selectScene(scene)
+}
+function sceneStorage() {
+  const values = new Map()
+  return {values, get({key, success}) { success(values.get(key)) }, set({key, value}) { values.set(key, value) }}
+}
+
+test('stale and absent replies cannot reset a picked scene or flood a legacy phone', () => {
+  for (const ignored of [{}, {theme:'SKY'}]) {
+    const store = sceneStorage(), s = setup(undefined, false, 12, store)
+    selectScene(s, 'CITY') // The initial status was already in flight.
+    s.reply({theme:'SKY', actions:[]})
+    assert.equal(s.sent.at(-1).bandThemeChoice, 'CITY')
+    for (let i = 0; i < 12; i++) {
+      const count = s.sent.length
+      s.reply({...ignored, actions:[]})
+      assert.equal(s.sent.length, count)
+      assert.equal(s.page.sceneLabel, '主题 · 城市天际线')
+      assert.equal(s.page.template(s.page).style.backgroundImage, '/common/sky/city-day.png')
+      const timer = s.timers.get(s.page.pollTimer)
+      assert.equal(timer.delay, 5000)
+      s.advance(timer.delay); timer.fn()
+    }
+    assert.equal(s.sent.filter(r => r.bandThemeChoice === 'CITY').length, 3)
+    s.page.onHide(); s.page.onShow()
+    assert.equal(s.sent.at(-1).bandThemeChoice, 'CITY')
+    s.connection.onclose(); s.page.open()
+    assert.equal(s.page.sceneLabel, '主题 · 城市天际线')
+    s.page.onDestroy()
+    const next = setup(undefined, false, 12, store)
+    assert.equal(next.sent[0].bandThemeChoice, 'CITY')
+    next.reply({theme:'CITY'}) // .36 companion confirms without a revision.
+    next.page.open(); assert.equal(next.sent.at(-1).bandThemeChoice, undefined)
+    next.reply({theme:'RIDGE'})
+    assert.equal(next.page.sceneLabel, '主题 · 山脊营地')
+  }
+})
+
+test('phone theme pushes redraw immediately and preserve in-flight status and confirmation', () => {
+  const store = sceneStorage(), s = setup(undefined, false, 12, store)
+  assert.equal(s.sent[0].bandThemePush, true)
+  const push = (theme, revision) => s.connection.onmessage({data:JSON.stringify({v:1,type:'bandThemeChanged',theme,bandThemeRevision:revision})})
+  const image = () => s.page.template(s.page).style.backgroundImage
+  const initial = s.page.pending
+  push('COAST', 7)
+  assert.equal(s.page.pending, initial)
+  assert.equal(image(), '/common/sky/coast-day.png')
+  s.reply({theme:'SKY', bandThemeRevision:0, themeNight:true, solarInfo:'手机日落'})
+  assert.equal(image(), '/common/sky/coast-night.png')
+  for (const r of [6,7,-1,1.2,'8',null,undefined,1e15]) push('SKY', r)
+  assert.equal(s.page.sceneLabel, '主题 · 海岸灯塔')
+  s.page.prepare(slot.slot)
+  const prepare = s.page.pending, timer = s.page.requestTimer
+  push('ALPINE', 8)
+  assert.equal(s.page.pending, prepare)
+  assert.equal(s.page.requestTimer, timer)
+  assert.equal(s.page.solarInfo, '手机日落')
+  assert.equal(image(), '/common/sky/alpine-night.png')
+  s.reply({token:'valid', label:slot.label})
+  assert.equal(s.page.mode, 'confirm')
+  push('RIDGE', 9)
+  assert.equal(s.page.mode, 'confirm')
+  assert.equal(s.page.sceneLabel, '主题 · 山脊营地')
+  s.page.onDestroy()
+  assert.equal(setup(undefined, true, 12, store).page.sceneLabel, '主题 · 山脊营地')
+})
+
+test('a later tap survives the first echo; a newer phone edit wins a revision conflict', () => {
+  const s = setup()
+  s.reply({theme:'SKY', bandThemeRevision:5})
+  selectScene(s, 'RIDGE')
+  assert.equal(s.sent.at(-1).bandThemeBaseRevision, 5)
+  selectScene(s, 'CITY')
+  s.reply({theme:'RIDGE', bandThemeRevision:6})
+  assert.equal(s.page.sceneLabel, '主题 · 城市天际线')
+  assert.equal(s.sent.at(-1).bandThemeChoice, 'CITY')
+  assert.equal(s.sent.at(-1).bandThemeBaseRevision, 6)
+  s.reply({theme:'COAST', bandThemeRevision:7, bandThemeConflict:true})
+  assert.equal(s.page.sceneLabel, '主题 · 海岸灯塔')
+  selectScene(s, 'ALPINE')
+  s.connection.onmessage({data:{v:1,type:'bandThemeChanged',theme:'CITY',bandThemeRevision:8}})
+  s.reply({theme:'COAST',bandThemeRevision:7})
+  assert.equal(s.page.sceneLabel, '主题 · 城市天际线')
+})
+
+test('theme restores independently of first reply, a more recent tap, or unavailable storage', () => {
+  const saved = JSON.stringify({scene:'ALPINE',pending:true,revision:23})
+  for (const tap of [false, true]) {
+    let restore
+    const s = setup(undefined, false, 12, {get({key,success}) { if (key === 'garageScene') restore = success }, set() { throw Error('unavailable') }})
+    s.reply({theme:'SKY',bandThemeRevision:0})
+    if (tap) selectScene(s, 'RIDGE')
+    restore(saved)
+    assert.equal(s.page.sceneLabel, tap ? '主题 · 山脊营地' : '主题 · 雪山映湖')
+    s.page.onHide(); s.page.onShow()
+    assert.equal(s.sent.at(-1).bandThemeChoice, tap ? 'RIDGE' : 'ALPINE')
+  }
+  const offline = setup(undefined, true)
+  selectScene(offline, 'CITY')
+  offline.page.onHide(); offline.page.onShow()
+  assert.equal(offline.page.template(offline.page).style.backgroundImage, '/common/sky/city-day.png')
+})
+
+test('capsule never sends or applies shared themes', () => {
+  const s = setup({getInfo:({success}) => success({screenShape:'pill-shaped', screenWidth:192, screenHeight:490})})
+  assert.equal('bandTheme' in s.sent[0], false)
+  assert.equal('bandThemePush' in s.sent[0], false)
+  s.connection.onmessage({data:{v:1,type:'bandThemeChanged',theme:'COAST',bandThemeRevision:50}})
+  assert.equal(s.page.theme, 'SKY')
+  s.reply({theme:'CITY', themeNight:true})
+  assert.equal(s.page.template(s.page).style.backgroundImage, undefined)
+  assert.equal(s.feed().children.some(row => ['theme','scene'].includes(row.type)), false)
+})
+
+test('offline daylight boundaries and a failed theme store cannot prevent startup', () => {
   const broken = {get() { throw Error('unavailable') }, set() { throw Error('unavailable') }}
   for (const [hour, expect] of [[5,'night'],[6,'day'],[17,'day'],[18,'night']]) {
-    const s = setup({}, true, hour, broken)
-    assert.equal(s.page.skyImage, '/common/sky/' + expect + '.png')
-    s.page.cycleSky()
-    assert.equal(s.page.skyMode, 'day')
+    const s = setup(undefined, true, hour, broken)
+    assert.equal(s.page.template(s.page).style.backgroundImage, '/common/sky/' + expect + '.png')
+    s.page.setSkyMode('manual')
+    assert.equal(s.page.skyMode, 'manual')
   }
   let delayed
-  const s = setup({}, true, 12, {get({success}) { delayed = success }})
-  s.page.cycleSky()
+  const s = setup(undefined, true, 12, {get({key, success}) { if (key === 'skyMode') delayed = success }})
+  s.page.setSkyMode('manual')
   delayed('night')
-  assert.equal(s.page.skyMode, 'day')
+  assert.equal(s.page.skyMode, 'manual')
+})
+
+test('battery-only cards collapse the fuel row and preserve a reported zero on vehicle change', () => {
+  const s = setup()
+  for (const fuel of ['27.8 L', undefined, null, '— L', 0]) {
+    s.reply({data:{battery:'65%', fuel}})
+    const row = s.feed().children.find(item => ['energy','batteryOnly'].includes(item.type))
+    assert.equal(row.children[0].children[1].value, '65%')
+    if (fuel === 0 || fuel === '27.8 L') assert.equal(row.children[1].children[1].value, String(fuel))
+    else { assert.equal(row.type, 'batteryOnly'); assert.equal(row.children.length, 1) }
+    s.page.refresh()
+  }
+})
+
+for (const [width, height, shape, themed] of [
+  [192, 490, 'pill-shaped', false], [212, 520, 'rect', false], [192, 490, undefined, false],
+  [336, 480, 'rect', true], [480, 480, 'circle', true]
+]) {
+  test(`appearance follows the screen shape after late detection on ${width}x${height} ${shape}`, () => {
+    let detected, reads = 0
+    const s = setup({getInfo: ({success}) => { detected = success }}, false, 12,
+      {get({success}) { reads++; success(JSON.stringify({mode:'manual', rise:780, set:1080})) }})
+    const themeRow = () => s.feed().children.some(row => row.type === 'theme')
+    const image = () => s.page.template(s.page).style.backgroundImage
+    assert.equal(themeRow(), false)
+    assert.equal(image(), undefined)
+    detected({screenWidth:width, screenHeight:height, screenShape:shape})
+    assert.equal(themeRow(), themed)
+    assert.equal(reads, themed ? 2 : 0) // Separate scene and solar settings.
+    assert.equal(image(), themed ? '/common/sky/night.png' : undefined)
+    s.reply({data:{battery:'50%', vehicle:'纯电车'}})
+    assert.ok(s.feed().children.some(row => row.type === 'batteryOnly'))
+    assert.ok(s.feed().children.some(row => row.type === 'refresh'))
+    s.page.prepare(slot.slot)
+    s.reply({token:'test', label:slot.label})
+    assert.equal(s.page.mode, 'confirm')
+    assert.equal(image(), themed ? '/common/sky/night.png' : undefined)
+  })
+}
+
+const pillIcons = {getInfo:({success}) => success({screenShape:'pill-shaped', screenWidth:192, screenHeight:490})}
+const iconAction = {...slot, category:'WINDOW', controlState:'closed'}
+const lockAction = {...iconAction, slot:'fr_unlock', key:'card/lock/current', category:'LOCK', enabled:false}
+
+for (const [shape, device] of [['standard', undefined], ['pill', pillIcons]]) {
+  test(`${shape} renders only the requested official glyph and retains it through confirmation`, () => {
+    const s = photoSession(device)
+    const actions = [iconAction, lockAction]
+    const rows = () => s.feed().children.filter(row => row.type === (shape === 'pill' ? 'actionSingle' : 'actionpair'))
+    const tiles = () => rows().flatMap(row => row.children)
+    const glyph = tile => tile.children[0].children[0].src
+    assert.equal(compiledRule(s.page, 'glyph').objectFit, 'contain')
+    s.reply({actions})
+    const wanted = s.poll()
+    assert.equal(wanted.bandIconKey, slot.key)
+    assertNoPhotoFields(wanted)
+    s.reply({actions:actions.map(item => ({...item, bandIconPng:encoded}))})
+    assert.equal(s.writes.length, 1)
+    assert.deepEqual(Buffer.from(s.writes[0].buffer), png)
+    assert.equal(glyph(tiles()[0]), '/common/controls/WINDOW.png')
+    s.writes[0].success()
+    assert.match(s.writes[0].uri, /^internal:\/\/cache\/garage-control-\d+\.png$/)
+    assert.equal(glyph(tiles()[0]), s.writes[0].uri)
+    assert.equal(glyph(tiles()[1]), '/common/controls/LOCK.png')
+    assert.equal(tiles()[1].disabled, true)
+    tiles()[1].click(); assert.equal(s.sent.at(-1), wanted)
+    tiles()[0].click(); assert.equal(s.sent.at(-1).type, 'prepare')
+    assert.equal(s.sent.at(-1).bandIconKey, undefined)
+    s.reply({actions, token:'ticket', label:slot.label})
+    assert.equal(s.feed().children[0].children[1].children[0].src, s.writes[0].uri)
+    s.page.confirm(); assert.equal(s.sent.at(-1).type, 'prepare')
+    s.advance(501); s.page.confirm()
+    assert.equal(s.sent.at(-1).type, 'execute')
+    assert.equal(s.sent.at(-1).token, 'ticket')
+    assert.equal(s.sent.at(-1).bandIconKey, undefined)
+  })
+}
+
+test('standard alternates missing keys with car photo, preserving partial and ready photo state', () => {
+  const s = photoSession()
+  const actions = [iconAction, lockAction]
+  s.chunk('car', 0, 256, {}, actions)
+  assert.equal(s.poll().bandIconKey, slot.key)
+  s.reply({data:{}, actions:[{...iconAction, bandIconPng:''}, lockAction]})
+  const more = s.poll()
+  assert.equal(more.photoOffset, 256)
+  assert.equal(more.bandIconKey, undefined)
+  s.chunk('car', 256, encoded.length, {}, actions)
+  s.writes[0].success()
+  const next = s.poll()
+  assertNoPhotoFields(next)
+  assert.equal(next.bandIconKey, lockAction.key)
+  s.reply({data:{}, actions:[iconAction, {...lockAction, bandIconPng:encoded}]})
+  assert.equal(s.row().children[0].src, s.writes[0].uri)
+  s.writes[1].success()
+  assert.equal(s.visibleRows()[0].right.glyph, s.writes[1].uri)
+  assert.equal(s.visibleRows()[0].right.enabled, false)
+  assert.equal(s.poll().carPhotoId, 'car')
+})
+
+test('stale icon replies and writes cannot replace the active glyph or disturb the selected action', () => {
+  const s = photoSession(pillIcons)
+  const changed = {...iconAction, key:'new/widget/artwork'}
+  s.reply({actions:[iconAction]}); const stale = s.poll()
+  s.page.prepare(slot.slot)
+  s.reply({id:stale.id, actions:[{...iconAction, bandIconPng:encoded}]})
+  assert.equal(s.page.pending.type, 'prepare'); assert.equal(s.writes.length, 0)
+  s.reply({actions:[iconAction]}); assert.equal(s.poll().bandIconKey, slot.key)
+  s.reply({actions:[{...iconAction, bandIconPng:encoded}]})
+  s.page.refresh(); s.reply({actions:[changed]}); assert.equal(s.poll().bandIconKey, changed.key)
+  s.reply({actions:[{...changed, bandIconPng:encoded}]})
+  assert.notEqual(s.writes[0].uri, s.writes[1].uri)
+  s.writes[0].success(); assert.equal(s.visibleRows()[0].left.glyph, '/common/controls/WINDOW.png')
+  s.page.prepare(changed.slot); s.reply({actions:[changed], token:'valid', label:changed.label})
+  s.writes[1].success(); assert.equal(s.page.confirmTile.glyph, s.writes[1].uri)
+  s.page.onHide(); s.writes[1].success()
+  assert.equal(s.visibleRows().length, 0)
+})
+
+test('Band 9 renders each native mark even without image events, then replaces it only after decode', () => {
+  const s = photoSession(pillIcons)
+  const categories = ['LOCK','FIND','ENGINE','TRUNK','SUNROOF','CLIMATE','WINDOW','OTHER']
+  const actions = categories.map((category, i) => ({...iconAction, category, key:'art-' + i, slot:'tile-' + i}))
+  const badges = () => s.feed().children.filter(row => row.type === 'actionSingle').map(row => row.children[0].children[0])
+  s.reply({actions})
+  assert.deepEqual(badges().map(badge => badge.children[1].value), ['锁','寻','擎','箱','顶','温','窗','控'])
+  const edge = parseFloat(compiledRule(s.page, 'glyph').width)
+  const badgeEdge = parseFloat(compiledRule(s.page, 'badge').width)
+  assert.ok(edge * 192 / designWidth >= 24 && edge < badgeEdge)
+  const local = badges()[0].children[0]
+  local.complete({width:48, height:48})
+  assert.equal(badges()[0].children.length, 1)
+  local.error()
+  assert.equal(badges()[0].children[1].value, '锁')
+  assert.equal(s.poll().bandIconKey, actions[0].key)
+  s.reply({actions:[{...actions[0], bandIconPng:encoded}, ...actions.slice(1)]})
+  assert.deepEqual(s.truncated, [s.writes[0].uri])
+  assert.equal(s.writes[0].position, 0)
+  assert.equal(s.writes[0].append, false)
+  s.writes[0].fail('parameter error', 202)
+  assert.equal(s.writes.length, 2)
+  assert.equal(Object.prototype.toString.call(s.writes[1].buffer), '[object ArrayBuffer]')
+  assert.deepEqual(Buffer.from(s.writes[1].buffer), png)
+  s.writes[1].success()
+  const candidate = badges()[0].children[0]
+  assert.equal(candidate.src, s.writes[1].uri)
+  assert.equal(candidate.style.backgroundColor, undefined)
+  assert.equal(compiledRule(s.page, 'glyph').backgroundColor, undefined)
+  const pending = badges()[0]
+  assert.equal(pending.children[1].value, '锁') // A silent decoder still has a native mark.
+  assert.ok(parseFloat(candidate.style.left) >= parseFloat(pending.children[1].style.width))
+  assert.ok(parseFloat(candidate.style.left) + edge <= parseFloat(pending.style.width))
+  const capsuleTile = s.feed().children.find(row => row.type === 'actionSingle').children[0]
+  const nameFraction = parseFloat(compiledRule(s.page, 'singleTileName').width) / 100
+  assert.ok(parseFloat(capsuleTile.style.width) * (1 - nameFraction) >= parseFloat(pending.style.width))
+  candidate.complete({width:48, height:48})
+  assert.equal(badges()[0].children.length, 1)
+  candidate.error()
+  assert.equal(badges()[0].children[0].src, '/common/controls/LOCK.png')
+  assert.equal(badges()[0].children[1].value, '锁')
+  candidate.complete({width:48, height:48}) // Late callback from the discarded file URI.
+  assert.equal(badges()[0].children[1].value, '锁')
+})
+
+test('legacy, empty, malformed, oversized or unwritable icons settle on the bundled glyph', () => {
+  for (const sample of [undefined, '', 'not-a-png', encoded + 'A'.repeat(2048), 'write-fails', 'read-fails']) {
+    const s = photoSession(pillIcons)
+    s.reply({actions:[iconAction]}); assert.equal(s.poll().bandIconKey, slot.key)
+    const hasImage = sample === 'write-fails' || sample === 'read-fails'
+    const data = hasImage ? encoded : sample
+    s.reply({actions:[{...iconAction, ...(data === undefined ? {} : {bandIconPng:data})}]})
+    assert.equal(s.writes.length, hasImage ? 1 : 0)
+    if (sample === 'write-fails') s.writes[0].fail()
+    if (sample === 'read-fails') { s.writes[0].success(); s.page.iconFailed(slot.key, s.writes[0].uri) }
+    assert.equal(s.visibleRows()[0].left.glyph, '/common/controls/WINDOW.png')
+    assert.equal(s.poll().bandIconKey, undefined)
+  }
+  const s = setup(pillIcons) // Device firmware has no file module.
+  s.reply({actions:[{...iconAction, bandIconPng:encoded}]})
+  s.timers.get(s.page.pollTimer).fn()
+  assert.equal(s.sent.at(-1).bandIconKey, undefined)
+  assert.equal(s.visibleRows()[0].left.glyph, '/common/controls/WINDOW.png')
 })

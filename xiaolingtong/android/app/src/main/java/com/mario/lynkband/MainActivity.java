@@ -281,7 +281,7 @@ public final class MainActivity extends Activity {
         for (int i = 0; i < scenes.length; i++) titles[i] = scenes[i].title;
         new AlertDialog.Builder(this).setTitle("选择主题")
                 .setSingleChoiceItems(titles, PhoneLandscape.selected(themePrefs).ordinal(), (dialog, which) -> {
-                    scenes[which].select(themePrefs);
+                    app.selectPhoneLandscape(scenes[which]);
                     dialog.dismiss();
                 }).setNegativeButton("取消", null).show();
     }

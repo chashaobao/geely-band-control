@@ -296,6 +296,10 @@ public final class OfficialCardTest {
         int firstClicks, confirmClicks, photoReads, failedRedraws;
         boolean cardUnavailable, photoUnavailable, failNextRedraw;
         boolean access = true;
+        boolean bandPaired;
+        @Override boolean permitsWearable(String node) {
+            return (bandPaired && usesBand() && "band:fixture".equals(node)) || super.permitsWearable(node);
+        }
         String identity = "fixture/1";
         final ImageView icon;
 
@@ -308,10 +312,10 @@ public final class OfficialCardTest {
                     if (cardUnavailable) throw new IllegalStateException("card temporarily unavailable");
                     return root;
                 }
-                @Override VehiclePhoto.Image vehiclePhoto() {
+                @Override VehiclePhoto.Image vehiclePhoto(VehiclePhoto.Target target) {
                     photoReads++;
                     if (photoUnavailable) throw new IllegalStateException("photo temporarily unavailable");
-                    return super.vehiclePhoto();
+                    return super.vehiclePhoto(target);
                 }
                 @Override String identity() { return identity; }
                 @Override boolean bound() { return true; }
@@ -459,6 +463,43 @@ public final class OfficialCardTest {
         });
     }
 
+    @Test public void bandStatusReadsPhotoOnlyForPairedOptInAndClearsHiddenImage() throws Exception {
+        var check = new java.util.concurrent.FutureTask<Void>(() -> {
+            VoicePhone phone = new VoicePhone(false);
+            phone.getSharedPreferences("buttonLabels", Context.MODE_PRIVATE).edit().putString("wearType", "rpk").apply();
+            var request = new org.json.JSONObject().put("v", 1).put("id", "poll").put("type", "status")
+                    .put("bandPhoto", true).put("carPhotoId", "").put("photoOffset", 0).put("photoTransferId", "");
+            String node = "band:fixture";
+            try {
+                var bitmap = android.graphics.Bitmap.createBitmap(72, 30, android.graphics.Bitmap.Config.ARGB_8888);
+                bitmap.eraseColor(Color.BLUE);
+                ((ImageView) view("car_img")).setImageBitmap(bitmap);
+                byte[] poll = request.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                var denied = new org.json.JSONObject(phone.reply(node, poll)).getJSONObject("data");
+                assertFalse(denied.has("carPhotoId"));
+                phone.bandPaired = true;
+                request.remove("bandPhoto");
+                var legacy = new org.json.JSONObject(phone.reply(node, request.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                assertFalse(legacy.getJSONObject("data").has("carPhotoChunk"));
+                assertEquals(0, phone.photoReads);
+                var allowed = new org.json.JSONObject(phone.reply(node, poll)).getJSONObject("data");
+                assertEquals("测试车辆", allowed.getString("vehicle"));
+                assertEquals("image/png", allowed.getString("carPhotoMime"));
+                assertTrue(allowed.getString("carPhotoChunk").startsWith("iVBORw0KGgo"));
+                assertFalse(allowed.has("carPhoto"));
+                view("car_img").setVisibility(View.GONE);
+                var hidden = new org.json.JSONObject(phone.reply(node, poll)).getJSONObject("data");
+                assertEquals("", hidden.getString("carPhotoId"));
+                assertFalse(hidden.has("carPhotoChunk"));
+                assertEquals(0, phone.firstClicks);
+                assertEquals(0, phone.confirmClicks);
+            } finally { phone.disarm(); }
+            return null;
+        });
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(check);
+        check.get();
+    }
+
     @Test public void compactExecuteReportsDispatchBeforeRedrawAndRecoversOnTheNextPoll() throws Exception {
         var check = new java.util.concurrent.FutureTask<VoicePhone>(() -> {
             VoicePhone phone = new VoicePhone(false);
@@ -538,6 +579,67 @@ public final class OfficialCardTest {
                     } finally { decoded.recycle(); }
                 }
             } finally { phone.disarm(); phone.icon.setImageDrawable(null); padded.recycle(); }
+            return null;
+        });
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(check);
+        check.get();
+    }
+
+    private org.json.JSONArray bandActions(VoicePhone phone, org.json.JSONObject request) throws Exception {
+        byte[] bytes = request.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        return new org.json.JSONObject(phone.reply("band:fixture", bytes)).getJSONArray("actions");
+    }
+
+    private void assertNoBandIcon(org.json.JSONArray actions) throws Exception {
+        for (int i = 0; i < actions.length(); i++) assertFalse(actions.getJSONObject(i).has("bandIconPng"));
+    }
+
+    @Test public void pairedBandRequestsOneOfficialPngByCurrentSignature() throws Exception {
+        var check = new java.util.concurrent.FutureTask<Void>(() -> {
+            VoicePhone phone = new VoicePhone(false);
+            phone.getSharedPreferences("buttonLabels", Context.MODE_PRIVATE).edit().putString("wearType", "rpk").apply();
+            var request = new org.json.JSONObject().put("v", 1).put("id", "icon").put("type", "status")
+                    .put("selectedActions", true);
+            try {
+                var legacy = bandActions(phone, request);
+                String key = legacy.getJSONObject(0).getString("key");
+                assertNoBandIcon(legacy);
+                request.put("bandIconKey", key);
+                assertNoBandIcon(bandActions(phone, request)); // Unpaired node, still allowed to see metadata.
+                phone.bandPaired = true;
+                var actions = bandActions(phone, request);
+                var first = actions.getJSONObject(0);
+                assertEquals(key, first.getString("key"));
+                String png = first.getString("bandIconPng");
+                assertTrue(png.startsWith("iVBORw0KGgo") && png.length() <= 2048);
+                var profile = com.mario.lynkband.transport.WatchIconCodec.Profile.BAND;
+                int drawable = resources.getIdentifier("ic_ck_cc_off", "mipmap", LynkWidget.OWNER);
+                String official = com.mario.lynkband.transport.WatchIconCodec.encodeResource(resources, drawable, profile);
+                assertEquals(official, png);
+                byte[] decodedPng = java.util.Base64.getDecoder().decode(png);
+                assertTrue(decodedPng.length <= 1536);
+                var decoded = android.graphics.BitmapFactory.decodeByteArray(decodedPng, 0, decodedPng.length);
+                assertNotNull(decoded);
+                int edge = Math.max(decoded.getWidth(), decoded.getHeight());
+                decoded.recycle();
+                assertTrue(edge >= 32 && edge <= 72);
+                for (int i = 1; i < actions.length(); i++) assertFalse(actions.getJSONObject(i).has("bandIconPng"));
+                assertFalse(first.has("icon"));
+
+                request.put("bandPhoto", true).put("carPhotoId", "").put("photoOffset", 0).put("photoTransferId", "");
+                assertNoBandIcon(bandActions(phone, request));
+                request.remove("bandPhoto");
+                glyph(phone.icon, "cc_on");
+                assertNoBandIcon(bandActions(phone, request)); // The changed artwork has a new key.
+                request.put("bandIconKey", bandActions(phone, request).getJSONObject(0).getString("key"));
+                assertNotEquals(png, bandActions(phone, request).getJSONObject(0).getString("bandIconPng"));
+
+                phone.icon.setVisibility(View.GONE);
+                request.put("bandIconKey", bandActions(phone, request).getJSONObject(0).getString("key"));
+                assertEquals("", bandActions(phone, request).getJSONObject(0).getString("bandIconPng"));
+                assertEquals(0, phone.firstClicks);
+                assertEquals(0, phone.confirmClicks);
+            } finally { phone.disarm(); }
             return null;
         });
         InstrumentationRegistry.getInstrumentation().runOnMainSync(check);

@@ -41,7 +41,6 @@ final class WatchFace extends FrameLayout {
         void reconnect();
 
         default void landscapeSelected() {}
-        default void locateSun() {}
         default void solarSettingsChanged() {}
     }
 
@@ -78,8 +77,8 @@ final class WatchFace extends FrameLayout {
         Scene(String title, int day, int night) { this.title = title; this.day = day; this.night = night; }
     }
     private Scene scene;
-    private boolean solarNight;
-    private String solarInfo = "未定位 · 按本地时间";
+    private boolean localSolarNight, solarNight;
+    private String localSolarInfo = "日出 06:00 · 日落 18:00";
     private Context palette;
     private boolean online, paired;
     private boolean wasConfirming;
@@ -154,18 +153,24 @@ final class WatchFace extends FrameLayout {
         palette = getContext().createConfigurationContext(config);
     }
 
-    void setNightScene(boolean night) {
+    void setLocalSolar(boolean night, String info) {
+        localSolarNight = night;
+        localSolarInfo = info;
+        updateSolarScene();
+        drawPage();
+    }
+
+    private void updateSolarScene() {
+        WatchState.PhoneSolar phone = followedSolar();
+        boolean night = phone == null ? localSolarNight : phone.night();
         if (night == solarNight) return;
         solarNight = night;
         updatePalette();
         clearTiles();
-        drawPage();
     }
 
-    void setSolarInfo(String info) {
-        if (solarInfo.equals(info)) return;
-        solarInfo = info;
-        if (screen == Screen.SOLAR) { rendered = ""; drawPage(); }
+    private WatchState.PhoneSolar followedSolar() {
+        return online && model != null && !manualSolar() ? model.phoneSolar() : null;
     }
 
     void show(WatchState state, boolean connected, boolean hasPhone) {
@@ -174,6 +179,7 @@ final class WatchFace extends FrameLayout {
         wasConfirming = state.confirming();
         online = connected;
         paired = hasPhone;
+        updateSolarScene();
         drawPage();
     }
 
@@ -221,7 +227,8 @@ final class WatchFace extends FrameLayout {
                         + "|"
                         + model.actions
                         + "|"
-                        + model.controlPending() + "|" + model.loadingAction();
+                        + model.controlPending() + "|" + model.loadingAction()
+                        + (screen == Screen.SOLAR ? "|" + manualSolar() + "|" + solarSummary() : "");
         if (key.equals(rendered)) return;
         if (!controlsVisible()) clearTiles();
         rendered = key;
@@ -290,15 +297,18 @@ final class WatchFace extends FrameLayout {
             distance.addView(unit);
             put(distance, 123, 104, 234, 74);
             FrameLayout energy = new FrameLayout(getContext());
-            put(energy, 86, 179, 308, singleColumn ? 78 : 39);
-            metric(energy, singleColumn ? 77 : 0, 0, "电量", value("battery", "—"), "battery", color(R.color.link));
-            metric(energy, singleColumn ? 77 : 154, singleColumn ? 39 : 0, "油量", value("fuel", "—"), "fuel", color(R.color.warm));
-            if (!singleColumn) {
+            String fuel = fuelReading();
+            boolean hasFuel = !fuel.isEmpty();
+            boolean stacked = singleColumn && hasFuel;
+            put(energy, 86, 179, 308, stacked ? 78 : 39);
+            metric(energy, singleColumn || !hasFuel ? 77 : 0, 0, "电量", value("battery", "—"), "battery", color(R.color.link));
+            if (hasFuel) metric(energy, stacked ? 77 : 154, stacked ? 39 : 0, "油量", fuel, "fuel", color(R.color.warm));
+            if (hasFuel && !stacked) {
                 View divider = new View(getContext());
                 divider.setBackgroundColor(color(R.color.line));
                 place(energy, divider, 153, 10, 1, 19);
             }
-            gridTop = singleColumn ? 273 : 234;
+            gridTop = stacked ? 273 : 234;
         }
         int muted = photoHome ? 0xffd3dfed : color(R.color.muted);
         int rows = actionTiles(gridTop, muted);
@@ -334,7 +344,8 @@ final class WatchFace extends FrameLayout {
 
         LinearLayout energy = row();
         photoMetric(energy, "battery", "电量", value("battery", "—"), soft);
-        photoMetric(energy, "fuel", "油量", value("fuel", "—"), soft);
+        String fuel = fuelReading();
+        if (!fuel.isEmpty()) photoMetric(energy, "fuel", "油量", fuel, soft);
         put(energy, 74, 165, 332, 32);
         String connection = "已允许穿戴车控".equals(status) ? "已连接" : status;
         LinearLayout connectionRow = row();
@@ -645,19 +656,30 @@ final class WatchFace extends FrameLayout {
         events.landscapeSelected();
     }
 
+    private boolean manualSolar() {
+        return ThemeSync.flag(themeSettings, "manual", false);
+    }
+
+    private String solarSummary() {
+        WatchState.PhoneSolar phone = followedSolar();
+        if (phone == null) return "手机未同步 · " + localSolarInfo;
+        return phone.info().isEmpty() ? "已同步手机" : phone.info();
+    }
+
     private void solarPage() {
         label("日出日落", 30, color(R.color.ink), true, 100, 53, 280, 46);
-        boolean manual = ThemeSync.flag(themeSettings, "manual", false);
-        actionButton("自动", manual ? "" : "check", !manual, 111, () -> setManual(false));
+        boolean manual = manualSolar();
+        actionButton("跟随手机", manual ? "" : "check", !manual, 111, () -> setManual(false));
         actionButton("用户设定", manual ? "check" : "", manual, 213, () -> setManual(true));
+        int backY;
         if (manual) {
             timeButton(true, 315);
             timeButton(false, 417);
+            backY = 519;
         } else {
-            label(solarInfo, 18, color(R.color.muted), false, 48, 315, 384, 42);
-            actionButton("定位日出日落", "", false, 371, events::locateSun);
+            multiline(solarSummary(), 18, color(R.color.muted), 48, 315, 384, 48);
+            backY = 373;
         }
-        int backY = manual ? 519 : 473;
         secondaryButton("返回", "back", backY, () -> go(Screen.THEME));
         page.setMinimumHeight(px(backY + 150));
     }
@@ -666,6 +688,7 @@ final class WatchFace extends FrameLayout {
         themeSettings.edit().putBoolean("manual", manual).apply();
         rendered = "";
         events.solarSettingsChanged();
+        updateSolarScene();
         drawPage();
     }
 
@@ -689,6 +712,14 @@ final class WatchFace extends FrameLayout {
             dialog.setTitle(title);
             dialog.show();
         });
+    }
+
+    private String fuelReading() {
+        String reading = model.data.optString("fuel", "").trim();
+        for (int i = 0; i < reading.length(); i++) {
+            if (Character.isDigit(reading.charAt(i))) return reading;
+        }
+        return "";
     }
 
     private String value(String k, String fallback) {

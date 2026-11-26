@@ -18,15 +18,21 @@ import java.security.NoSuchAlgorithmException;
 final class VehiclePhoto {
     record Image(String id, String base64) {}
 
-    private static final int MAX_WIDTH = 256, MAX_HEIGHT = 128, MAX_BYTES = 8192;
+    enum Target { WATCH, BAND }
+
+    private final Target target;
     private WeakReference<Bitmap> previous = new WeakReference<>(null);
     private int generation;
+    private String previousVehicle;
     private Image cached;
 
-    Image read(View root) {
+    VehiclePhoto(Target target) { this.target = target; }
+
+    Image read(View root, String binding) {
         View panel = CardContent.find(root, "rl_widget_cal_state");
+        String name = CardContent.text(panel, "widget_name");
         if (panel == null || CardContent.awaitingOwner(root) || CardContent.find(root, "ll_loading_auth") != null
-                || CardContent.find(root, "widget_hint") != null || CardContent.text(panel, "widget_name").isEmpty())
+                || CardContent.find(root, "widget_hint") != null || name.isEmpty())
             return null;
         // com.lynkco.customer 4.3.1 (403101550), layout_widget / res/rcW.xml:331.
         // car_img's XML src is mipmap/car_side_line until the provider supplies the vehicle.
@@ -35,7 +41,12 @@ final class VehiclePhoto {
                 || !(image.getDrawable() instanceof BitmapDrawable drawable)) return null;
         Bitmap source = drawable.getBitmap();
         if (source == null || source.isRecycled()) return null;
-        if (previous.get() == source && generation == source.getGenerationId()) return cached;
+        String vehicle = binding + "/" + name;
+        if (previous.get() == source && generation == source.getGenerationId()) {
+            // A partial RemoteViews update may change the vehicle before replacing its bitmap.
+            return target == Target.WATCH || vehicle.equals(previousVehicle) ? cached : null;
+        }
+        previousVehicle = vehicle;
         previous = new WeakReference<>(source);
         generation = source.getGenerationId();
         cached = null;
@@ -63,12 +74,16 @@ final class VehiclePhoto {
     }
 
     @SuppressWarnings("deprecation") // API 28/29 spell lossy WebP as WEBP.
-    private static Image encode(Bitmap source) {
-        float scale = Math.min(1f, Math.min((float) MAX_WIDTH / source.getWidth(), (float) MAX_HEIGHT / source.getHeight()));
+    private Image encode(Bitmap source) {
+        int maxWidth = target == Target.BAND ? 160 : 256;
+        int maxHeight = target == Target.BAND ? 80 : 128;
+        int maxBytes = target == Target.BAND ? BandPhoto.MAX_CHARS / 4 * 3 : 8192;
+        float scale = Math.min(1f, Math.min((float) maxWidth / source.getWidth(), (float) maxHeight / source.getHeight()));
         int width = Math.max(1, Math.round(source.getWidth() * scale));
         int height = Math.max(1, Math.round(source.getHeight() * scale));
-        Bitmap.CompressFormat format = Build.VERSION.SDK_INT >= 30 ? Bitmap.CompressFormat.WEBP_LOSSY : Bitmap.CompressFormat.WEBP;
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream(MAX_BYTES);
+        Bitmap.CompressFormat format = target == Target.BAND ? Bitmap.CompressFormat.PNG
+                : Build.VERSION.SDK_INT >= 30 ? Bitmap.CompressFormat.WEBP_LOSSY : Bitmap.CompressFormat.WEBP;
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(maxBytes);
         for (int attempt = 0; attempt < 4; attempt++) {
             Bitmap scaled = Bitmap.createScaledBitmap(source, width, height, true);
             Bitmap readable = scaled;
@@ -77,7 +92,7 @@ final class VehiclePhoto {
                 if (readable == null || !hasVisiblePixel(readable)) return null;
                 bytes.reset();
                 if (!readable.compress(format, 85, bytes)) return null;
-                if (bytes.size() > 0 && bytes.size() <= MAX_BYTES) {
+                if (bytes.size() > 0 && bytes.size() <= maxBytes) {
                     byte[] encoded = bytes.toByteArray();
                     return new Image(digest(encoded), Base64.encodeToString(encoded, Base64.NO_WRAP));
                 }

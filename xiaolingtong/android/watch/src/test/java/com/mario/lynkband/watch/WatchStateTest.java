@@ -40,6 +40,35 @@ public final class WatchStateTest {
         assertEquals("21L",state.data.getString("fuel"));
         assertEquals("开启通风",state.actions.getJSONObject(0).getString("label"));
     }
+    @Test public void phoneSolarIsOptionalAndBelongsOnlyToTheCurrentStatusConnection() throws Exception {
+        JSONObject request = state.request("status", null, 1);
+        assertEquals(Boolean.TRUE, request.get("watchSolar"));
+        state.apply(reply(request).put("themeNight", true).put("solarInfo", "日出 07:00 · 日落 17:00"), null, 2);
+        assertEquals(new WatchState.PhoneSolar(true, "日出 07:00 · 日落 17:00"), state.phoneSolar());
+
+        JSONObject refresh = state.request("refresh", null, 3);
+        assertFalse(refresh.has("watchSolar"));
+        state.apply(reply(refresh).put("themeNight", false), null, 4);
+        assertTrue(state.phoneSolar().night());
+
+        request = state.request("status", null, 5);
+        state.apply(reply(request).put("themeNight", "false"), null, 6);
+        assertNull(state.phoneSolar());
+
+        request = state.request("status", null, 7);
+        state.apply(reply(request).put("themeNight", false).put("solarInfo", "x".repeat(81)), null, 8);
+        assertEquals(new WatchState.PhoneSolar(false, ""), state.phoneSolar());
+
+        request = state.request("status", null, 9);
+        state.apply(reply(request), null, 10);
+        assertNull(state.phoneSolar());
+
+        request = state.request("status", null, 11);
+        state.apply(reply(request).put("themeNight", true), null, 12);
+        state.offline("断开");
+        assertNull(state.phoneSolar());
+    }
+
     @Test public void confirmedActionIsSentOnlyOnce() throws Exception {
         prepare();
         assertTrue(state.confirming());

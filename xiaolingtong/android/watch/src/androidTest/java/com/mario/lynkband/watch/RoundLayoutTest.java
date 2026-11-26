@@ -4,8 +4,10 @@ import static org.junit.Assert.*;
 
 import android.app.Instrumentation;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.*;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.ColorDrawable;
 import android.util.Base64;
 import android.view.MotionEvent;
 import android.view.View;
@@ -355,7 +357,7 @@ public class RoundLayoutTest {
                     android.widget.FrameLayout stage = new android.widget.FrameLayout(activity);
                     stage.addView(face, new android.widget.FrameLayout.LayoutParams(w,h));
                     activity.setContentView(stage);
-                    face.setNightScene(false);
+                    face.setLocalSolar(false, "日出 06:00 · 日落 18:00");
                     face.show(state, true, true);
                 });
                 device.waitForIdleSync();
@@ -447,7 +449,8 @@ public class RoundLayoutTest {
                 assertEquals(ImageView.ScaleType.FIT_CENTER, photo.getScaleType());
                 assertEquals(face.getWidth(), photo.getLeft() + photo.getRight());
                 assertInsideDial(photo);
-                View energy = (View) find(face, "油量 —").getParent();
+                assertNull(find(face, "油量 —"));
+                View energy = (View) find(face, "电量 —").getParent();
                 assertTrue(energy.getBottom() < photo.getTop());
                 assertEquals(164, photo.getHeight());
                 assertEquals(480, find(face, "按钮").getTop());
@@ -506,7 +509,7 @@ public class RoundLayoutTest {
                     ((ScrollView) find(face, "车况与车控")).scrollTo(0, 0);
                 });
                 for (boolean night : new boolean[]{false, true}) {
-                    device.runOnMainSync(() -> face.setNightScene(night));
+                    device.runOnMainSync(() -> face.setLocalSolar(night, "日出 06:00 · 日落 18:00"));
                     device.waitForIdleSync();
                     FutureTask<Void> capture = new FutureTask<>(() -> {
                         layout();
@@ -528,19 +531,61 @@ public class RoundLayoutTest {
                     }
                 }
             }
-            device.runOnMainSync(() -> {
+            checkSolarModes();
+        } finally { device.runOnMainSync(activity::finish); }
+    }
+
+    private void checkSolarModes() throws Exception {
+        SharedPreferences settings = activity.getSharedPreferences("watchTheme", 0);
+        FutureTask<Void> check = new FutureTask<>(() -> {
+            boolean hadMode = settings.contains("manual");
+            boolean manual = settings.getBoolean("manual", false);
+            try {
+                settings.edit().putBoolean("manual", true).apply();
+                String localTimes = "日出 06:00 · 日落 18:00";
+                face.setLocalSolar(false, localTimes);
                 find(face, "设置").performClick();
                 find(face, "选主题").performClick();
                 find(face, "日出日落").performClick();
+                assertNotNull(find(face, "日出  06:00"));
+                assertNotNull(find(face, "日落  18:00"));
+                assertNull(find(face, "自动"));
+                assertNull(find(face, "定位日出日落"));
+                View dial = face.getChildAt(0);
+                int localBackground = ((ColorDrawable) dial.getBackground()).getColor();
+
+                String phoneTimes = "日出 07:06 · 日落 17:12";
+                JSONObject request = state.request("status", null, 3);
+                state.apply(new JSONObject().put("v", 1).put("id", request.getString("id"))
+                        .put("status", state.status).put("data", state.data).put("actions", state.actions)
+                        .put("themeNight", true).put("solarInfo", phoneTimes), null, 4);
+                face.show(state, true, true);
+                assertEquals(localBackground, ((ColorDrawable) dial.getBackground()).getColor());
+                find(face, "跟随手机").performClick();
+                layout();
+                assertCaptionFits(face, phoneTimes);
+                assertNotEquals(localBackground, ((ColorDrawable) dial.getBackground()).getColor());
+
+                state.offline("断开");
+                face.show(state, false, true);
+                layout();
+                assertCaptionFits(face, "手机未同步 · " + localTimes);
+                assertEquals(localBackground, ((ColorDrawable) dial.getBackground()).getColor());
                 find(face, "用户设定").performClick();
                 assertNotNull(find(face, "日出  06:00"));
                 assertNotNull(find(face, "日落  18:00"));
-                find(face, "自动").performClick();
-                assertNotNull(find(face, "定位日出日落"));
                 find(face, "返回").performClick();
                 find(face, WatchFace.Scene.SKY.title).performClick();
-            });
-        } finally { device.runOnMainSync(activity::finish); }
+            } finally {
+                SharedPreferences.Editor edit = settings.edit();
+                if (hadMode) edit.putBoolean("manual", manual);
+                else edit.remove("manual");
+                edit.apply();
+            }
+            return null;
+        });
+        device.runOnMainSync(check);
+        check.get();
     }
 
     private void showPhotoReply(String expectedId, JSONObject data) throws Exception {

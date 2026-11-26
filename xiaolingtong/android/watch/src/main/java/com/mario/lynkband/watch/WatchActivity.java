@@ -103,15 +103,10 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
                                 if (!state.busy() && !state.confirming()) send("status", null);
                             }
 
-                            @Override public void locateSun() { solar.locate(); }
-
                             @Override public void solarSettingsChanged() { solar.settingsChanged(); }
                         });
         solar = new SolarController(this, getSharedPreferences("watchTheme", MODE_PRIVATE),
-                (night, info) -> {
-                    face.setNightScene(night);
-                    face.setSolarInfo(info);
-                });
+                face::setLocalSolar, false);
         solar.initialize();
         setContentView(face);
         face.setFocusableInTouchMode(true);
@@ -222,7 +217,6 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
     @Override
     public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
-        if (code == SolarController.REQUEST_LOCATION) solar.permissionResult();
         if (code == 71 && PairedDevice.allowed(this) && visible) start(choosing);
     }
 

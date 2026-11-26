@@ -33,6 +33,7 @@ public final class SolarController {
     private final SharedPreferences prefs;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final SolarLocation location;
+    private final boolean allowLocation;
     private boolean started;
     private SolarScene last;
     private final Runnable recheck = this::recompute;
@@ -44,25 +45,37 @@ public final class SolarController {
     };
 
     public SolarController(Activity activity, SharedPreferences prefs, Listener listener) {
+        this(activity, prefs, listener, true);
+    }
+
+    public SolarController(Activity activity, SharedPreferences prefs, Listener listener, boolean allowLocation) {
         this.activity = activity;
         this.prefs = prefs;
         this.listener = listener;
-        location = new SolarLocation(activity, handler, () -> apply(false));
+        this.allowLocation = allowLocation;
+        location = allowLocation ? new SolarLocation(activity, handler, () -> apply(false)) : null;
     }
+
+    public record Snapshot(boolean night, String info) {}
 
     /** Resolve resource configuration before inflation, using only an existing fix if permitted. */
     public static boolean initialNight(Context context, SharedPreferences prefs) {
+        return current(context, prefs).night();
+    }
+
+    public static Snapshot current(Context context, SharedPreferences prefs) {
         Location fix = null;
         if (!ThemeSync.flag(prefs, "manual", false) && allowed(context)) {
             SolarLocation cached = new SolarLocation(context, new Handler(Looper.getMainLooper()), () -> {});
             cached.loadCached();
             fix = cached.recent();
         }
-        return calculate(prefs, System.currentTimeMillis(), fix).night;
+        SolarScene scene = calculate(prefs, System.currentTimeMillis(), fix, false);
+        return new Snapshot(scene.night, scene.info);
     }
 
     public void initialize() {
-        if (!ThemeSync.flag(prefs, "manual", false) && allowed(activity)) location.loadCached();
+        if (allowLocation && !ThemeSync.flag(prefs, "manual", false) && allowed(activity)) location.loadCached();
         apply(true);
     }
 
@@ -73,7 +86,7 @@ public final class SolarController {
         filter.addAction(Intent.ACTION_DATE_CHANGED);
         filter.addAction(Intent.ACTION_TIMEZONE_CHANGED);
         filter.addAction(Intent.ACTION_SCREEN_ON); // Handler timers pause in deep sleep.
-        filter.addAction(LocationManager.MODE_CHANGED_ACTION);
+        if (allowLocation) filter.addAction(LocationManager.MODE_CHANGED_ACTION);
         if (Build.VERSION.SDK_INT >= 33) activity.registerReceiver(clock, filter, Context.RECEIVER_NOT_EXPORTED);
         else activity.registerReceiver(clock, filter);
         refresh(true, false);
@@ -84,7 +97,7 @@ public final class SolarController {
         started = false;
         activity.unregisterReceiver(clock);
         handler.removeCallbacks(recheck);
-        location.stop();
+        if (allowLocation) location.stop();
     }
 
     private static boolean allowed(Context context) {
@@ -94,7 +107,7 @@ public final class SolarController {
     public void settingsChanged() { refresh(false, false); }
 
     public void locate() {
-        if (!started || ThemeSync.flag(prefs, "manual", false)) return;
+        if (!allowLocation || !started || ThemeSync.flag(prefs, "manual", false)) return;
         if (allowed(activity)) refresh(false, true);
         else if (ThemeSync.flag(prefs, "locationAsked", false)
                 && !activity.shouldShowRequestPermissionRationale(COARSE)) {
@@ -111,6 +124,7 @@ public final class SolarController {
     }
 
     public void permissionResult() {
+        if (!allowLocation) return;
         if (started && !allowed(activity)) toast("未获定位权限，按本地 06:00–18:00 切换");
         refresh(false, false);
     }
@@ -121,20 +135,22 @@ public final class SolarController {
 
     private void recompute() {
         if (!started) return;
-        if (!ThemeSync.flag(prefs, "manual", false) && allowed(activity) && location.awaitingFix()) apply(false);
+        if (allowLocation && !ThemeSync.flag(prefs, "manual", false) && allowed(activity) && location.awaitingFix()) apply(false);
         else refresh(false, false);
     }
 
     private void refresh(boolean initialize, boolean forceFix) {
         if (!started) return;
-        if (ThemeSync.flag(prefs, "manual", false) || !allowed(activity)) location.forget();
-        else location.refresh(forceFix);
+        if (allowLocation) {
+            if (ThemeSync.flag(prefs, "manual", false) || !allowed(activity)) location.forget();
+            else location.refresh(forceFix);
+        }
         apply(initialize);
     }
 
-    private static SolarScene calculate(SharedPreferences prefs, long now, Location fix) {
+    private static SolarScene calculate(SharedPreferences prefs, long now, Location fix, boolean forceManual) {
         ZoneId zone = ZoneId.systemDefault();
-        if (ThemeSync.flag(prefs, "manual", false))
+        if (forceManual || ThemeSync.flag(prefs, "manual", false))
             return SolarScene.manual(now, zone, ThemeSync.minute(prefs, "riseMinute", 360), ThemeSync.minute(prefs, "setMinute", 1080));
         return SolarScene.at(now, zone, fix == null ? Double.NaN : fix.getLatitude(),
                 fix == null ? Double.NaN : fix.getLongitude());
@@ -142,8 +158,8 @@ public final class SolarController {
 
     private void apply(boolean initialize) {
         long now = System.currentTimeMillis();
-        Location fix = ThemeSync.flag(prefs, "manual", false) || !allowed(activity) ? null : location.recent();
-        SolarScene scene = calculate(prefs, now, fix);
+        Location fix = allowLocation && !ThemeSync.flag(prefs, "manual", false) && allowed(activity) ? location.recent() : null;
+        SolarScene scene = calculate(prefs, now, fix, !allowLocation);
         boolean changed = last == null || last.night != scene.night || !last.info.equals(scene.info);
         last = scene;
         if (initialize || changed) listener.sceneChanged(scene.night, scene.info);

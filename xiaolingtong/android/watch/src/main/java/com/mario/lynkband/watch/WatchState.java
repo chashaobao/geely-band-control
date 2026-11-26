@@ -25,6 +25,11 @@ final class WatchState {
 
     private long fastPollUntil;
     private boolean needsStatusAfterAck;
+    private PhoneSolar phoneSolar;
+
+    record PhoneSolar(boolean night, String info) {}
+
+    PhoneSolar phoneSolar() { return phoneSolar; }
 
     enum ControlState {
         OPEN, CLOSED, LOADING, UNKNOWN, LEGACY;
@@ -143,6 +148,7 @@ final class WatchState {
         JSONObject request = new JSONObject().put("v", 1).put("id", UUID.randomUUID().toString())
                 .put("type", type).put("visualActions", true).put("supportsControlState", true)
                 .put(com.mario.lynkband.transport.WatchIconCodec.HD_CAPABILITY, true).put("carPhotoId", carPhotoId);
+        if ("status".equals(type)) request.put("watchSolar", true);
         if (type.equals("execute")) {
             if (choice == null) return null;
             if (now >= expires) { cancel(); note = "确认已过期，请重新选择"; return null; }
@@ -173,7 +179,10 @@ final class WatchState {
                     || (!(reply.opt("accepted") instanceof Boolean) && reply.opt("accepted") != JSONObject.NULL))
                 throw new JSONException("Unexpected execute acknowledgement");
             note = outcome;
-            if (Boolean.FALSE.equals(reply.opt("accepted"))) loading = null;
+            if (Boolean.FALSE.equals(reply.opt("accepted")) ||
+                    (Boolean.TRUE.equals(reply.opt("accepted")) && loading != null && loading.optBoolean("momentary"))) {
+                loading = null;
+            }
             else if (now >= loadingDeadline) finishUnknown();
             // Keep the last display until the status poll catches up. Its actions are stale.
             needsStatusAfterAck = true;
@@ -197,7 +206,14 @@ final class WatchState {
         status = nextStatus;
         note = nextNote;
         pending = null;
-        if ("status".equals(type)) needsStatusAfterAck = false;
+        if ("status".equals(type)) {
+            needsStatusAfterAck = false;
+            phoneSolar = null;
+            if (reply.opt("themeNight") instanceof Boolean night) {
+                String info = reply.opt("solarInfo") instanceof String text && text.length() <= 80 ? text.trim() : "";
+                phoneSolar = new PhoneSolar(night, info);
+            }
+        }
         phoneAllowsControls = reply.optBoolean("controlsAllowed", !"车况只读".equals(status));
         if (!phoneAllowsControls || "车况只读".equals(status)) cancel();
         if ("execute".equals(type)) {
@@ -234,6 +250,7 @@ final class WatchState {
         fastPollUntil = 0;
         needsStatusAfterAck = false;
         phoneAllowsControls = false;
+        phoneSolar = null;
         cancel();
         carPhoto = null;
         carPhotoId = "";

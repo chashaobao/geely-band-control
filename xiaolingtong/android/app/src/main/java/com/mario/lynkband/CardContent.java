@@ -225,10 +225,15 @@ final class CardContent {
     static String watchIcon(ImageView icon) { return watchIcon(icon, 0, false); }
 
     static String watchIcon(ImageView icon, int matchedDrawable, boolean hd) {
+        return controlIcon(icon, matchedDrawable, hd ? WatchIconCodec.Profile.HD : WatchIconCodec.Profile.LEGACY);
+    }
+
+    static String controlIcon(ImageView icon, int matchedDrawable, WatchIconCodec.Profile profile) {
+        if (icon == null) return "";
         Drawable drawable = icon.getDrawable();
         if (drawable == null) return "";
         if (matchedDrawable != 0) {
-            String official = WatchIconCodec.encodeResource(icon.getResources(), matchedDrawable, hd);
+            String official = WatchIconCodec.encodeResource(icon.getResources(), matchedDrawable, profile);
             if (!official.isEmpty()) return official;
         }
         // Preserve drawable tint/state and aspect ratio. The backing bitmap can have
@@ -248,7 +253,7 @@ final class CardContent {
         try {
             drawable.setBounds(0, 0, w, h);
             drawable.draw(new Canvas(source));
-            return WatchIconCodec.encode(source, hd);
+            return WatchIconCodec.encode(source, profile);
         } finally { drawable.setBounds(previous); source.recycle(); }
     }
 
