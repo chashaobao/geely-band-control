@@ -77,6 +77,13 @@ public final class BandMessageTest {
         }
     }
 
+    @Test public void preservesBrandOnPrepareAndAcceptsLegacyMessages() throws Exception {
+        JSONObject message = new JSONObject().put("v", 1).put("id", "test-123")
+                .put("type", "prepare").put("action", CarAction.FIND.id);
+        assertEquals("", decode(message).brand());
+        assertEquals("GEELY", decode(message.put("brand", "GEELY")).brand());
+    }
+
     @Test public void legacyLockAndWindowFieldsAreValidatedWithTheNewDirection() throws Exception {
         JSONObject message = new JSONObject().put("v", 1).put("id", "test-123").put("type", "prepare")
                 .put("action", CarAction.LOCK.id);

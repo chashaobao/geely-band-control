@@ -809,6 +809,26 @@ test('Lynk official confirmation suspends fixed controls and expires the local p
   assert.ok(link.sent.slice(before).every(item => item.data.type !== 'prepare' && item.data.type !== 'execute'))
 })
 
+test('Geely has its own vehicle cache and presents its official confirmation', () => {
+  const link = start()
+  link.hello()
+  link.reply({ vehicle: { totalKm: 600, updatedAt: 1700000000000 }, mapped: ['climate'], available: ['climate'] })
+  link.page.carImageHash = 'galaxy-image'
+  link.page.syncStatus()
+  link.reply({ brand: 'GEELY', vehicle: { fuelPercent: 52, updatedAt: 1700000000000 },
+    mapped: ['find', 'lynk_window'], available: ['find', 'lynk_window'], phoneConfirmation: true })
+  assert.equal(link.page.brand, 'GEELY')
+  assert.equal(link.page.total, '—')
+  assert.equal(link.page.carImageHash, '')
+  assert.deepEqual(Array.from(link.page.mapped), ['find'])
+  assert.match(link.page.controlNotice, /吉利汽车/)
+  link.page.syncStatus()
+  link.reply({ brand: 'GEELY', mapped: ['find'], available: ['find'], armed: true })
+  link.page.select('find')
+  assert.equal(link.sent.at(-1).data.type, 'prepare')
+  assert.equal(link.sent.at(-1).data.brand, 'GEELY')
+})
+
 
 test('Lynk voice routes only lock and window through prepare and wearable confirmation', () => {
   for (const action of ['lynk_unlock', 'lynk_window']) {

@@ -368,11 +368,12 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         long timeout = "hello".equals(type) ? HELLO_TIMEOUT_MS : "refresh".equals(type) ? 13_000 : 8_000;
         main.postDelayed(requestTimeoutTask, timeout);
         try {
-            String payload = "car_image".equals(type)
-                    ? WatchProtocol.buildCarImageRequest(id, imageSyncHash, imageSyncChunks.size()).toString()
-                    : WatchProtocol.buildRequest(id, type, action, token, direction, BuildConfig.VERSION_NAME).toString();
+            JSONObject request = "car_image".equals(type)
+                    ? WatchProtocol.buildCarImageRequest(id, imageSyncHash, imageSyncChunks.size())
+                    : WatchProtocol.buildRequest(id, type, action, token, direction, BuildConfig.VERSION_NAME);
+            if ("prepare".equals(type)) request.put("brand", brand);
             recordEvent("send", req, "");
-            client.send(payload, () -> {
+            client.send(request.toString(), () -> {
                 if (pending != req) return;
                 recordEvent("send_failed", req, "");
                 if ("hello".equals(type)) finishHello(null);
@@ -499,7 +500,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         controlNotice = reply.optString("controlNotice");
         blockedControls = reply.optJSONObject("blocked") != null ? reply.optJSONObject("blocked") : new JSONObject();
         controlPending = reply.optBoolean("controlPending", false) || phoneConfirmation;
-        if (phoneConfirmation) controlNotice = "请在手机确认" + ("LYNKCO".equals(brand) ? "领克" : "银河") + "操作";
+        if (phoneConfirmation) controlNotice = "请在手机确认" + brandName() + "操作";
 
         List<String> replyAvailable = WatchProtocol.knownActions(reply.optJSONArray("available"));
         List<String> replyMapped = reply.has("mapped")
@@ -635,7 +636,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             return;
         }
         if (!mapped.contains(action)) {
-            showToast("请在手机核对银河小组件配置");
+            showToast("请在手机核对" + brandName() + "小组件配置");
             vibrateFailure();
             return;
         }
@@ -715,7 +716,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         available.clear();
         if (controlInterrupted && !"hidden".equals(reason)) vibrateFailure();
         if (visible && message != null && !message.isEmpty()) {
-            String result = "结果未知，请在银河 App 查看";
+            String result = "结果未知，请在" + brandName() + " App 查看";
             showToast(waitingForControl ? (replyError ? message + "，" + result : result) : message);
         }
         renderAll();
@@ -808,8 +809,20 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         }
     }
 
+    private static String normalizeBrand(String value) {
+        return "LYNKCO".equals(value) || "GEELY".equals(value) ? value : "GALAXY";
+    }
+
+    private String brandName() {
+        return switch (brand) {
+            case "LYNKCO" -> "领克";
+            case "GEELY" -> "吉利汽车";
+            default -> "银河";
+        };
+    }
+
     private void applyBrand(String value) {
-        String next = "LYNKCO".equals(value) ? "LYNKCO" : "GALAXY";
+        String next = normalizeBrand(value);
         if (brand.equals(next)) return;
         brand = next;
         clearConfirmationState();
@@ -832,7 +845,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         try {
             JSONObject snapshot = new JSONObject(raw);
             if (snapshot.optLong("updatedAt") <= 0) return;
-            brand = "LYNKCO".equals(snapshot.optString("brand")) ? "LYNKCO" : "GALAXY";
+            brand = normalizeBrand(snapshot.optString("brand"));
             storedSnapshot = raw;
             String savedName = snapshot.optString("vehicleName").trim();
             if (!savedName.isEmpty()) vehicleName = savedName;
@@ -956,7 +969,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             return;
         }
         if (mapped.isEmpty()) {
-            emptyView.setText(linked ? "请在手机配置银河卡片" : "连接手机后显示已映射车控");
+            emptyView.setText(linked ? "请在手机配置" + brandName() + "卡片" : "连接手机后显示已映射车控");
             emptyView.setVisibility(View.VISIBLE);
             return;
         }

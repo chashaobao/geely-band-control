@@ -112,7 +112,7 @@ public final class GarageApp extends Application {
             if (generation == widgetGeneration) onWidgetChange(id);
         };
         return brand == BrandConfig.LYNKCO ? new LynkWidgets(this, prefs, main, changed)
-                : new GalaxyWidgets(this, prefs, main, changed);
+                : new GalaxyWidgets(this, prefs, main, changed, brand);
     }
 
     boolean needsBrandSelection() { return !prefs.contains("brand"); }
@@ -258,11 +258,11 @@ public final class GarageApp extends Application {
                 .anyMatch(GalaxyWidgets.Control::ready);
         if (ControlPolicy.canArm(card != null, hasReady)) {
             armedCardId = card.id;
-            appendEvent("车控授权已开启", "当前银河中号卡片", false);
+            appendEvent("车控授权已开启", "当前" + brand.name + "中号卡片", false);
             updateWidgetListening();
             changed();
         } else {
-            setResult("请先核对银河卡片按钮和车况");
+            setResult("请先核对" + brand.name + "卡片按钮和车况");
         }
     }
 
@@ -301,6 +301,9 @@ public final class GarageApp extends Application {
 
     private void onWidgetChange(int id) {
         if (brand == BrandConfig.LYNKCO) { confirmations.clear(); pendingVoice = null; }
+        GalaxyWidgets.Card card = widgets.primary();
+        if (brand == BrandConfig.GEELY && card != null && id == card.id
+                && (widgets.showsSetup(card) || widgets.showsUnavailable(card))) disarm();
         if (armedCardId != AppWidgetManager.INVALID_APPWIDGET_ID && !isArmed()) {
             armedCardId = AppWidgetManager.INVALID_APPWIDGET_ID;
             confirmations.clear();
@@ -391,6 +394,14 @@ public final class GarageApp extends Application {
     }
 
     private void prepare(String node, BandMessage request) {
+        if (request.brand().isEmpty() && brand == BrandConfig.GEELY) {
+            reply(node, request, "blocked", "请更新穿戴端后使用吉利汽车车控");
+            return;
+        }
+        if (!request.brand().isEmpty() && !brand.brand.name().equals(request.brand())) {
+            reply(node, request, "blocked", "车辆品牌已切换，请核对车况后重新选择");
+            return;
+        }
         if (replyIfControlPending(node, request)) return;
         GalaxyWidgets.Control control = control(request.action());
         String blocked = wearBlockedReason(control);
@@ -458,7 +469,7 @@ public final class GarageApp extends Application {
                 return new DispatchResult("blocked", "官方按钮当前不可点击");
             }
         } catch (RuntimeException unavailable) {
-            return new DispatchResult("unknown", "转交结果未知，请到银河 App 查看");
+            return new DispatchResult("unknown", "转交结果未知，请到" + brand.appName + " App 查看");
         }
         dispatch = new Dispatch(target.cardId(), action, target.button().slot(), target.key());
         confirmations.clear();
@@ -469,8 +480,9 @@ public final class GarageApp extends Application {
     private boolean replyIfControlPending(String node, BandMessage request) {
         ControlPause pause = controlPause();
         if (pause == ControlPause.NONE) return false;
-        if ("execute".equals(request.type())) dispatchReply(node, request, pause.status, pause.message);
-        else reply(node, request, pause.status, pause.message);
+        String note = pause.message.replace("银河", brand.name);
+        if ("execute".equals(request.type())) dispatchReply(node, request, pause.status, note);
+        else reply(node, request, pause.status, note);
         return true;
     }
 
@@ -529,9 +541,9 @@ public final class GarageApp extends Application {
             boolean clicked = (accept ? current.accept() : current.cancel()).performClick();
             if (clicked) handledConfirmation = card.id;
             updateConfirmationNotice();
-            setResult(clicked ? "已点击银河的" + (accept ? "确认" : "取消") : "官方确认按钮当前不可点击");
+            setResult(clicked ? "已点击" + brand.name + "的" + (accept ? "确认" : "取消") : "官方确认按钮当前不可点击");
         } catch (RuntimeException unavailable) {
-            setResult("操作结果未知，请打开银河 App 查看");
+            setResult("操作结果未知，请打开" + brand.appName + " App 查看");
         }
     }
 
@@ -545,7 +557,7 @@ public final class GarageApp extends Application {
             return;
         }
         if (!manager.areNotificationsEnabled()) return;
-        manager.createNotificationChannel(new NotificationChannel(CONFIRM_CHANNEL, "银河官方确认",
+        manager.createNotificationChannel(new NotificationChannel(CONFIRM_CHANNEL, "车控官方确认",
                 NotificationManager.IMPORTANCE_DEFAULT));
         Intent open = new Intent(this, MainActivity.class).setAction(MainActivity.SHOW_CONFIRMATION)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);

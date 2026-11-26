@@ -46,6 +46,11 @@ final class WidgetReadings {
 
     static VehicleStatus parse(Distance total, Energy electric, Energy fuel, String motion,
                                String updateLabel, long receivedAt, ZoneId zone) {
+        return parse(BrandConfig.GALAXY, total, electric, fuel, motion, updateLabel, receivedAt, zone);
+    }
+
+    static VehicleStatus parse(BrandConfig config, Distance total, Energy electric, Energy fuel, String motion,
+                               String updateLabel, long receivedAt, ZoneId zone) {
         String label = updateLabel.trim();
         Matcher time = UPDATED.matcher(label);
         long updatedAt = time.find() ? parseTime(time, receivedAt, zone) : 0;
@@ -54,6 +59,10 @@ final class WidgetReadings {
         Integer totalKm = total.kilometers();
         Integer electricKm = electric.distance().kilometers();
         Integer fuelKm = fuel.distance().kilometers();
+        if (config == BrandConfig.GEELY && "更新于03/15 12:00".equals(label)
+                && totalKm == null && electricKm == null && fuelKm == null) {
+            return VehicleStatus.EMPTY;
+        }
         if ("03-15 12:00".equals(label)
                 && (Integer.valueOf(364).equals(totalKm)
                 || (totalKm == null && Integer.valueOf(37).equals(electric.percent())

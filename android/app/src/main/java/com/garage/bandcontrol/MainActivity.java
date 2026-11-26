@@ -88,12 +88,13 @@ public final class MainActivity extends Activity {
     }
 
     private void chooseBrand() {
+        String[] names = BrandConfig.OPTIONS.stream().map(config -> config.name).toArray(String[]::new);
         new AlertDialog.Builder(this).setTitle("选择车辆品牌")
-                .setSingleChoiceItems(new String[]{"银河", "领克"}, app.brand == BrandConfig.LYNKCO ? 1 : 0,
+                .setSingleChoiceItems(names, BrandConfig.OPTIONS.indexOf(app.brand),
                         (dialog, index) -> {
                             if (pendingBind != NO_WIDGET) app.widgets.cancelBind(pendingBind);
                             pendingBind = NO_WIDGET;
-                            app.selectBrand(index == 1 ? BrandConfig.LYNKCO : BrandConfig.GALAXY);
+                            app.selectBrand(BrandConfig.OPTIONS.get(index));
                             dialog.dismiss();
                             recreate();
                         }).setCancelable(false).setPositiveButton("使用当前品牌", (dialog, which) -> {
@@ -227,7 +228,7 @@ public final class MainActivity extends Activity {
         add(bandPanel, connection, 12);
         authorize = button("授权小米设备通信", () -> app.link.authorize());
         add(bandPanel, authorize, 8);
-        add(bandPanel, text("仅在搭配小米手环或手表端「腕上银河」时需要启动通信。".replace("银河", app.brand.name), 13, MUTED, false), 8);
+        add(bandPanel, text("仅在搭配小米手环或手表端「腕上银河」时需要启动通信。", 13, MUTED, false), 8);
         add(screen, bandPanel, 12);
 
         LinearLayout backgroundPanel = panel();
@@ -285,11 +286,16 @@ public final class MainActivity extends Activity {
             phoneConfirmation.setVisibility(View.GONE);
             boolean hasProvider = app.widgets.isProviderInstalled();
             setupStatus.setText(hasProvider ? "授权添加后，同步卡片车况和四个车控按钮。"
-                    : "请先安装并登录吉利银河 App。".replace("银河", app.brand.name));
+                    : "请先安装并登录" + app.brand.appName + " App。");
             addWidget.setEnabled(hasProvider && pendingBind == NO_WIDGET);
             return;
         }
         updateBandControls(app.widgets.controls());
+        if (app.widgets.showsUnavailable(card)) {
+            mappingStatus.setText("当前车辆不支持远程控制");
+        } else if (app.brand == BrandConfig.GEELY && app.widgets.showsSetup(card)) {
+            mappingStatus.setText("请在吉利汽车 App 绑定车辆并配置小组件");
+        }
         preview.updateAccessibility();
     }
 
@@ -335,7 +341,7 @@ public final class MainActivity extends Activity {
     private void editVehicleName() {
         EditText input = new EditText(this);
         input.setSingleLine(true);
-        input.setHint("例如：银河星耀 8".replace("银河", app.brand.name));
+        input.setHint("输入车辆名称");
         input.setText(app.vehicleName());
         input.setSelection(input.getText().length());
         LinearLayout container = column();
@@ -388,8 +394,10 @@ public final class MainActivity extends Activity {
         boolean armed = app.isArmed();
         boolean hasReady = controls.values().stream().anyMatch(GalaxyWidgets.Control::ready);
         mappingStatus.setText("功能已同步 · " + controls.size() + "/" + app.brand.slots.size());
+        String setupHint = app.brand == BrandConfig.GEELY ? "请刷新车况或在吉利汽车 App 核对小组件按钮"
+                : "请先刷新车况或点按上方预览卡片补标按钮";
         controlStatus.setText(armed ? "车控已授权 · 可用米家语音或穿戴端控车"
-                : hasReady ? "车控未授权 · 点击下方允许后即可控车" : "请先刷新车况或点按上方预览卡片补标按钮");
+                : hasReady ? "车控未授权 · 点击下方允许后即可控车" : setupHint);
         liveControl.setText(armed ? "关闭车控" : "允许车控");
         liveControl.setActivated(!armed);
         liveControl.setEnabled(armed || hasReady);
@@ -408,7 +416,7 @@ public final class MainActivity extends Activity {
         GalaxyWidgets.Card card = app.phoneConfirmationCard();
         WidgetTree.OfficialConfirmation prompt = app.widgets.officialConfirmation(card);
         if (prompt == null) {
-            toast("请打开吉利银河查看当前操作".replace("银河", app.brand.name));
+            toast("请打开" + app.brand.appName + "查看当前操作");
             return;
         }
         long revision = app.widgets.revision(card);
@@ -506,8 +514,8 @@ public final class MainActivity extends Activity {
         }
         new AlertDialog.Builder(this)
                 .setTitle("允许车控")
-                .setMessage("请确认当前卡片选中目标车辆，且映射按钮与银河小组件配置一致。米家语音指令或穿戴端确认将直接触发对应的银河官方按钮。".replace("银河", app.brand.name)
-                        + "\n\n安全与免责提示：本工具为独立开源项目，与吉利汽车及小米无官方关联。远程控车存在通信与刷新延迟，车辆实际状态以吉利银河 App 为准；".replace("银河", app.brand.name)
+                .setMessage("请确认当前卡片选中目标车辆，且映射按钮与" + app.brand.name + "小组件配置一致。米家语音指令或穿戴端确认将触发对应的官方按钮。"
+                        + "\n\n安全与免责提示：本工具为独立开源项目，与吉利汽车及小米无官方关联。远程控车存在通信与刷新延迟，车辆实际状态以" + app.brand.appName + " App 为准；"
                         + "米家语音收到通知后将直接执行，请谨慎设置触发口令；如搭配穿戴设备使用，请开启锁屏密码，离车或非本人佩戴时及时关闭车控授权。")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("已知晓并允许", (dialog, which) -> app.arm())
@@ -563,10 +571,10 @@ public final class MainActivity extends Activity {
         } catch (RuntimeException unavailable) {
             android.util.Log.w("GarageActivity", "Widget configuration did not open");
         }
-        new AlertDialog.Builder(this).setTitle("在吉利银河里配置".replace("银河", app.brand.name))
-                .setMessage("打开吉利银河的「设置小组件」，选择这辆车和需要的按钮，保存后返回这里查看卡片。".replace("银河", app.brand.name))
+        new AlertDialog.Builder(this).setTitle("在" + app.brand.appName + "里配置")
+                .setMessage("打开官方 App 配置小组件，选择车辆和需要的按钮，保存后返回这里查看卡片。")
                 .setNegativeButton("取消", null)
-                .setPositiveButton("打开吉利银河".replace("银河", app.brand.name), (dialog, which) -> {
+                .setPositiveButton("打开" + app.brand.appName, (dialog, which) -> {
                     Intent launch = getPackageManager().getLaunchIntentForPackage(app.brand.packageName);
                     if (launch != null) {
                         app.widgets.recheckAfterConfiguration();
@@ -605,6 +613,10 @@ public final class MainActivity extends Activity {
                     .setPositiveButton("知道了", null).show();
             return;
         }
+        if (app.brand == BrandConfig.GEELY) {
+            toast("此按钮尚未识别，请在吉利汽车 App 核对");
+            return;
+        }
         CarAction[] actions = Arrays.stream(CarAction.values()).filter(action -> !action.id.startsWith("lynk_")).toArray(CarAction[]::new);
         String[] choices = Arrays.copyOf(Arrays.stream(actions).map(action -> action.label).toArray(String[]::new),
                 actions.length + 1);
@@ -623,7 +635,7 @@ public final class MainActivity extends Activity {
 
     private void chooseLockState(GalaxyWidgets.Card card, WidgetTree.Button target) {
         new AlertDialog.Builder(this).setTitle("此时的车门锁态")
-                .setMessage("请先对照吉利银河 App 的当前锁态。手环确认时会显示切换后的目标状态。".replace("银河", app.brand.name))
+                .setMessage("请先对照" + app.brand.appName + " App 的当前锁态。手环确认时会显示切换后的目标状态。")
                 .setNeutralButton("取消", null)
                 .setNegativeButton("当前已解锁", (dialog, which) ->
                         saveBinding(card, target, CarAction.LOCK.id, WidgetTree.UNLOCKED))

@@ -120,10 +120,6 @@ class GalaxyWidgets {
     private boolean listening;
     private Refresh refresh;
 
-    GalaxyWidgets(Context context, SharedPreferences prefs, Handler main, IntConsumer onChange) {
-        this(context, prefs, main, onChange, BrandConfig.GALAXY);
-    }
-
     GalaxyWidgets(Context context, SharedPreferences prefs, Handler main, IntConsumer onChange, BrandConfig config) {
         this.config = config;
         tree = new WidgetTree(config);
@@ -278,6 +274,10 @@ class GalaxyWidgets {
         return cards.get(card.id) == card && card.view.layout.equals(config.setupLayout);
     }
 
+    boolean showsUnavailable(Card card) {
+        return cards.get(card.id) == card && card.view.layout.equals(config.unavailableLayout);
+    }
+
     List<WidgetTree.Button> buttons(Card card) {
         if (!hasNormalLayout(card)) return Collections.emptyList();
         String version = providerVersion();
@@ -302,7 +302,7 @@ class GalaxyWidgets {
                 break;
             }
         }
-        if (current == null || !current.role().isEmpty() || current.match() != null) return false;
+        if (current == null || !current.role().isEmpty() || current.match() != null || config == BrandConfig.GEELY) return false;
         String fingerprint = current.fingerprint();
         card.bindings.removeIf(binding -> binding.slot.equals(original.slot())
                 && (action.isEmpty() || binding.fingerprint.equals(fingerprint) || !binding.action.equals(action)));
@@ -366,6 +366,15 @@ class GalaxyWidgets {
     }
 
     private void recordReading(Card card) {
+        if (showsUnavailable(card) || config == BrandConfig.GEELY && showsSetup(card)) {
+            card.latest = VehicleStatus.EMPTY;
+            card.validReading = false;
+            card.lastMapped = Map.of();
+            card.carImage = null;
+            card.carImageRevision = -1;
+            if (refresh != null && refresh.card == card) finishRefresh("blocked", "当前卡片没有可读取的车辆");
+            return;
+        }
         VehicleStatus update = hasNormalLayout(card)
                 ? tree.read(card.view, System.currentTimeMillis(), ZoneId.systemDefault()) : VehicleStatus.EMPTY;
         card.validReading = update.updatedAt() != 0 && update.updatedAt() >= card.latest.updatedAt();
@@ -412,7 +421,8 @@ class GalaxyWidgets {
             }
             if (action == CarAction.LOCK) {
                 lockState = binding.lockState();
-                blockedReason = LockControl.blockedReason(card.validReading, card.latest.motion(), lockState);
+                blockedReason = LockControl.blockedReason(card.validReading, card.latest.motion(), lockState)
+                        .replace("银河", config.name);
                 direction = ControlDirection.forLockState(lockState);
                 if (direction == ControlDirection.UNLOCK) title = "解锁车门";
                 if (direction == ControlDirection.LOCK) title = "上锁车门";
@@ -423,7 +433,7 @@ class GalaxyWidgets {
                 blockedReason = decision.blockedReason();
                 if (direction == ControlDirection.CLOSE) title = "关闭车窗";
             } else if (action.isSwitch()) {
-                if (!card.validReading) blockedReason = "请刷新银河卡片，核对" + action.label + "开关状态";
+                if (!card.validReading) blockedReason = "请刷新" + config.name + "卡片，核对" + action.label + "开关状态";
                 else if (direction == null) blockedReason = "请在手机核对" + action.label + "开关状态";
                 else title = (direction == ControlDirection.OPEN ? "开启" : "关闭") + action.label;
             }
