@@ -1,6 +1,6 @@
 # 小领通
 
-独立的 Android 手机伴侣，可搭配小米 Watch 5 或小米 Vela 手环 10 Pro。手机伴侣为 0.3.32，Watch 5 为 0.3.22，Vela 穿戴端为 0.2.9。车辆数据来自中国版领克 App 4.3.1 的官方中号卡片。
+独立的 Android 手机伴侣，可搭配小米 Watch 5 或小米 Vela 手环 10 Pro。手机伴侣为 0.3.33，Watch 5 为 0.3.23，Vela 穿戴端为 0.2.10。车辆数据来自中国版领克 App 4.3.1 的官方中号卡片。
 
 手机 APK 与 Vela RPK 的包名均为 `com.mario.lynkband.phone`。从旧包名切换时，先暂停旧手机伴侣的后台通信，首次打开新版后重新绑定卡片、选择手表并授权。在 Vela 手环上请安装配套 RPK。[小米设备通信说明](https://iot.mi.com/vela/quickapp/zh/features/network/interconnect.html)
 
