@@ -56,13 +56,29 @@ public final class WatchProtocolTest {
         assertEquals(2, WatchProtocol.knownActions(new JSONArray().put("climate").put("climate").put("bad").put("find")).size());
     }
 
-    @Test public void crownScrollSwitchesBetweenFirstAndSecondPageWithDebounce() {
-        assertEquals(1, VerticalPagerView.nextPageFromCrown(0, 2, -1.0f, 1000L, 0L));
-        assertEquals(0, VerticalPagerView.nextPageFromCrown(1, 2, 1.0f, 1500L, 1000L));
-        assertEquals(-1, VerticalPagerView.nextPageFromCrown(0, 2, 1.0f, 1500L, 1000L));
-        assertEquals(-1, VerticalPagerView.nextPageFromCrown(1, 2, -1.0f, 1500L, 1000L));
-        assertEquals(-1, VerticalPagerView.nextPageFromCrown(0, 2, -1.0f, 1100L, 1000L));
+    @Test public void crownScrollSwitchesBetweenFirstAndSecondPageWithThresholdAndDebounce() {
+        // Light accidental brushes stay below CROWN_TRIGGER_THRESHOLD (1.4f).
+        assertEquals(-1, VerticalPagerView.nextPageFromCrown(0, 2, -0.4f, 1000L, 0L));
+        assertEquals(-1, VerticalPagerView.nextPageFromCrown(0, 2, -1.0f, 1000L, 0L));
+        assertEquals(1, VerticalPagerView.nextPageFromCrown(0, 2, -1.5f, 1000L, 0L));
+        assertEquals(0, VerticalPagerView.nextPageFromCrown(1, 2, 1.5f, 1500L, 1000L));
+        assertEquals(-1, VerticalPagerView.nextPageFromCrown(0, 2, 1.5f, 1500L, 1000L));
+        assertEquals(-1, VerticalPagerView.nextPageFromCrown(1, 2, -1.5f, 1500L, 1000L));
+        assertEquals(-1, VerticalPagerView.nextPageFromCrown(0, 2, -1.5f, 1200L, 1000L));
         assertEquals(-1, VerticalPagerView.nextPageFromCrown(0, 2, 0.0f, 1500L, 1000L));
+
+        // Intentional ticks within 260 ms accumulate to trigger; stale ticks reset.
+        VerticalPagerView.CrownStep firstTick = VerticalPagerView.stepCrownScroll(0, 2, -0.8f, 0f, 1000L, 0L, 0L);
+        assertEquals(-1, firstTick.targetPage());
+        assertEquals(-0.8f, firstTick.nextAccum(), 0.001f);
+        VerticalPagerView.CrownStep secondTick = VerticalPagerView.stepCrownScroll(
+                0, 2, -0.8f, firstTick.nextAccum(), 1120L, 1000L, 0L);
+        assertEquals(1, secondTick.targetPage());
+
+        VerticalPagerView.CrownStep staleTick = VerticalPagerView.stepCrownScroll(
+                0, 2, -0.8f, firstTick.nextAccum(), 1400L, 1000L, 0L);
+        assertEquals(-1, staleTick.targetPage());
+        assertEquals(-0.8f, staleTick.nextAccum(), 0.001f);
     }
 
     @Test public void fallsBackToPercentageWhenKilometersAreUnavailable() throws Exception {

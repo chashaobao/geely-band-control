@@ -893,6 +893,16 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         vibrator.vibrate(VibrationEffect.createOneShot(35, VibrationEffect.DEFAULT_AMPLITUDE));
     }
 
+    private void vibrateCrown(boolean pageSwitched) {
+        if (!visible || !hapticsEnabled || vibrator == null || !vibrator.hasVibrator()) return;
+        if (Build.VERSION.SDK_INT >= 29) {
+            vibrator.vibrate(VibrationEffect.createPredefined(
+                    pageSwitched ? VibrationEffect.EFFECT_CLICK : VibrationEffect.EFFECT_TICK));
+        } else {
+            vibrator.vibrate(VibrationEffect.createOneShot(pageSwitched ? 28 : 14, pageSwitched ? 180 : 90));
+        }
+    }
+
     private void vibrateFailure() {
         if (!visible || !hapticsEnabled || vibrator == null || !vibrator.hasVibrator()) return;
         main.removeCallbacks(secondPulseTask);
@@ -1108,6 +1118,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         homePager.addView(buildMileagePage());
         homePager.addView(buildControlsPage());
         homePager.setOnPageChangeListener(this::updatePagerDots);
+        homePager.setOnCrownHapticListener(this::vibrateCrown);
         homeShell.addView(homePager, new FrameLayout.LayoutParams(-1, -1));
 
         LinearLayout pagerDots = new LinearLayout(this);

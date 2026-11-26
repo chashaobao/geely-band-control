@@ -43,7 +43,7 @@
           </div>
           <div class="{{ ui.metaDivider }}"></div>
           <div class="{{ ui.connection }}" @click="openSettings">
-            <div class="connection-status">
+            <div class="{{ ui.connectionStatus }}">
               <div class="{{ modeLabel === '已连接' || modeLabel === '演示' ? ui.dot + ' online' : ui.dot }}"></div>
               <text class="{{ ui.mode }}">{{ modeLabel }}</text>
             </div>
@@ -863,7 +863,9 @@ export default {
 
   onWatchPageChange(event) {
     if (event && (event.index === 0 || event.index === 1)) {
+      const changed = this.watchPage !== event.index
       this.watchPage = event.index
+      if (changed) this.vibrateShort()
     }
   },
 
@@ -1309,63 +1311,62 @@ export default {
   margin-top: 8px;
   border-radius: 14px;
   background-color: #213239;
+  flex-direction: row;
   align-items: center;
+  justify-content: space-between;
 }
 .refresh {
-  width: 183px;
+  width: 174px;
   height: 48px;
-  padding: 0 6px 0 10px;
+  flex-direction: row;
   align-items: center;
-  overflow: hidden;
 }
 .refresh-icon {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
+  margin-left: 10px;
   margin-right: 6px;
-  flex-shrink: 0;
   object-fit: contain;
 }
 .meta-divider {
   width: 1px;
   height: 24px;
-  flex-shrink: 0;
   background-color: #41565d;
 }
 .connection {
-  width: 116px;
+  width: 124px;
   height: 48px;
-  padding: 0 10px 0 8px;
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  overflow: hidden;
 }
 .connection-status {
-  flex: 1;
-  margin-right: 4px;
+  width: 82px;
+  margin-left: 8px;
+  flex-direction: row;
   align-items: center;
-  overflow: hidden;
 }
 .dot {
   width: 6px;
   height: 6px;
   margin-right: 5px;
-  flex-shrink: 0;
-  border-radius: 4px;
+  border-radius: 3px;
   background-color: #78868c;
 }
 .online {
   background-color: #9ee9ce;
 }
 .mode {
+  width: 71px;
   color: #c5d5d4;
   font-size: 15px;
   lines: 1;
   text-overflow: ellipsis;
 }
 .settings-icon {
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-right: 10px;
   object-fit: contain;
 }
 .range {
@@ -1484,12 +1485,11 @@ export default {
   background-color: #9ee9ce;
 }
 .updated {
-  width: 141px;
+  width: 134px;
   color: #d4e4e2;
   font-size: 15px;
   lines: 1;
   text-overflow: ellipsis;
-  overflow: hidden;
 }
 .grid {
   width: 300px;
@@ -1796,6 +1796,7 @@ export default {
 .refresh-icon-capsule {
   width: 32px;
   height: 32px;
+  margin-left: 0;
   margin-right: 10px;
 }
 .updated-capsule {
@@ -1809,7 +1810,10 @@ export default {
 .connection-capsule {
   width: 270px;
   height: 44px;
-  padding: 0;
+}
+.connection-status-capsule {
+  width: 226px;
+  margin-left: 0;
 }
 .dot-capsule {
   width: 11px;
@@ -1818,11 +1822,13 @@ export default {
   border-radius: 6px;
 }
 .mode-capsule {
+  width: 206px;
   font-size: 25px;
 }
 .settings-icon-capsule {
   width: 34px;
   height: 34px;
+  margin-right: 0;
 }
 .grid-capsule {
   width: 298px;
@@ -2045,6 +2051,7 @@ export default {
 .refresh-icon-circle {
   width: 16px;
   height: 16px;
+  margin-left: 9px;
   margin-right: 5px;
 }
 .updated-circle {
@@ -2057,7 +2064,10 @@ export default {
 .connection-circle {
   width: 105px;
   height: 36px;
-  padding: 0 9px 0 7px;
+}
+.connection-status-circle {
+  width: 68px;
+  margin-left: 7px;
 }
 .dot-circle {
   width: 5px;
@@ -2066,11 +2076,13 @@ export default {
   border-radius: 3px;
 }
 .mode-circle {
+  width: 59px;
   font-size: 12px;
 }
 .settings-icon-circle {
   width: 17px;
   height: 17px;
+  margin-right: 9px;
 }
 .grid-circle {
   width: 236px;

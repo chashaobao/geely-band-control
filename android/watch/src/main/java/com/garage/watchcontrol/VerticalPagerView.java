@@ -15,7 +15,16 @@ final class VerticalPagerView extends ViewGroup {
         void onPageChanged(int page);
     }
 
-    private static final long CROWN_DEBOUNCE_MS = 220;
+    interface OnCrownHapticListener {
+        void onCrownHaptic(boolean pageSwitched);
+    }
+
+    record CrownStep(int targetPage, float nextAccum) {}
+
+    private static final long CROWN_DEBOUNCE_MS = 340;
+    private static final long CROWN_ACCUM_WINDOW_MS = 260;
+    static final float CROWN_TRIGGER_THRESHOLD = 1.4f;
+    static final float CROWN_TICK_STEP = 0.65f;
 
     private final OverScroller scroller;
     private final int touchSlop;
@@ -23,12 +32,16 @@ final class VerticalPagerView extends ViewGroup {
 
     private VelocityTracker velocityTracker;
     private OnPageChangeListener pageChangeListener;
+    private OnCrownHapticListener crownHapticListener;
     private float lastY;
     private float startX;
     private float startY;
     private boolean dragging;
     private int currentPage;
     private long lastCrownSwitchAtMs;
+    private long lastCrownEventAtMs;
+    private float crownScrollAccum;
+    private float crownTickAccum;
 
     VerticalPagerView(Context context) {
         super(context);
@@ -42,6 +55,10 @@ final class VerticalPagerView extends ViewGroup {
 
     void setOnPageChangeListener(OnPageChangeListener listener) {
         this.pageChangeListener = listener;
+    }
+
+    void setOnCrownHapticListener(OnCrownHapticListener listener) {
+        this.crownHapticListener = listener;
     }
 
     int currentPage() {
@@ -186,19 +203,61 @@ final class VerticalPagerView extends ViewGroup {
         }
         float scroll = event.getAxisValue(MotionEvent.AXIS_SCROLL);
         if (scroll == 0f) scroll = event.getAxisValue(MotionEvent.AXIS_VSCROLL);
+        if (scroll == 0f || getChildCount() <= 1) return false;
+
         long now = SystemClock.uptimeMillis();
-        int target = nextPageFromCrown(currentPage, getChildCount(), scroll, now, lastCrownSwitchAtMs);
-        if (target < 0) return scroll != 0f && getChildCount() > 1;
-        lastCrownSwitchAtMs = now;
-        setCurrentPage(target, true);
+        boolean expired = lastCrownEventAtMs > 0 && now - lastCrownEventAtMs > CROWN_ACCUM_WINDOW_MS;
+        if (expired || (scroll * crownTickAccum < 0f)) {
+            crownTickAccum = 0f;
+        }
+        CrownStep step = stepCrownScroll(
+                currentPage, getChildCount(), scroll, crownScrollAccum, now, lastCrownEventAtMs, lastCrownSwitchAtMs);
+        lastCrownEventAtMs = now;
+        crownScrollAccum = step.nextAccum();
+        crownTickAccum += scroll;
+
+        if (step.targetPage() >= 0) {
+            lastCrownSwitchAtMs = now;
+            crownScrollAccum = 0f;
+            crownTickAccum = 0f;
+            setCurrentPage(step.targetPage(), true);
+            if (crownHapticListener != null) crownHapticListener.onCrownHaptic(true);
+            return true;
+        }
+        if (Math.abs(crownTickAccum) >= CROWN_TICK_STEP) {
+            crownTickAccum = 0f;
+            if (crownHapticListener != null) crownHapticListener.onCrownHaptic(false);
+        }
         return true;
     }
 
+    static CrownStep stepCrownScroll(
+            int currentPage,
+            int pageCount,
+            float scroll,
+            float prevAccum,
+            long nowMs,
+            long lastEventMs,
+            long lastSwitchMs) {
+        if (scroll == 0f || pageCount <= 1) return new CrownStep(-1, 0f);
+        if (lastSwitchMs > 0 && nowMs - lastSwitchMs < CROWN_DEBOUNCE_MS) {
+            return new CrownStep(-1, 0f);
+        }
+        boolean expired = lastEventMs > 0 && nowMs - lastEventMs > CROWN_ACCUM_WINDOW_MS;
+        float base = (expired || (scroll * prevAccum < 0f)) ? 0f : prevAccum;
+        float nextAccum = base + scroll;
+        if (Math.abs(nextAccum) < CROWN_TRIGGER_THRESHOLD) {
+            return new CrownStep(-1, nextAccum);
+        }
+        int target = Math.max(0, Math.min(pageCount - 1, nextAccum < 0f ? currentPage + 1 : currentPage - 1));
+        if (target == currentPage) {
+            return new CrownStep(-1, 0f);
+        }
+        return new CrownStep(target, 0f);
+    }
+
     static int nextPageFromCrown(int currentPage, int pageCount, float scroll, long nowMs, long lastSwitchMs) {
-        if (scroll == 0f || pageCount <= 1) return -1;
-        if (lastSwitchMs > 0 && nowMs - lastSwitchMs < CROWN_DEBOUNCE_MS) return -1;
-        int target = Math.max(0, Math.min(pageCount - 1, scroll < 0f ? currentPage + 1 : currentPage - 1));
-        return target == currentPage ? -1 : target;
+        return stepCrownScroll(currentPage, pageCount, scroll, 0f, nowMs, nowMs, lastSwitchMs).targetPage();
     }
 
     private void ensureTracker(MotionEvent event) {
