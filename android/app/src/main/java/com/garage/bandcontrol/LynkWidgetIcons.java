@@ -22,7 +22,9 @@ final class LynkWidgetIcons {
         OPEN_LOCK("车锁", "开锁图标"),
         WINDOW("车窗", ""),
         WINDOW_VENT("车窗", "微开"),
-        WINDOW_OPEN("车窗", "全开");
+        WINDOW_OPEN("车窗", "全开"),
+        TRUNK("后备箱", ""),
+        FIND("寻车", "");
 
         final String category;
         final String detail;
@@ -57,6 +59,8 @@ final class LynkWidgetIcons {
             case "车窗", "关窗", "关闭车窗" -> Kind.WINDOW;
             case "车窗微开", "微开车窗" -> Kind.WINDOW_VENT;
             case "车窗全开", "全开车窗" -> Kind.WINDOW_OPEN;
+            case "后备箱", "打开后备箱", "关闭后备箱" -> Kind.TRUNK;
+            case "寻车" -> Kind.FIND;
             default -> null;
         };
     }
@@ -77,6 +81,7 @@ final class LynkWidgetIcons {
             add(resources, icons, Kind.CLOSED_LOCK, "ic_ck_js_off", "ic_ck_js_off2");
             add(resources, icons, Kind.OPEN_LOCK, "ic_ck_js_on", "ic_ck_js_on2");
             add(resources, icons, Kind.WINDOW, "ic_ck_cc_off", "ic_ck_cc_off2", "ic_ck_cc_on", "ic_ck_cc_on2");
+            add(resources, icons, Kind.TRUNK, "ic_ck_hbx_off3", "ic_ck_hbx_on3");
             catalog = new Catalog(providerVersion, density, icons);
             catalogs.put(resources, catalog);
         }

@@ -362,7 +362,7 @@ function actionRows(ids, available, linked, controlPending, directions, profile 
   const watchTileClass = (base, modifier) => (profile === 'rect' ? base + ' ' + modifier + ' ' + modifier + '-tall' : base + ' ' + modifier)
   function tile(id, solo) {
     const label = labels[id] || controlLabel(id, directions[id])
-    const icon = actionIcon(id, directions[id])
+    const icon = actionIcon(id, directions[id], labels[id])
     const isAvailable = available.indexOf(id) >= 0
     const isActive = isAvailable && (directions[id] === 'close' || (id === 'lock' && directions[id] === 'unlock'))
     const size = solo ? ' full-tile' : ''
@@ -1286,7 +1286,7 @@ export default {
       this.clearToast()
       this.confirmAction = request.action
       this.confirmToken = reply.token
-      this.confirmIcon = actionIcon(request.action, directions[request.action])
+      this.confirmIcon = actionIcon(request.action, directions[request.action], this.lynkControlLabels[request.action])
       this.confirmTitle = reply.message
       this.confirmTimer = setTimeout(() => {
         this.cancel()

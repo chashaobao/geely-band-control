@@ -260,8 +260,22 @@ final class WatchProtocol {
     }
 
     static String iconAsset(String action, String direction) {
+        return iconAsset(action, direction, "");
+    }
+
+    static String iconAsset(String action, String direction, String lynkLabel) {
         if ("lock".equals(action) && "lock".equals(direction)) return "lock-open.png";
-        if (action.startsWith("lynk_")) return "settings.png";
+        if (action.startsWith("lynk_")) return switch (lynkLabel) {
+            case "车锁", "解锁" -> "lock.png";
+            case "上锁" -> "lock-open.png";
+            case "车窗", "窗全开", "关窗" -> "window_open.png";
+            case "窗微开" -> "window_vent.png";
+            case "后备箱" -> "trunk.png";
+            case "寻车" -> "find.png";
+            case "快升温" -> "heat.png";
+            case "快降温" -> "cool.png";
+            default -> "settings.png";
+        };
         return action + ".png";
     }
 

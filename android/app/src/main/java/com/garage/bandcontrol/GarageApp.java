@@ -50,7 +50,10 @@ public final class GarageApp extends Application {
         }
     }
 
-    private record Dispatch(int cardId, CarAction action, String slot, String targetKey) {}
+    private record LynkApproval(LynkConfirmation expected, long revision, long expiresAt,
+                                long authorization, boolean fromVoice) {}
+    private record Dispatch(int cardId, CarAction action, String slot, String targetKey,
+                            LynkApproval lynkApproval) {}
     private record DispatchResult(String state, String note) {}
     private record RequestKey(String node, String id) {}
     private record Receipt(BandMessage request, String state, String note) {}
@@ -72,6 +75,7 @@ public final class GarageApp extends Application {
     private boolean voiceListenerConnected;
     private String vehicleName = DEFAULT_VEHICLE_NAME;
     private int armedCardId = AppWidgetManager.INVALID_APPWIDGET_ID;
+    private long lynkAuthorization;
     private Dispatch dispatch;
     private boolean confirmationVisible;
     private int handledConfirmation = AppWidgetManager.INVALID_APPWIDGET_ID;
@@ -82,8 +86,6 @@ public final class GarageApp extends Application {
     private boolean loggedMissingCarImage;
     private String lastResult = "";
     private String voiceTestResult = "";
-    private record VoiceRequest(CarAction action, String targetKey, String label, long expiresAt) {}
-    private VoiceRequest pendingVoice;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -213,6 +215,7 @@ public final class GarageApp extends Application {
     }
 
     void setVoiceEnabled(boolean enabled) {
+        if (!enabled) lynkAuthorization++;
         voiceEnabled = enabled;
         prefs.edit().putBoolean(VOICE_ENABLED, enabled).apply();
         appendEvent(enabled ? "语音直控已开启" : "语音直控已关闭", "米家语音", false);
@@ -268,7 +271,7 @@ public final class GarageApp extends Application {
 
     void disarm() {
         confirmations.clear();
-        pendingVoice = null;
+        lynkAuthorization++;
         if (armedCardId == AppWidgetManager.INVALID_APPWIDGET_ID) return;
         armedCardId = AppWidgetManager.INVALID_APPWIDGET_ID;
         appendEvent("车控授权已关闭", "车控与语音直控", false);
@@ -300,13 +303,14 @@ public final class GarageApp extends Application {
     }
 
     private void onWidgetChange(int id) {
-        if (brand == BrandConfig.LYNKCO) { confirmations.clear(); pendingVoice = null; }
+        if (brand == BrandConfig.LYNKCO) confirmations.clear();
         GalaxyWidgets.Card card = widgets.primary();
         if (brand == BrandConfig.GEELY && card != null && id == card.id
                 && (widgets.showsSetup(card) || widgets.showsUnavailable(card))) disarm();
         if (armedCardId != AppWidgetManager.INVALID_APPWIDGET_ID && !isArmed()) {
             armedCardId = AppWidgetManager.INVALID_APPWIDGET_ID;
             confirmations.clear();
+            lynkAuthorization++;
             updateWidgetListening();
         }
         if (handledConfirmation == id && !widgets.hasOfficialConfirmation(id)) {
@@ -356,17 +360,11 @@ public final class GarageApp extends Application {
         CarAction action = MiHomeVoice.action(brand.namespace, command);
         GalaxyWidgets.Control control = control(action);
         String blocked = voiceBlockedReason(control);
-        if (blocked.isEmpty() && brand != BrandConfig.LYNKCO) blocked = command.directionBlock(control.target().direction());
-        if (brand == BrandConfig.LYNKCO) {
-            if (blocked.isEmpty()) blocked = widgets.voiceEvidence(command, control);
-            if (blocked.isEmpty() && !serviceRunning) blocked = "请先开启穿戴通信，在手环或 Watch 确认";
-            if (!blocked.isEmpty()) { setResult("领克语音" + command.label + " · " + blocked); return; }
-            pendingVoice = new VoiceRequest(action, control.target().key(), command.label,
-                    SystemClock.elapsedRealtime() + 13_000);
-            setResult("领克语音" + command.label + " · 请在已连接穿戴端于 13 秒内核对确认");
-            return;
+        if (blocked.isEmpty()) {
+            blocked = brand == BrandConfig.LYNKCO ? widgets.voiceEvidence(command, control)
+                    : command.directionBlock(control.target().direction());
         }
-        DispatchResult result = blocked.isEmpty() ? dispatchControl(action, control.target())
+        DispatchResult result = blocked.isEmpty() ? dispatchControl(action, control.target(), true)
                 : new DispatchResult("blocked", blocked);
         Log.i(TAG, "event=dispatch_result id=" + id + " type=voice action=" + action.id
                 + " command=" + command + " result=" + result.state());
@@ -422,10 +420,8 @@ public final class GarageApp extends Application {
             return;
         }
         String token = confirmations.prepare(node, request.action(), target.key(), SystemClock.elapsedRealtime());
-        VoiceRequest voice = validVoice();
-        String title = voice != null && voice.action() == request.action()
-                ? "领克语音" + voice.label() + " · " + target.title() : target.title();
-        pendingVoice = null;
+        LynkConfirmation known = lynkConfirmation(request.action(), target);
+        String title = known == null ? target.title() : "领克 · " + known.label;
         send(node, request.id(), () -> BandMessage.reply(request.id(), "confirm", title)
                 .put("token", token).put("action", request.action().id));
     }
@@ -455,14 +451,23 @@ public final class GarageApp extends Application {
             dispatchReply(node, request, "blocked", "确认已失效或按钮已变化，请重新选择");
             return;
         }
-        DispatchResult result = dispatchControl(request.action(), target);
+        DispatchResult result = dispatchControl(request.action(), target, false);
         receipt(node, request, result.state(), result.note());
     }
 
-    private DispatchResult dispatchControl(CarAction action, GalaxyWidgets.Target target) {
+    private DispatchResult dispatchControl(CarAction action, GalaxyWidgets.Target target, boolean fromVoice) {
         if (action == CarAction.LOCK) {
             appendEvent("准备" + target.title(), "卡片状态「" + widgets.vehicle().motion()
                     + "」 · 锁态「" + target.lockState() + "」", false);
+        }
+        LynkApproval approval = null;
+        if (brand == BrandConfig.LYNKCO && !widgets.hasOfficialConfirmation(target.cardId())) {
+            LynkConfirmation expected = lynkConfirmation(action, target);
+            long revision = widgets.revision(widgets.primary());
+            if (expected != null && revision >= 0) {
+                approval = new LynkApproval(expected, revision, SystemClock.elapsedRealtime() + CONTROL_WAIT_MS,
+                        lynkAuthorization, fromVoice);
+            }
         }
         try {
             if (!target.button().view().performClick()) {
@@ -471,10 +476,15 @@ public final class GarageApp extends Application {
         } catch (RuntimeException unavailable) {
             return new DispatchResult("unknown", "转交结果未知，请到" + brand.appName + " App 查看");
         }
-        dispatch = new Dispatch(target.cardId(), action, target.button().slot(), target.key());
+        dispatch = new Dispatch(target.cardId(), action, target.button().slot(), target.key(), approval);
         confirmations.clear();
         main.postDelayed(controlTimeout, CONTROL_WAIT_MS);
         return new DispatchResult("dispatched", DISPATCHED);
+    }
+
+    private LynkConfirmation lynkConfirmation(CarAction action, GalaxyWidgets.Target target) {
+        if (brand != BrandConfig.LYNKCO || !widgets.hasValidReading(target.cardId())) return null;
+        return LynkConfirmation.forAction(action, target.lockState(), target.direction());
     }
 
     private boolean replyIfControlPending(String node, BandMessage request) {
@@ -492,9 +502,32 @@ public final class GarageApp extends Application {
         dispatch = null;
         main.removeCallbacks(controlTimeout);
         if (widgets.hasOfficialConfirmation(finished.cardId())) {
-            setResult(ControlPause.PHONE_CONFIRM.message.replace("银河", brand.name));
+            if (confirmLynkDispatch(finished)) setResult("已提交领克官方确认，等待车况回传");
+            else setResult(ControlPause.PHONE_CONFIRM.message.replace("银河", brand.name));
         } else {
             changed();
+        }
+    }
+
+    private boolean confirmLynkDispatch(Dispatch finished) {
+        LynkApproval approval = finished.lynkApproval();
+        if (brand != BrandConfig.LYNKCO || approval == null || !isArmed()
+                || approval.authorization() != lynkAuthorization
+                || SystemClock.elapsedRealtime() >= approval.expiresAt()
+                || (approval.fromVoice() ? !voiceEnabled : !serviceRunning)) return false;
+        GalaxyWidgets.Card card = widgets.primary();
+        if (card == null || card.id != finished.cardId() || card.id == handledConfirmation
+                || widgets.revision(card) <= approval.revision()) return false;
+        WidgetTree.OfficialConfirmation prompt = widgets.officialConfirmation(card);
+        if (prompt == null || !approval.expected().matches(prompt.title())) return false;
+        try {
+            if (!prompt.accept().performClick()) return false;
+            handledConfirmation = card.id;
+            updateConfirmationNotice();
+            return true;
+        } catch (RuntimeException unavailable) {
+            Log.w(TAG, "Unable to submit matched Lynk confirmation", unavailable);
+            return false;
         }
     }
 
@@ -524,10 +557,6 @@ public final class GarageApp extends Application {
     }
 
     void respondOnPhone(GalaxyWidgets.Card card, WidgetTree.OfficialConfirmation shown, long revision, boolean accept) {
-        if (brand == BrandConfig.LYNKCO) {
-            setResult("请在手机领克官方卡片确认操作");
-            return;
-        }
         WidgetTree.OfficialConfirmation current = widgets.officialConfirmation(card);
         if (current == null || widgets.revision(card) != revision || !current.equals(shown)) {
             setResult("官方确认已变化，请重新打开卡片核对");
@@ -654,18 +683,7 @@ public final class GarageApp extends Application {
                 });
     }
 
-    private VoiceRequest validVoice() {
-        if (pendingVoice == null) return null;
-        GalaxyWidgets.Control current = control(pendingVoice.action());
-        if (SystemClock.elapsedRealtime() >= pendingVoice.expiresAt() || current == null || !current.ready()
-                || !current.target().key().equals(pendingVoice.targetKey())) pendingVoice = null;
-        return pendingVoice;
-    }
-
     private JSONObject withState(JSONObject response) throws JSONException {
-        VoiceRequest voice = validVoice();
-        if (voice != null && brand == BrandConfig.LYNKCO) response.put("voiceAction", voice.action().id)
-                .put("voiceLabel", voice.label());
         JSONArray available = new JSONArray();
         JSONArray mapped = new JSONArray();
         response.put("mode", "live")

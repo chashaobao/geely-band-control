@@ -66,7 +66,7 @@ class GalaxyWidgets {
                 case "车窗全开" -> direction == ControlDirection.CLOSE ? "关窗" : "窗全开";
                 case "快速降温" -> "快降温";
                 case "快速升温" -> "快升温";
-                case "车窗", "发动机", "天窗", "后备箱" -> category;
+                case "车窗", "发动机", "天窗", "后备箱", "寻车" -> category;
                 default -> "";
             };
         }
@@ -376,6 +376,11 @@ class GalaxyWidgets {
     boolean showsLastReading() {
         Card card = primary();
         return card != null && !card.validReading && card.latest.updatedAt() != 0;
+    }
+
+    boolean hasValidReading(int cardId) {
+        Card card = primary();
+        return card != null && card.id == cardId && card.validReading;
     }
 
     Card primary() {

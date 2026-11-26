@@ -55,6 +55,7 @@ public final class MainActivity extends Activity {
     private static final int BLUETOOTH_REQUEST = 73;
     private static final String BIND_ID = "pendingWidgetId";
     private static final int NO_WIDGET = AppWidgetManager.INVALID_APPWIDGET_ID;
+    private static final int LOG_VIEW_HEIGHT_DP = 220;
 
     private GarageApp app;
     private int pendingBind = NO_WIDGET;
@@ -65,6 +66,7 @@ public final class MainActivity extends Activity {
     private TextView setupStatus;
     private TextView controlStatus;
     private TextView linkStatus;
+    private ScrollView logScroll;
     private LinearLayout logRows;
     private String renderedLogs = "";
     private LinearLayout controlPanel;
@@ -263,9 +265,37 @@ public final class MainActivity extends Activity {
         clear.setOnClickListener(view -> app.clearUiEvents());
         logHeader.addView(clear);
         add(logs, logHeader, 0);
+        logScroll = new ScrollView(this) {
+            @Override public boolean onInterceptTouchEvent(MotionEvent ev) {
+                if (canScrollVertically(1) || canScrollVertically(-1)) {
+                    getParent().requestDisallowInterceptTouchEvent(true);
+                }
+                return super.onInterceptTouchEvent(ev);
+            }
+
+            @Override public boolean onTouchEvent(MotionEvent ev) {
+                if (canScrollVertically(1) || canScrollVertically(-1)) {
+                    getParent().requestDisallowInterceptTouchEvent(true);
+                }
+                int action = ev.getActionMasked();
+                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    getParent().requestDisallowInterceptTouchEvent(false);
+                }
+                return super.onTouchEvent(ev);
+            }
+        };
+        logScroll.setFillViewport(true);
+        logScroll.setVerticalScrollBarEnabled(true);
+        logScroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        logScroll.setBackground(rounded(BG, 12));
+        logScroll.setClipToOutline(true);
         logRows = column();
+        logRows.setPadding(dp(8), dp(8), dp(8), dp(8));
         logRows.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        add(logs, logRows, 4);
+        logScroll.addView(logRows, new ScrollView.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams logBounds = new LinearLayout.LayoutParams(-1, dp(LOG_VIEW_HEIGHT_DP));
+        logBounds.topMargin = dp(6);
+        logs.addView(logScroll, logBounds);
         add(screen, logs, 12);
 
         return layout;
@@ -319,6 +349,7 @@ public final class MainActivity extends Activity {
         if (signature.equals(renderedLogs)) return;
         renderedLogs = signature;
         logRows.removeAllViews();
+        logScroll.scrollTo(0, 0);
         if (events.isEmpty()) {
             add(logRows, text("暂无记录", 14, MUTED, false), 8);
             return;
@@ -428,7 +459,6 @@ public final class MainActivity extends Activity {
     }
 
     private void showOfficialConfirmation() {
-        if (app.brand == BrandConfig.LYNKCO) { toast("请在手机领克官方卡片确认操作"); return; }
         if (officialDialog != null && officialDialog.isShowing()) return;
         GalaxyWidgets.Card card = app.phoneConfirmationCard();
         WidgetTree.OfficialConfirmation prompt = app.widgets.officialConfirmation(card);
@@ -532,6 +562,7 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("允许车控")
                 .setMessage("请确认当前卡片选中目标车辆，且映射按钮与" + app.brand.name + "小组件配置一致。米家语音指令或穿戴端确认将触发对应的官方按钮。"
+                        + (app.brand == BrandConfig.LYNKCO ? "领克语音无需穿戴设备。已核对的锁窗动作若弹出匹配的官方确认，伴侣会自动提交。" : "")
                         + "\n\n安全与免责提示：本工具为独立开源项目，与吉利汽车及小米无官方关联。远程控车存在通信与刷新延迟，车辆实际状态以" + app.brand.appName + " App 为准；"
                         + "米家语音收到通知后将直接执行，请谨慎设置触发口令；如搭配穿戴设备使用，请开启锁屏密码，离车或非本人佩戴时及时关闭车控授权。")
                 .setNegativeButton("取消", null)
@@ -608,6 +639,10 @@ public final class MainActivity extends Activity {
                     .setItems(choices, (dialog, index) -> {
                         if (index == LynkMark.CATEGORIES.size()) { saveBinding(card, target, "", ""); return; }
                         String category = choices[index];
+                        if ("寻车".equals(category)) {
+                            saveBinding(card, target, LynkWidgets.binding(target).action(), category + ":");
+                            return;
+                        }
                         String[] directions = category.equals("锁") ? new String[]{"当前已解锁 → 上锁", "当前已上锁 → 解锁", "未知"}
                                 : new String[]{"当前关闭 → 打开（须已验证点按）", "当前开启 → 关闭（须已验证点按）", "未知"};
                         new AlertDialog.Builder(this).setTitle("核对卡片当前状态及真机点按方向")

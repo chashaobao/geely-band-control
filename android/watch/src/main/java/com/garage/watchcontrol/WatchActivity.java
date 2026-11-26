@@ -581,7 +581,8 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             clearToast();
             confirmAction = request.action();
             confirmToken = token;
-            confirmIconAsset = WatchProtocol.iconAsset(request.action(), directions.get(request.action()));
+            confirmIconAsset = WatchProtocol.iconAsset(request.action(), directions.get(request.action()),
+                    WatchProtocol.lynkControlLabel(lynkControlLabels, request.action()));
             confirmTitle = message;
             main.removeCallbacks(confirmTimeoutTask);
             main.postDelayed(confirmTimeoutTask, CONFIRM_TIMEOUT_MS);
@@ -1039,7 +1040,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         orb.setBackground(orbBg);
 
         ImageView icon = new ImageView(this);
-        icon.setImageBitmap(assetBitmap(WatchProtocol.iconAsset(action, direction)));
+        icon.setImageBitmap(assetBitmap(WatchProtocol.iconAsset(action, direction, label)));
         icon.setAlpha(isAvailable ? 1f : 0.62f);
         orb.addView(icon, new FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER));
         cell.addView(orb, new LinearLayout.LayoutParams(orbSize, orbSize));
