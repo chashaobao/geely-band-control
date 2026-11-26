@@ -49,6 +49,27 @@ class GalaxyWidgets {
         String key() {
             return cardId + ":" + button.slot() + ":" + button.fingerprint() + ":" + direction + ":" + title;
         }
+
+        String lynkShortLabel() {
+            String category = lockState;
+            if (category.isEmpty() && button.lynkIcon() != null) {
+                category = switch (button.lynkIcon()) {
+                    case WINDOW_VENT -> "车窗微开";
+                    case WINDOW_OPEN -> "车窗全开";
+                    default -> button.lynkIcon().category;
+                };
+            }
+            return switch (category) {
+                case "锁", "车锁" -> direction == ControlDirection.LOCK ? "上锁"
+                        : direction == ControlDirection.UNLOCK ? "解锁" : "车锁";
+                case "车窗微开" -> direction == ControlDirection.CLOSE ? "关窗" : "窗微开";
+                case "车窗全开" -> direction == ControlDirection.CLOSE ? "关窗" : "窗全开";
+                case "快速降温" -> "快降温";
+                case "快速升温" -> "快升温";
+                case "车窗", "发动机", "天窗", "后备箱" -> category;
+                default -> "";
+            };
+        }
     }
 
     record Control(Target target, String blockedReason) {

@@ -33,10 +33,10 @@ final class WatchProtocol {
         ACTION_LABELS.put("defrost", "除霜");
         ACTION_LABELS.put("sentry", "哨兵");
 
-        ACTION_LABELS.put("lynk_unlock", "车锁槽位（待验证）");
-        ACTION_LABELS.put("lynk_window", "车窗槽位（待验证）");
-        ACTION_LABELS.put("lynk_kjck", "kjck（待验证）");
-        ACTION_LABELS.put("lynk_ccqk", "ccqk（待验证）");
+        ACTION_LABELS.put("lynk_unlock", "功能1");
+        ACTION_LABELS.put("lynk_window", "功能2");
+        ACTION_LABELS.put("lynk_kjck", "功能3");
+        ACTION_LABELS.put("lynk_ccqk", "功能4");
         SWITCH_LABELS.put("climate", "空调");
         SWITCH_LABELS.put("heat", "升温");
         SWITCH_LABELS.put("cool", "降温");
@@ -249,6 +249,14 @@ final class WatchProtocol {
         }
         String label = ACTION_LABELS.get(action);
         return label == null ? action : label;
+    }
+
+    static String lynkControlLabel(JSONObject labels, String action) {
+        if (labels != null && labels.opt(action) instanceof String value) {
+            String label = value.trim();
+            if (!label.isEmpty() && label.codePointCount(0, label.length()) <= 3) return label;
+        }
+        return controlLabel(action, null);
     }
 
     static String iconAsset(String action, String direction) {

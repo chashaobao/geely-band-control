@@ -124,6 +124,8 @@ const WATCH_HOME_BASES = {
   model: 'watch-model',
   rangeTap: 'watch-range-tap',
   hero: 'watch-hero',
+  heroUnit: 'watch-hero-unit',
+  heroUnitGhost: 'watch-hero-unit-ghost',
   subrange: 'watch-subrange',
   statusRow: 'watch-status-row',
   statusText: 'watch-status-text',
@@ -131,8 +133,24 @@ const WATCH_HOME_BASES = {
   car: 'watch-car'
 }
 
-export function watchHomeClasses(size) {
-  const tier = size === 'compact' || size === 'large' ? size : 'standard'
+const WATCH_CONTROLS_BASES = {
+  controlsPage: 'watch-page watch-controls-page',
+  topPill: 'watch-top-pill',
+  refreshIcon: 'watch-refresh-icon',
+  topText: 'watch-top-text',
+  empty: 'watch-empty',
+  grid: 'watch-grid',
+  controlRow: 'watch-control-row',
+  settingsPill: 'watch-settings-pill',
+  settingsIcon: 'watch-settings-icon',
+  settingsText: 'watch-settings-text',
+  pager: 'watch-pager'
+}
+
+export function watchHomeClasses(size, profile = 'circle') {
+  const tier = profile === 'rect'
+    ? 'tall'
+    : (size === 'compact' || size === 'large' ? size : 'standard')
   const result = {}
   for (const key of Object.keys(WATCH_HOME_BASES)) {
     const base = WATCH_HOME_BASES[key]
@@ -141,6 +159,21 @@ export function watchHomeClasses(size) {
     } else {
       const target = key === 'mileagePage' ? 'watch-mileage-page' : base
       result[key] = base + ' ' + target + '-' + tier
+    }
+  }
+  return result
+}
+
+export function watchControlsClasses(profile = 'circle') {
+  const tall = profile === 'rect'
+  const result = {}
+  for (const key of Object.keys(WATCH_CONTROLS_BASES)) {
+    const base = WATCH_CONTROLS_BASES[key]
+    if (!tall) {
+      result[key] = base
+    } else {
+      const target = key === 'controlsPage' ? 'watch-controls-page' : base
+      result[key] = base + ' ' + target + '-tall'
     }
   }
   return result

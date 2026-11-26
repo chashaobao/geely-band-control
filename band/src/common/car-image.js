@@ -21,25 +21,39 @@ export function decodeBase64(input) {
   return out
 }
 
-export function readCachedCarImage(onRead) {
+export function readCachedCarImage(onRead, onMissing) {
+  let finished = false
+  const miss = () => {
+    if (finished) return
+    finished = true
+    if (typeof onMissing === 'function') onMissing()
+  }
   try {
     const storage = require('@system.storage')
     storage.get({
       key: CACHE_KEY,
       success: value => {
-        if (!value) return
+        if (!value) {
+          miss()
+          return
+        }
         try {
           const parsed = JSON.parse(value)
           if (parsed && typeof parsed.hash === 'string' && typeof parsed.uri === 'string' && parsed.uri) {
-            onRead(parsed.uri, parsed.hash, parsed.brand || "GALAXY")
+            finished = true
+            onRead(parsed.uri, parsed.hash, parsed.brand || 'GALAXY')
+            return
           }
         } catch (_) {
           // Ignore malformed cache.
         }
-      }
+        miss()
+      },
+      fail: miss
     })
   } catch (_) {
     // Storage unavailable; keep bundled fallback image.
+    miss()
   }
 }
 

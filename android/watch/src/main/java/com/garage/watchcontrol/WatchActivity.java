@@ -167,6 +167,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
     private List<String> mapped = new ArrayList<>();
     private List<String> available = new ArrayList<>();
     private Map<String, String> controlDirections = new LinkedHashMap<>();
+    private JSONObject lynkControlLabels;
     private JSONObject blockedControls = new JSONObject();
     private List<String> features;
     private PendingRequest pending;
@@ -194,6 +195,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
 
         setContentView(buildUi());
         loadSnapshot();
+        showDefaultCarImage();
         loadCachedCarImage();
         renderAll();
     }
@@ -513,6 +515,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         boolean partialUpdate = controlPending && !firstReply && replyMapped.size() < mapped.size()
                 && mapped.containsAll(replyMapped);
         if (!partialUpdate) mapped = replyMapped;
+        lynkControlLabels = "LYNKCO".equals(brand) ? reply.optJSONObject("controlLabels") : null;
 
         JSONObject reportedDirections = reply.optJSONObject("controlDirections");
         controlDirectionsSupported = reportedDirections != null;
@@ -548,6 +551,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
                 JSONObject snapshot = new JSONObject(vehicle.toString());
                 snapshot.put("brand", brand);
                 snapshot.put("mapped", new JSONArray(mapped));
+                if (lynkControlLabels != null) snapshot.put("controlLabels", lynkControlLabels);
                 snapshot.put("vehicleName", vehicleName);
                 String text = snapshot.toString();
                 if (!text.equals(storedSnapshot)) {
@@ -746,8 +750,13 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         fuelText.setText(WatchProtocol.energyDisplay(vehicle, "fuelKm", "fuelPercent"));
         updateBar(electricFill, WatchProtocol.validPercent(vehicle, "electricPercent"));
         updateBar(fuelFill, WatchProtocol.validPercent(vehicle, "fuelPercent"));
-        String motion = vehicle == null ? "" : vehicle.optString("motion");
-        motionLabel = motion.isEmpty() ? "状态未知" : motion;
+        String motion = vehicle == null ? "" : vehicle.optString("motion").trim();
+        if ("LYNKCO".equals(brand) && (motion.isEmpty() || "状态未知".equals(motion)
+                || "未知".equals(motion) || "--".equals(motion) || "—".equals(motion))) {
+            motionLabel = "";
+        } else {
+            motionLabel = motion.isEmpty() ? "状态未知" : motion;
+        }
         String updated = vehicle == null ? "" : vehicle.optString("updatedLabel");
         updatedLabel = updated.isEmpty() ? "等待车况" : (cached ? "上次 " : "") + updated;
     }
@@ -763,6 +772,12 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         imageSyncHash = "";
         imageSyncTotal = 0;
         imageSyncChunks.clear();
+    }
+
+    private void showDefaultCarImage() {
+        if (carImageView == null) return;
+        if ("LYNKCO".equals(brand)) carImageView.setImageDrawable(null);
+        else carImageView.setImageBitmap(assetBitmap("starshine-8.png"));
     }
 
     private void loadCachedCarImage() {
@@ -817,9 +832,10 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         mapped = new ArrayList<>();
         available = new ArrayList<>();
         controlDirections = new LinkedHashMap<>();
+        lynkControlLabels = null;
         carImageHash = "";
         resetImageSync();
-        if (carImageView != null) carImageView.setImageDrawable(null);
+        showDefaultCarImage();
         storedSnapshot = "";
         prefs.edit().putString(SNAPSHOT_KEY, "").apply();
         vehicleName = DEFAULT_VEHICLE_NAME;
@@ -833,6 +849,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             JSONObject snapshot = new JSONObject(raw);
             if (snapshot.optLong("updatedAt") <= 0) return;
             brand = "LYNKCO".equals(snapshot.optString("brand")) ? "LYNKCO" : "GALAXY";
+            lynkControlLabels = "LYNKCO".equals(brand) ? snapshot.optJSONObject("controlLabels") : null;
             storedSnapshot = raw;
             String savedName = snapshot.optString("vehicleName").trim();
             if (!savedName.isEmpty()) vehicleName = savedName;
@@ -941,7 +958,7 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
                 : controlPending ? "同步中…"
                 : pending != null && !"status".equals(pending.type()) && !"car_image".equals(pending.type()) ? "请稍候…"
                 : updatedLabel;
-        statusSummaryView.setText(String.format(Locale.getDefault(), "%s | %s", modeLabel, motionLabel));
+        statusSummaryView.setText(motionLabel.isEmpty() ? modeLabel : modeLabel + " | " + motionLabel);
         controlsRefreshView.setText(refreshText);
         boolean online = "已连接".equals(modeLabel) || "演示".equals(modeLabel);
         GradientDrawable dotBg = (GradientDrawable) connectionDot.getBackground();
@@ -956,7 +973,8 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
             return;
         }
         if (mapped.isEmpty()) {
-            emptyView.setText(linked ? "请在手机配置银河卡片" : "连接手机后显示已映射车控");
+            emptyView.setText(linked ? "请在手机配置" + ("LYNKCO".equals(brand) ? "领克" : "银河") + "卡片"
+                    : "连接手机后显示已映射车控");
             emptyView.setVisibility(View.VISIBLE);
             return;
         }
@@ -989,7 +1007,8 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         boolean isAvailable = available.contains(action);
         String direction = controlDirections.get(action);
         boolean isActive = isAvailable && ("close".equals(direction) || ("lock".equals(action) && "unlock".equals(direction)));
-        String label = WatchProtocol.controlLabel(action, direction);
+        String label = action.startsWith("lynk_") ? WatchProtocol.lynkControlLabel(lynkControlLabels, action)
+                : WatchProtocol.controlLabel(action, direction);
         String hint = !linked ? "待连接" : (!isAvailable && !controlPending ? "暂不可用" : "");
 
         LinearLayout cell = new LinearLayout(this);
@@ -1336,7 +1355,6 @@ public final class WatchActivity extends Activity implements BluetoothPhoneClien
         page.addView(statusRow, statusParams);
 
         carImageView = new ImageView(this);
-        carImageView.setImageBitmap(assetBitmap("starshine-8.png"));
         carImageView.setScaleType(ImageView.ScaleType.FIT_CENTER);
         if (roundScreen) carImageView.setPadding(0, 0, 0, r(8));
         LinearLayout.LayoutParams carParams = new LinearLayout.LayoutParams(-1, 0, 1);

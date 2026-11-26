@@ -664,10 +664,15 @@ public final class GarageApp extends Application {
         String notice = liveControlNotice(pause, true);
         JSONObject blocked = new JSONObject();
         JSONObject directions = new JSONObject();
+        JSONObject labels = new JSONObject();
         for (Map.Entry<CarAction, GalaxyWidgets.Control> entry : widgets.controls().entrySet()) {
             String id = entry.getKey().id;
             GalaxyWidgets.Control control = entry.getValue();
             mapped.put(id);
+            if (brand == BrandConfig.LYNKCO && control.target() != null) {
+                String label = control.target().lynkShortLabel();
+                if (!label.isEmpty()) labels.put(id, label);
+            }
             if (control.ready()) {
                 GalaxyWidgets.Target target = control.target();
                 if (entry.getKey() == CarAction.LOCK) response.put("lockState", target.lockState());
@@ -679,6 +684,7 @@ public final class GarageApp extends Application {
         }
         if (!notice.isEmpty()) response.put("controlNotice", notice);
         if (blocked.length() > 0) response.put("blocked", blocked);
+        if (brand == BrandConfig.LYNKCO) response.put("controlLabels", labels);
         CarImage.Packaged carImage = widgets.carImage();
         if (carImage != null) {
             loggedMissingCarImage = false;

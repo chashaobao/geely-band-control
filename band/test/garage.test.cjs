@@ -52,6 +52,9 @@ function start(options = {}) {
   const component = {}
   exports.entry(component)
   const page = Object.assign(component.default, component.default.data)
+  for (const [key, fn] of Object.entries(component.default.computed || {})) {
+    Object.defineProperty(page, key, { get: fn, enumerable: true, configurable: true })
+  }
   page.onInit()
   page.onShow()
   page.onReady()
@@ -616,12 +619,63 @@ test('layout profile adapts to Band 10 capsule, circular Watch 5, and falls back
   ]) {
     const rect = start({ native })
     assert.equal(rect.page.layoutProfile, 'rect')
+    assert.equal(rect.page.rectTwoPage, false)
+    assert.equal(rect.page.useTwoPageShell, false)
     assert.equal(rect.page.ui.range, 'range')
+    assert.equal(rect.page.watchHomeUi.mileagePage, 'watch-page watch-mileage-page watch-mileage-page-tall')
+    assert.equal(rect.page.watchControlsUi.controlsPage, 'watch-page watch-controls-page watch-controls-page-tall')
+    assert.equal(rect.page.watchControlsUi.pager, 'watch-pager watch-pager-tall')
     rect.hello()
     rect.reply({ mapped: ['lock', 'climate', 'window_vent', 'trunk'], available: ['climate'] })
     assert.equal(rect.page.displayRows.length, 2)
     assert.equal(rect.page.displayRows[0].first.labelStyle, 'tile-label')
+    assert.equal(rect.page.displayRows[0].first.watchOrbSizeStyle, 'watch-orb-grid watch-orb-grid-tall')
+    assert.equal(rect.page.displayRows[0].first.watchCellStyle, 'watch-cell watch-cell-grid watch-cell-grid-tall')
   }
+})
+
+test('rect profile can toggle 2-page watch mode in Settings and persists across reopen', () => {
+  const fixture = hapticsFixture()
+  fixture.native['@app-module/system.device'] = {
+    getInfo({ success }) { success({ screenWidth: 336, screenHeight: 480, screenShape: 'rect' }) }
+  }
+  const sourceUx = readFileSync(path.join(__dirname, '../src/pages/garage/index.ux'), 'utf8')
+  assert.match(sourceUx, /<div class="\{\{ ui\.hapticsSetting \}\}" if="\{\{ layoutProfile === 'rect' \}\}">[\s\S]*双屏显示/)
+  assert.match(sourceUx, /if="\{\{ !confirmTitle && !settingsOpen && useTwoPageShell \}\}"/)
+
+  const link = start(fixture)
+  assert.equal(link.page.layoutProfile, 'rect')
+  assert.equal(link.page.rectTwoPage, false)
+  assert.equal(link.page.useTwoPageShell, false)
+  link.hello()
+  link.reply({ mapped: ['lock', 'climate'], available: ['climate'] })
+  assert.equal(link.page.displayRows[0].first.watchOrbSizeStyle, 'watch-orb-pair watch-orb-pair-tall')
+
+  link.page.openSettings()
+  link.page.changeRectTwoPage({ checked: true })
+  assert.equal(link.page.rectTwoPage, true)
+  assert.equal(link.page.useTwoPageShell, true)
+  assert.equal(fixture.values.get('rect-two-page'), 'on')
+  link.page.closeSettings()
+
+  link.page.onWatchPageChange({ index: 1 })
+  assert.equal(link.page.watchPage, 1)
+  assert.deepEqual(fixture.pulses, ['short'])
+  link.page.setWatchPage(0)
+  assert.equal(link.page.watchPage, 0)
+  link.page.toggleRange()
+  assert.equal(link.page.showTotalRange, true)
+
+  const reopened = start(fixture)
+  assert.equal(reopened.page.layoutProfile, 'rect')
+  assert.equal(reopened.page.rectTwoPage, true)
+  assert.equal(reopened.page.useTwoPageShell, true)
+
+  reopened.page.changeRectTwoPage({ checked: false })
+  assert.equal(reopened.page.rectTwoPage, false)
+  assert.equal(reopened.page.useTwoPageShell, false)
+  assert.equal(reopened.page.watchPage, 0)
+  assert.equal(fixture.values.get('rect-two-page'), 'off')
 })
 
 test('car image sync pulls chunks when hash changes, caches via system.file, and yields to user controls', () => {
@@ -671,6 +725,56 @@ test('car image sync pulls chunks when hash changes, caches via system.file, and
 
   link.page.onCarImageError()
   assert.equal(link.page.carImageSrc, '/common/images/starshine-8.png')
+})
+
+test('startup loads cached car image directly without flashing the bundled default car image', () => {
+  const storage = new Map([
+    ['vehicle-snapshot', JSON.stringify({ brand: 'GALAXY', updatedAt: 1700000000000, totalKm: 520 })],
+    ['car-image-cache', JSON.stringify({ hash: 'cached777', uri: 'internal://files/car_cached777.png', brand: 'GALAXY' })]
+  ])
+  let deliverImageCache = null
+  const link = start({
+    native: {
+      '@app-module/system.storage': {
+        get({ key, success }) {
+          if (key === 'car-image-cache') {
+            deliverImageCache = () => success(storage.get(key) || '')
+            return
+          }
+          success(storage.get(key) || '')
+        },
+        set({ key, value, complete }) { storage.set(key, value); if (complete) complete() }
+      }
+    }
+  })
+  assert.equal(link.page.carImageSrc, '')
+  deliverImageCache()
+  assert.equal(link.page.carImageSrc, 'internal://files/car_cached777.png')
+  assert.equal(link.page.carImageHash, 'cached777')
+
+  const lynkStorage = new Map([
+    ['vehicle-snapshot', JSON.stringify({ brand: 'LYNKCO', updatedAt: 1700000000000, totalKm: 410 })],
+    ['car-image-cache', JSON.stringify({ hash: 'lynk888', uri: 'internal://files/car_lynk888.png', brand: 'LYNKCO' })]
+  ])
+  let deliverSnapshot = null
+  const lynk = start({
+    native: {
+      '@app-module/system.storage': {
+        get({ key, success }) {
+          if (key === 'vehicle-snapshot') {
+            deliverSnapshot = () => success(lynkStorage.get(key) || '')
+            return
+          }
+          success(lynkStorage.get(key) || '')
+        },
+        set({ key, value, complete }) { lynkStorage.set(key, value); if (complete) complete() }
+      }
+    }
+  })
+  assert.equal(lynk.page.carImageSrc, '')
+  deliverSnapshot()
+  assert.equal(lynk.page.brand, 'LYNKCO')
+  assert.equal(lynk.page.carImageSrc, 'internal://files/car_lynk888.png')
 })
 
 test('vehicle name defaults to generic label, syncs from phone, persists in snapshot, and circular orbs adapt to count and active state', () => {

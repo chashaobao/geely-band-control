@@ -4,24 +4,34 @@ export function rangeText(value) {
   return typeof value === 'number' && value >= 0 ? String(value) : '—'
 }
 
-export function readSnapshot(onRead) {
+export function readSnapshot(onRead, onDone) {
+  let finished = false
+  const finish = () => {
+    if (finished) return
+    finished = true
+    if (typeof onDone === 'function') onDone()
+  }
   try {
     const storage = require('@system.storage')
     storage.get({
       key: CACHE_KEY,
       success: value => {
-        if (!value) return
-        let snapshot
-        try {
-          snapshot = JSON.parse(value)
-        } catch (_) {
-          return
+        if (value) {
+          let snapshot
+          try {
+            snapshot = JSON.parse(value)
+          } catch (_) {
+            snapshot = null
+          }
+          if (snapshot && snapshot.updatedAt > 0) onRead(snapshot, value)
         }
-        if (snapshot && snapshot.updatedAt > 0) onRead(snapshot, value)
-      }
+        finish()
+      },
+      fail: finish
     })
   } catch (_) {
     // Render the first screen even when storage is unavailable.
+    finish()
   }
 }
 

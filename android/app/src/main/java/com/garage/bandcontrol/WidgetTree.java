@@ -167,6 +167,10 @@ final class WidgetTree {
 
     ImageView vehicleImage(ViewGroup root) {
         if (root == null || root.getWidth() <= 0 || root.getHeight() <= 0) return null;
+        if (config == BrandConfig.LYNKCO) {
+            View car = named(root, "car_img");
+            return car instanceof ImageView image && image.getDrawable() != null ? image : null;
+        }
         List<ImageView> candidates = new ArrayList<>();
         collectVehicleImages(root, candidates);
         ImageView best = null;

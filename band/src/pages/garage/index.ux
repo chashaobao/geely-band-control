@@ -1,13 +1,13 @@
 <template>
   <stack class="page">
-    <scroll class="{{ ui.scrollPage }}" scroll-y="true" if="{{ !confirmTitle && !settingsOpen && layoutProfile !== 'circle' }}">
+    <scroll class="{{ ui.scrollPage }}" scroll-y="true" if="{{ !confirmTitle && !settingsOpen && !useTwoPageShell }}">
       <div class="{{ ui.homeScreen }}">
         <div class="{{ ui.range }}" @click="toggleRange">
           <div class="{{ ui.rangeHeader }}">
             <text class="{{ ui.model }}">{{ vehicleName }}</text>
-            <text class="{{ ui.motion }}">{{ motion }}</text>
+            <text class="{{ ui.motion }}" if="{{ motion }}">{{ motion }}</text>
           </div>
-          <image class="{{ ui.vehicleImage }}" src="{{ carImageSrc }}" @error="onCarImageError"></image>
+          <image class="{{ ui.vehicleImage }}" if="{{ carImageSrc }}" src="{{ carImageSrc }}" @error="onCarImageError"></image>
           <div class="{{ ui.totalEnergy }}" if="{{ showTotalRange }}">
             <text class="{{ ui.distance }}"><span class="{{ ui.totalLabel }}">总里程: </span>{{ total }}<span class="{{ ui.unit }}">{{ totalUnit }}</span></text>
           </div>
@@ -76,7 +76,7 @@
         </div>
       </div>
     </scroll>
-    <stack class="watch-shell" if="{{ !confirmTitle && !settingsOpen && layoutProfile === 'circle' }}">
+    <stack class="watch-shell" if="{{ !confirmTitle && !settingsOpen && useTwoPageShell }}">
       <swiper id="watchSwiper" class="watch-swiper" vertical="true" indicator="false" loop="false" focusable="true" index="{{ watchPage }}" @change="onWatchPageChange">
         <div class="{{ watchHomeUi.mileagePage }}">
           <div class="{{ watchHomeUi.heroHeader }}">
@@ -84,49 +84,49 @@
             <div class="{{ watchHomeUi.rangeTap }}" @click="toggleRange">
               <div class="watch-hero-block" if="{{ !showTotalRange }}">
                 <div class="watch-hero-num-row">
-                  <text class="watch-hero-unit-ghost" if="{{ totalUnit === '\u00a0km' }}">{{ totalUnit }}</text>
+                  <text class="{{ watchHomeUi.heroUnitGhost }}" if="{{ totalUnit === '\u00a0km' }}">{{ totalUnit }}</text>
                   <text class="{{ watchHomeUi.hero }}">{{ total }}</text>
-                  <text class="watch-hero-unit" if="{{ totalUnit }}">{{ totalUnit }}</text>
+                  <text class="{{ watchHomeUi.heroUnit }}" if="{{ totalUnit }}">{{ totalUnit }}</text>
                 </div>
                 <text class="{{ watchHomeUi.subrange }}">{{ watchSubrange }}</text>
               </div>
-              <div class="split split-circle watch-split" if="{{ showTotalRange }}">
-                <div class="energy energy-circle">
-                  <div class="energy-reading energy-reading-circle">
-                    <image class="energy-icon energy-icon-circle" src="/common/images/energy-electric.png"></image>
-                    <text class="{{ electric.length > 3 ? 'distance compact distance-circle compact-circle' : 'distance distance-circle' }}">{{ electric }}<span class="unit unit-circle">{{ electricUnit }}</span></text>
+              <div class="{{ ui.split + ' watch-split' }}" if="{{ showTotalRange }}">
+                <div class="{{ ui.energy }}">
+                  <div class="{{ ui.energyReading }}">
+                    <image class="{{ ui.energyIcon }}" src="/common/images/energy-electric.png"></image>
+                    <text class="{{ electric.length > 3 ? ui.distanceCompact : ui.distance }}">{{ electric }}<span class="{{ ui.unit }}">{{ electricUnit }}</span></text>
                   </div>
-                  <div class="energy-track energy-track-circle">
-                    <div class="energy-fill energy-fill-circle electric-fill" if="{{ electricPercent > 0 }}" style="width: {{ electricPercent }}%"></div>
+                  <div class="{{ ui.energyTrack }}">
+                    <div class="{{ ui.energyFill + ' electric-fill' }}" if="{{ electricPercent > 0 }}" style="width: {{ electricPercent }}%"></div>
                   </div>
                 </div>
-                <div class="energy energy-circle">
-                  <div class="energy-reading energy-reading-circle">
-                    <image class="energy-icon energy-icon-circle" src="/common/images/energy-fuel.png"></image>
-                    <text class="{{ fuel.length > 3 ? 'distance compact distance-circle compact-circle' : 'distance distance-circle' }}">{{ fuel }}<span class="unit unit-circle">{{ fuelUnit }}</span></text>
+                <div class="{{ ui.energy }}">
+                  <div class="{{ ui.energyReading }}">
+                    <image class="{{ ui.energyIcon }}" src="/common/images/energy-fuel.png"></image>
+                    <text class="{{ fuel.length > 3 ? ui.distanceCompact : ui.distance }}">{{ fuel }}<span class="{{ ui.unit }}">{{ fuelUnit }}</span></text>
                   </div>
-                  <div class="energy-track energy-track-circle">
-                    <div class="energy-fill energy-fill-circle fuel-fill" if="{{ fuelPercent > 0 }}" style="width: {{ fuelPercent }}%"></div>
+                  <div class="{{ ui.energyTrack }}">
+                    <div class="{{ ui.energyFill + ' fuel-fill' }}" if="{{ fuelPercent > 0 }}" style="width: {{ fuelPercent }}%"></div>
                   </div>
                 </div>
               </div>
             </div>
             <div class="{{ watchHomeUi.statusRow }}" @click="refresh">
-              <div class="{{ modeLabel === '已连接' || modeLabel === '演示' ? 'dot dot-circle online' : 'dot dot-circle' }}"></div>
-              <text class="{{ watchHomeUi.statusText }}">{{ modeLabel }} | {{ motion }}</text>
+              <div class="{{ (modeLabel === '已连接' || modeLabel === '演示') ? ui.dot + ' online' : ui.dot }}"></div>
+              <text class="{{ watchHomeUi.statusText }}">{{ motion ? modeLabel + ' | ' + motion : modeLabel }}</text>
               <image class="{{ watchHomeUi.refreshIcon }}" src="/common/images/refresh.png"></image>
             </div>
           </div>
-          <image class="{{ watchHomeUi.car }}" src="{{ carImageSrc }}" @error="onCarImageError"></image>
+          <image class="{{ watchHomeUi.car }}" if="{{ carImageSrc }}" src="{{ carImageSrc }}" @error="onCarImageError"></image>
         </div>
-        <div class="watch-page watch-controls-page">
-          <div class="watch-top-pill" @click="refresh">
-            <image class="watch-refresh-icon" src="/common/images/refresh.png"></image>
-            <text class="watch-top-text">{{ refreshText }}</text>
+        <div class="{{ watchControlsUi.controlsPage }}">
+          <div class="{{ watchControlsUi.topPill }}" @click="refresh">
+            <image class="{{ watchControlsUi.refreshIcon }}" src="/common/images/refresh.png"></image>
+            <text class="{{ watchControlsUi.topText }}">{{ refreshText }}</text>
           </div>
-          <text class="watch-empty" if="{{ compatibilityNotice }}">{{ compatibilityNotice }}</text>
-          <div class="watch-grid" if="{{ !compatibilityNotice }}">
-            <div class="watch-control-row" for="{{ displayRows }}" tid="id">
+          <text class="{{ watchControlsUi.empty }}" if="{{ compatibilityNotice }}">{{ compatibilityNotice }}</text>
+          <div class="{{ watchControlsUi.grid }}" if="{{ !compatibilityNotice }}">
+            <div class="{{ watchControlsUi.controlRow }}" for="{{ displayRows }}" tid="id">
               <div class="{{ $item.first.watchCellStyle }}" @click="select($item.first.id)">
                 <div class="{{ $item.first.watchOrbStyle + ' ' + $item.first.watchOrbSizeStyle }}">
                   <image class="{{ $item.first.watchOrbIconStyle }}" src="{{ $item.first.icon }}"></image>
@@ -142,15 +142,15 @@
                 <text if="{{ $item.second.hint }}" class="watch-cell-hint">{{ $item.second.hint }}</text>
               </div>
             </div>
-            <text class="watch-empty" if="{{ displayRows.length === 0 }}">{{ emptyLabel }}</text>
+            <text class="{{ watchControlsUi.empty }}" if="{{ displayRows.length === 0 }}">{{ emptyLabel }}</text>
           </div>
-          <div class="watch-settings-pill" @click="openSettings">
-            <image class="watch-settings-icon" src="/common/images/settings.png"></image>
-            <text class="watch-settings-text">设置</text>
+          <div class="{{ watchControlsUi.settingsPill }}" @click="openSettings">
+            <image class="{{ watchControlsUi.settingsIcon }}" src="/common/images/settings.png"></image>
+            <text class="{{ watchControlsUi.settingsText }}">设置</text>
           </div>
         </div>
       </swiper>
-      <div class="watch-pager">
+      <div class="{{ watchControlsUi.pager }}">
         <div class="{{ watchPage === 0 ? 'watch-pager-dot watch-pager-active' : 'watch-pager-dot' }}" @click="setWatchPage(0)"></div>
         <div class="{{ watchPage === 1 ? 'watch-pager-dot watch-pager-active' : 'watch-pager-dot' }}" @click="setWatchPage(1)"></div>
       </div>
@@ -170,6 +170,10 @@
           <text class="{{ ui.hapticsLabel }}">车控震动</text>
           <switch class="{{ ui.hapticsSwitch }}" checked="{{ hapticsEnabled }}" @change="changeHaptics"></switch>
         </div>
+        <div class="{{ ui.hapticsSetting }}" if="{{ layoutProfile === 'rect' }}">
+          <text class="{{ ui.hapticsLabel }}">双屏显示</text>
+          <switch class="{{ ui.hapticsSwitch }}" checked="{{ rectTwoPage }}" @change="changeRectTwoPage"></switch>
+        </div>
         <div class="{{ ui.diagnostics }}">
           <text class="{{ ui.diagnosticsTitle }}">连接记录</text>
           <text class="{{ ui.diagnosticsLine }}" if="{{ diagnosticLines.length === 0 }}">暂无记录</text>
@@ -188,7 +192,7 @@
 import { rangeText, readSnapshot, writeSnapshot } from '../../common/snapshot.js'
 import { actionIcon } from '../../common/action-icons.js'
 import { DEFAULT_CAR_IMAGE, readCachedCarImage, saveCarImage } from '../../common/car-image.js'
-import { DEFAULT_LAYOUT, detectDeviceProfile, layoutClasses, layoutConfig, variantClass, watchHomeClasses } from '../../common/layout.js'
+import { DEFAULT_LAYOUT, detectDeviceProfile, layoutClasses, layoutConfig, variantClass, watchControlsClasses, watchHomeClasses } from '../../common/layout.js'
 import manifest from '../../manifest.json'
 
 const ACTIONS = [
@@ -203,8 +207,8 @@ const ACTIONS = [
   ['purify', '净化'],
   ['defrost', '除霜'],
   ['sentry', '哨兵'],
-  ['lynk_unlock', '车锁槽位'], ['lynk_window', '车窗槽位'],
-  ['lynk_kjck', 'kjck'], ['lynk_ccqk', 'ccqk']
+  ['lynk_unlock', '功能1'], ['lynk_window', '功能2'],
+  ['lynk_kjck', '功能3'], ['lynk_ccqk', '功能4']
 ]
 const HOME_ACTIONS = 4
 const STATUS_INTERVAL_MS = 12000
@@ -219,6 +223,7 @@ const MAX_REPLY_BYTES = 2048
 const EVENT_LOG_KEY = 'connection-events'
 const EVENT_LOG_LIMIT = 20
 const HAPTICS_KEY = 'control-haptics'
+const RECT_TWO_PAGE_KEY = 'rect-two-page'
 const FAILURE_PULSE_GAP_MS = 200
 const REQUEST_FEATURES = {
   refresh: 'refresh', prepare: 'confirm', execute: 'confirm', cancel: 'cancel', car_image: 'car_image'
@@ -340,11 +345,23 @@ function controlLabel(action, direction) {
   return ACTIONS.find(item => item[0] === action)[1]
 }
 
-function actionRows(ids, available, linked, controlPending, directions, profile = DEFAULT_LAYOUT) {
+function readLynkControlLabels(brand, labels, mapped) {
+  const result = {}
+  if (brand !== 'LYNKCO' || !labels) return result
+  for (const action of mapped) {
+    if (action.indexOf('lynk_') !== 0 || typeof labels[action] !== 'string') continue
+    const label = labels[action].trim()
+    if (label && Array.from(label).length <= 3) result[action] = label
+  }
+  return result
+}
+
+function actionRows(ids, available, linked, controlPending, directions, profile = DEFAULT_LAYOUT, labels = {}) {
   const columns = layoutConfig(profile).columns
   const watchSize = ids.length <= 1 ? 'hero' : ids.length === 2 ? 'pair' : 'grid'
+  const watchTileClass = (base, modifier) => (profile === 'rect' ? base + ' ' + modifier + ' ' + modifier + '-tall' : base + ' ' + modifier)
   function tile(id, solo) {
-    const label = controlLabel(id, directions[id])
+    const label = labels[id] || controlLabel(id, directions[id])
     const icon = actionIcon(id, directions[id])
     const isAvailable = available.indexOf(id) >= 0
     const isActive = isAvailable && (directions[id] === 'close' || (id === 'lock' && directions[id] === 'unlock'))
@@ -353,7 +370,6 @@ function actionRows(ids, available, linked, controlPending, directions, profile 
     let hint = ''
     if (!linked) hint = '待连接'
     else if (!isAvailable && !controlPending) hint = '暂不可用'
-    if (id.indexOf('lynk_') === 0) hint = '待验证'
     return {
       id, label, icon, hint,
       style: variantClass('tile ' + state + size, profile),
@@ -364,12 +380,10 @@ function actionRows(ids, available, linked, controlPending, directions, profile 
       watchOrbStyle: isAvailable
         ? (isActive ? 'watch-orb watch-orb-ready watch-orb-active' : 'watch-orb watch-orb-ready')
         : linked ? 'watch-orb watch-orb-paused' : 'watch-orb',
-      watchOrbSizeStyle: 'watch-orb-' + watchSize,
-      watchOrbIconStyle: isAvailable
-        ? 'watch-orb-icon watch-orb-icon-' + watchSize
-        : 'watch-orb-icon watch-orb-icon-' + watchSize + ' muted-icon',
-      watchCellStyle: 'watch-cell watch-cell-' + watchSize,
-      watchCellLabelStyle: 'watch-cell-label watch-cell-label-' + watchSize
+      watchOrbSizeStyle: profile === 'rect' ? 'watch-orb-' + watchSize + ' watch-orb-' + watchSize + '-tall' : 'watch-orb-' + watchSize,
+      watchOrbIconStyle: watchTileClass('watch-orb-icon', 'watch-orb-icon-' + watchSize) + (isAvailable ? '' : ' muted-icon'),
+      watchCellStyle: watchTileClass('watch-cell', 'watch-cell-' + watchSize),
+      watchCellLabelStyle: watchTileClass('watch-cell-label', 'watch-cell-label-' + watchSize)
     }
   }
 
@@ -392,11 +406,12 @@ export default {
     layoutProfile: DEFAULT_LAYOUT,
     ui: layoutClasses(DEFAULT_LAYOUT),
     watchHomeSize: 'standard',
-    watchHomeUi: watchHomeClasses('standard'),
+    watchHomeUi: watchHomeClasses('standard', DEFAULT_LAYOUT),
+    watchControlsUi: watchControlsClasses(DEFAULT_LAYOUT),
     watchPage: 0,
     vehicleName: DEFAULT_VEHICLE_NAME,
     brand: 'GALAXY',
-    carImageSrc: DEFAULT_CAR_IMAGE,
+    carImageSrc: '',
     displayRows: [],
     mode: '',
     modeLabel: '待连接',
@@ -417,6 +432,7 @@ export default {
     settingsOpen: false,
     diagnosticLines: [],
     hapticsEnabled: true,
+    rectTwoPage: false,
     toastText: '',
     busy: false,
     phoneConfirmation: false,
@@ -426,6 +442,9 @@ export default {
   },
 
   computed: {
+    useTwoPageShell() {
+      return this.isTwoPageShell()
+    },
     refreshText() {
       if (this.phoneConfirmation) return '请在手机确认'
       if (this.controlPending) return '同步中…'
@@ -442,6 +461,7 @@ export default {
     this.cachedVehicle = false
     this.controlDirectionsSupported = false
     this.controlDirections = {}
+    this.lynkControlLabels = {}
     this.rowsKey = ''
     this.confirmAction = ''
     this.confirmToken = ''
@@ -462,10 +482,12 @@ export default {
     this.sequence = 0
     this.ready = false
     this.visible = false
+    this.destroyed = false
     this.linked = false
     this.hasReply = false
     this.reportedLinkIssue = false
     this.storedSnapshot = null
+    this.snapshotChecked = false
     this.events = []
     this.eventStorage = null
     this.loadingEventLog = false
@@ -473,31 +495,57 @@ export default {
     this.savingEventLog = false
     this.eventLogDirty = false
     this.hapticsLoaded = false
+    this.rectTwoPageLoaded = false
     this.vibrator = undefined
     this.failurePulseTimer = null
     this.carImageHash = ''
     this.carImageUri = ''
     this.failedCarImageHash = ''
+    this.carImageCacheLoading = false
+    this.carImageChecked = false
+    this.cachedCarImage = null
     this.imageSync = null
     this.layoutDetected = false
     this.detectLayout()
+    this.loadSnapshot()
+    this.loadCarImageCache()
   },
 
   loadCarImageCache() {
-    if (this.carImageHash) return
+    if (this.carImageHash || this.carImageCacheLoading || this.destroyed) return
+    this.carImageCacheLoading = true
     readCachedCarImage((uri, hash, brand) => {
-      if (brand !== this.brand) return;
-      if (!this.visible || this.carImageHash || this.failedCarImageHash === hash) return
-      this.carImageHash = hash
-      this.carImageUri = uri
-      this.carImageSrc = uri
+      this.carImageCacheLoading = false
+      this.carImageChecked = true
+      if (this.destroyed) return
+      this.cachedCarImage = { uri, hash, brand }
+      this.resolveCarImageCache()
+    }, () => {
+      this.carImageCacheLoading = false
+      this.carImageChecked = true
+      this.resolveCarImageCache()
     })
   },
 
+  resolveCarImageCache() {
+    if (this.destroyed || this.carImageHash) return
+    const cached = this.cachedCarImage
+    if (cached && cached.brand === this.brand && this.failedCarImageHash !== cached.hash) {
+      this.carImageHash = cached.hash
+      this.carImageUri = cached.uri
+      this.carImageSrc = cached.uri
+      return
+    }
+    if ((this.snapshotChecked || this.hasReply) && this.carImageChecked && !this.carImageSrc) {
+      this.carImageSrc = this.brand === 'LYNKCO' ? '' : DEFAULT_CAR_IMAGE
+    }
+  },
+
   onCarImageError() {
-    if (this.carImageSrc === DEFAULT_CAR_IMAGE) return
+    const fallback = this.brand === 'LYNKCO' ? '' : DEFAULT_CAR_IMAGE
+    if (this.carImageSrc === fallback) return
     if (this.carImageHash) this.failedCarImageHash = this.carImageHash
-    this.carImageSrc = DEFAULT_CAR_IMAGE
+    this.carImageSrc = fallback
   },
 
   detectLayout() {
@@ -508,20 +556,25 @@ export default {
 
   applyLayoutProfile(profile, watchHomeSize) {
     const nextSize = watchHomeSize || 'standard'
-    if (this.watchHomeSize !== nextSize) {
-      this.watchHomeSize = nextSize
-      this.watchHomeUi = watchHomeClasses(nextSize)
-    }
     const next = profile || DEFAULT_LAYOUT
+    if (this.watchHomeSize !== nextSize || this.layoutProfile !== next) {
+      this.watchHomeSize = nextSize
+      this.watchHomeUi = watchHomeClasses(nextSize, next)
+      this.watchControlsUi = watchControlsClasses(next)
+    }
     if (this.layoutProfile === next) return
     this.layoutProfile = next
     this.ui = layoutClasses(next)
     this.updateRows()
-    if (next === 'circle') this.focusWatchSwiper()
+    if (this.isTwoPageShell()) this.focusWatchSwiper()
+  },
+
+  isTwoPageShell() {
+    return this.layoutProfile === 'circle' || (this.layoutProfile === 'rect' && this.rectTwoPage)
   },
 
   focusWatchSwiper() {
-    if (this.layoutProfile !== 'circle' || this.confirmTitle || this.settingsOpen) return
+    if (!this.isTwoPageShell() || this.confirmTitle || this.settingsOpen) return
     try {
       const swiper = this.$element && this.$element('watchSwiper')
       if (swiper && typeof swiper.focus === 'function') swiper.focus()
@@ -549,10 +602,11 @@ export default {
     this.startTimer = setTimeout(() => {
       this.startTimer = null
       if (!this.visible) return
-      if (!this.hasReply && this.storedSnapshot === null) this.loadSnapshot()
-      this.loadCarImageCache()
+      if (!this.hasReply && this.storedSnapshot === null && !this.snapshotChecked) this.loadSnapshot()
+      if (!this.carImageHash && !this.carImageSrc) this.loadCarImageCache()
       this.loadEventLog()
       this.loadHapticsSetting()
+      this.loadRectTwoPageSetting()
       this.syncStatus()
     }, 100)
   },
@@ -571,8 +625,15 @@ export default {
 
   loadSnapshot() {
     readSnapshot((snapshot, value) => {
-      if (!this.visible || this.hasReply || this.compatibilityNotice) return
-      this.brand = snapshot.brand === "LYNKCO" ? "LYNKCO" : "GALAXY";
+      if (this.destroyed || this.hasReply || this.compatibilityNotice) return
+      const brand = snapshot.brand === 'LYNKCO' ? 'LYNKCO' : 'GALAXY'
+      if (this.brand !== brand) {
+        this.brand = brand
+        this.carImageHash = ''
+        this.carImageUri = ''
+        this.failedCarImageHash = ''
+        this.carImageSrc = ''
+      }
       if (typeof snapshot.vehicleName === 'string' && snapshot.vehicleName.trim()) {
         this.vehicleName = normalizeVehicleName(snapshot.vehicleName)
       }
@@ -580,7 +641,11 @@ export default {
       this.storedSnapshot = value
       this.modeLabel = '离线缓存'
       this.mapped = knownActions(snapshot.mapped).slice(0, HOME_ACTIONS)
+      this.lynkControlLabels = readLynkControlLabels(this.brand, snapshot.controlLabels, this.mapped)
       this.updateRows()
+    }, () => {
+      this.snapshotChecked = true
+      this.resolveCarImageCache()
     })
   },
 
@@ -684,6 +749,37 @@ export default {
     }
   },
 
+  loadRectTwoPageSetting() {
+    if (this.rectTwoPageLoaded) return
+    const loaded = value => {
+      if (this.rectTwoPageLoaded) return
+      const enabled = value === 'on'
+      this.rectTwoPage = enabled
+      this.rectTwoPageLoaded = true
+      if (!enabled) this.watchPage = 0
+      if (this.isTwoPageShell()) this.focusWatchSwiper()
+    }
+    try {
+      this.eventStorage.get({ key: RECT_TWO_PAGE_KEY, success: loaded, fail: () => loaded('') })
+    } catch (_) {
+      loaded('')
+    }
+  },
+
+  changeRectTwoPage(event) {
+    const enabled = event.checked === true
+    if (this.rectTwoPageLoaded && this.rectTwoPage === enabled) return
+    this.rectTwoPageLoaded = true
+    this.rectTwoPage = enabled
+    if (!enabled) this.watchPage = 0
+    this.updateRows()
+    try {
+      this.eventStorage.set({ key: RECT_TWO_PAGE_KEY, value: enabled ? 'on' : 'off' })
+    } catch (_) {
+      // The setting still applies while this page is open.
+    }
+  },
+
   vibrateShort() {
     if (!this.visible || !this.hapticsLoaded || !this.hapticsEnabled) return false
     try {
@@ -731,6 +827,7 @@ export default {
   },
 
   onDestroy() {
+    this.destroyed = true
     this.stopSession()
     if (this.connection) {
       this.connection.onopen = null
@@ -1038,9 +1135,10 @@ export default {
     this.mapped = []
     this.available = []
     this.controlDirections = {}
+    this.lynkControlLabels = {}
     this.imageSync = null
     this.carImageHash = ''
-    this.carImageSrc = DEFAULT_CAR_IMAGE
+    this.carImageSrc = brand === 'LYNKCO' ? '' : DEFAULT_CAR_IMAGE
     this.storedSnapshot = null
     writeSnapshot("", () => {})
     this.vehicleName = DEFAULT_VEHICLE_NAME
@@ -1133,6 +1231,7 @@ export default {
     const partialUpdate = this.controlPending && !firstReply && mapped.length < this.mapped.length
       && mapped.every(action => this.mapped.indexOf(action) >= 0)
     if (!partialUpdate) this.mapped = mapped
+    this.lynkControlLabels = readLynkControlLabels(this.brand, reply.controlLabels, this.mapped)
     const reportedDirections = reply.controlDirections
     this.controlDirectionsSupported = !!reportedDirections && typeof reportedDirections === 'object'
       && !Array.isArray(reportedDirections)
@@ -1154,7 +1253,8 @@ export default {
     this.showVehicle(vehicle, cachedVehicle)
     if (this.mode === 'live') {
       const snapshot = vehicle.updatedAt > 0
-        ? JSON.stringify(Object.assign({}, vehicle, { brand: this.brand, mapped: this.mapped, vehicleName: this.vehicleName }))
+        ? JSON.stringify(Object.assign({}, vehicle, { brand: this.brand, mapped: this.mapped,
+          vehicleName: this.vehicleName, controlLabels: this.lynkControlLabels }))
         : ''
       if (snapshot !== this.storedSnapshot) {
         this.storedSnapshot = snapshot
@@ -1227,17 +1327,20 @@ export default {
     this.fuel = fuel.value
     this.fuelUnit = fuel.unit
     this.watchSubrange = formatSubrange(electric, fuel)
-    this.motion = typeof data.motion === 'string' && data.motion ? data.motion : '状态未知'
+    const motion = typeof data.motion === 'string' ? data.motion.trim() : ''
+    this.motion = this.brand === 'LYNKCO' && ['', '状态未知', '未知', '--', '—'].includes(motion)
+      ? '' : motion || '状态未知'
     this.updated = data.updatedLabel ? (cached ? '上次 ' : '') + data.updatedLabel : '等待车况'
   },
 
   updateRows() {
     const key = [this.layoutProfile, this.linked, this.mapped.join(), this.available.join(), this.controlPending,
-      this.mapped.map(action => this.controlDirections[action] || '').join()].join('|')
+      this.mapped.map(action => this.controlDirections[action] || '').join(),
+      this.mapped.map(action => this.lynkControlLabels[action] || '').join()].join('|')
     if (key === this.rowsKey) return
     this.rowsKey = key
     this.displayRows = actionRows(
-      this.mapped, this.available, this.linked, this.controlPending, this.controlDirections, this.layoutProfile)
+      this.mapped, this.available, this.linked, this.controlPending, this.controlDirections, this.layoutProfile, this.lynkControlLabels)
   },
 
   clearRequest() {
@@ -2552,5 +2655,138 @@ export default {
   height: 7px;
   border-radius: 4px;
   background-color: #9ee9ce;
+}
+
+/* Rectangular Band Pro 2-page mode (336x480 tall viewport) */
+.watch-mileage-page-tall {
+  padding: 30px 18px 14px;
+}
+.watch-hero-header-tall {
+  width: 300px;
+}
+.watch-model-tall {
+  max-width: 280px;
+  font-size: 22px;
+}
+.watch-range-tap-tall {
+  width: 300px;
+  min-height: 92px;
+  margin-top: 8px;
+}
+.watch-hero-tall {
+  font-size: 54px;
+}
+.watch-hero-unit-tall, .watch-hero-unit-ghost-tall {
+  font-size: 19px;
+  padding-bottom: 9px;
+}
+.watch-subrange-tall {
+  margin-top: 4px;
+  font-size: 15px;
+}
+.watch-status-row-tall {
+  height: 30px;
+  margin-top: 12px;
+  padding: 0 14px;
+  border-radius: 15px;
+}
+.watch-status-text-tall {
+  font-size: 14px;
+}
+.watch-refresh-icon-tall {
+  width: 14px;
+  height: 14px;
+}
+.watch-car-tall {
+  width: 300px;
+  height: 186px;
+  margin-top: 28px;
+}
+.watch-controls-page-tall {
+  padding: 28px 18px 26px;
+}
+.watch-top-pill-tall {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
+}
+.watch-top-text-tall {
+  font-size: 15px;
+  margin-left: 6px;
+}
+.watch-empty-tall {
+  width: 280px;
+  padding: 18px 12px;
+  border-radius: 16px;
+  font-size: 17px;
+}
+.watch-grid-tall {
+  width: 300px;
+}
+.watch-control-row-tall {
+  width: 300px;
+  margin-top: 16px;
+}
+.watch-cell-hero-tall {
+  width: 220px;
+}
+.watch-cell-pair-tall {
+  width: 144px;
+}
+.watch-cell-grid-tall {
+  width: 142px;
+}
+.watch-orb-hero-tall {
+  width: 132px;
+  height: 132px;
+  border-radius: 66px;
+}
+.watch-orb-pair-tall {
+  width: 108px;
+  height: 108px;
+  border-radius: 54px;
+}
+.watch-orb-grid-tall {
+  width: 86px;
+  height: 86px;
+  border-radius: 43px;
+}
+.watch-orb-icon-hero-tall {
+  width: 84px;
+  height: 84px;
+}
+.watch-orb-icon-pair-tall {
+  width: 70px;
+  height: 70px;
+}
+.watch-orb-icon-grid-tall {
+  width: 56px;
+  height: 56px;
+}
+.watch-cell-label-hero-tall {
+  font-size: 24px;
+}
+.watch-cell-label-pair-tall {
+  font-size: 21px;
+}
+.watch-cell-label-grid-tall {
+  font-size: 19px;
+}
+.watch-settings-pill-tall {
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 18px;
+}
+.watch-settings-icon-tall {
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+}
+.watch-settings-text-tall {
+  font-size: 16px;
+}
+.watch-pager-tall {
+  right: 8px;
+  top: 226px;
 }
 </style>
