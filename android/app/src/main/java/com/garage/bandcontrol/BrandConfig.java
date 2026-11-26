@@ -1,6 +1,8 @@
 package com.garage.bandcontrol;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /** Immutable mapping; Lynk identities are static APK evidence, not device acceptance. */
 final class BrandConfig {
@@ -57,7 +59,7 @@ final class BrandConfig {
                 new Slot("wgFun2Container", "wg_view_fun_status", "wg_view_fun_loading"),
                 new Slot("wgFun3Container", "wg_view_fun_status", "wg_view_fun_loading"),
                 new Slot("wgFun4Container", "wg_view_fun_status", "wg_view_fun_loading"));
-        slots = slotModels.stream().map(Slot::container).toList();
+        slots = Collections.unmodifiableList(slotModels.stream().map(Slot::container).collect(Collectors.toList()));
         energyBars = lynk ? List.of("progress_bar_electricity", "progress_bar_h") : List.of("wg_pb_energy_normal", "wg_pb_energy_warn", "wg_pb_energy_alert");
         loading = lynk ? List.of("fr_sx", "ll_loading_auth") : List.of("wg_view_update_time_loading", "wg_tv_update_time_loading");
         packageName = lynk ? "com.lynkco.customer" : "com.geelygalaxy.customer";
