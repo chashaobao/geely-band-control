@@ -30,12 +30,12 @@ New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
 $manifest = Get-Content -LiteralPath (Join-Path $project 'band\src\manifest.json') -Raw | ConvertFrom-Json
 $rpk = '{0}.release.{1}.rpk' -f $manifest.package,$manifest.versionName
 Copy-Item -LiteralPath (Join-Path $project 'android\app\build\outputs\apk\release\app-release.apk') `
-    -Destination (Join-Path $artifacts 'lynk-band-companion.apk') -Force
+    -Destination (Join-Path $artifacts 'lynk-companion-phone.apk') -Force
 Copy-Item -LiteralPath (Join-Path (Join-Path $project 'band\dist') $rpk) `
     -Destination (Join-Path $artifacts 'lynk-band.rpk') -Force
-Copy-Item -LiteralPath (Join-Path $project 'android\watch\build\outputs\apk\release\watch-release.apk') -Destination (Join-Path $artifacts 'lynk-watch5.apk') -Force
+Copy-Item -LiteralPath (Join-Path $project 'android\watch\build\outputs\apk\release\watch-release.apk') -Destination (Join-Path $artifacts 'lynk-watch.apk') -Force
 Get-ChildItem -LiteralPath $artifacts -File | Select-Object Name,Length
-$checksums = Get-ChildItem -LiteralPath $artifacts -File | Where-Object { $_.Extension -in '.apk','.rpk' } | ForEach-Object {
-    '{0}  {1}' -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
+$checksums = 'lynk-companion-phone.apk','lynk-watch.apk','lynk-band.rpk' | ForEach-Object {
+    '{0}  {1}' -f (Get-FileHash -LiteralPath (Join-Path $artifacts $_) -Algorithm SHA256).Hash.ToLowerInvariant(), $_
 }
 Set-Content -LiteralPath (Join-Path $artifacts 'SHA256SUMS.txt') -Value $checksums -Encoding Ascii
