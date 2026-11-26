@@ -16,15 +16,13 @@ enum LynkConfirmation {
         this.titles = titles;
     }
 
-    static LynkConfirmation forAction(CarAction action, String ownerCategory, ControlDirection direction) {
-        if (action == CarAction.LYNK_UNLOCK && "锁".equals(ownerCategory)) {
+    static LynkConfirmation forMark(String ownerCategory, ControlDirection direction) {
+        if ("锁".equals(ownerCategory)) {
             if (direction == ControlDirection.LOCK) return LOCK;
             if (direction == ControlDirection.UNLOCK) return UNLOCK;
         }
-        if (action == CarAction.LYNK_WINDOW) {
-            boolean vent = "车窗微开".equals(ownerCategory);
-            boolean full = "车窗全开".equals(ownerCategory);
-            if (!vent && !full) return null;
+        boolean vent = "车窗微开".equals(ownerCategory);
+        if (vent || "车窗全开".equals(ownerCategory)) {
             if (direction == ControlDirection.CLOSE) return CLOSE;
             if (direction == ControlDirection.OPEN) return vent ? VENT : OPEN;
         }

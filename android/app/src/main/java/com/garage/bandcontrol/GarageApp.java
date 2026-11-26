@@ -53,7 +53,7 @@ public final class GarageApp extends Application {
     private record LynkApproval(LynkConfirmation expected, long revision, long expiresAt,
                                 long authorization, boolean fromVoice) {}
     private record Dispatch(int cardId, CarAction action, String slot, String targetKey,
-                            LynkApproval lynkApproval) {}
+                            LynkApproval lynkApproval, String lynkFallback) {}
     private record DispatchResult(String state, String note) {}
     private record RequestKey(String node, String id) {}
     private record Receipt(BandMessage request, String state, String note) {}
@@ -420,7 +420,7 @@ public final class GarageApp extends Application {
             return;
         }
         String token = confirmations.prepare(node, request.action(), target.key(), SystemClock.elapsedRealtime());
-        LynkConfirmation known = lynkConfirmation(request.action(), target);
+        LynkConfirmation known = lynkConfirmation(target);
         String title = known == null ? target.title() : "领克 · " + known.label;
         send(node, request.id(), () -> BandMessage.reply(request.id(), "confirm", title)
                 .put("token", token).put("action", request.action().id));
@@ -461,10 +461,17 @@ public final class GarageApp extends Application {
                     + "」 · 锁态「" + target.lockState() + "」", false);
         }
         LynkApproval approval = null;
-        if (brand == BrandConfig.LYNKCO && !widgets.hasOfficialConfirmation(target.cardId())) {
-            LynkConfirmation expected = lynkConfirmation(action, target);
+        String lynkFallback = "";
+        if (brand == BrandConfig.LYNKCO) {
+            LynkConfirmation expected = lynkConfirmation(target);
             long revision = widgets.revision(widgets.primary());
-            if (expected != null && revision >= 0) {
+            if (widgets.hasOfficialConfirmation(target.cardId()) || revision < 0) {
+                lynkFallback = "派发前卡片已经在确认中或不可读";
+            } else if (!widgets.hasValidReading(target.cardId())) {
+                lynkFallback = "本次派发前没有读到有效的领克车况";
+            } else if (expected == null) {
+                lynkFallback = "当前槽位没有已核对的锁窗功能和方向";
+            } else {
                 approval = new LynkApproval(expected, revision, SystemClock.elapsedRealtime() + CONTROL_WAIT_MS,
                         lynkAuthorization, fromVoice);
             }
@@ -476,15 +483,15 @@ public final class GarageApp extends Application {
         } catch (RuntimeException unavailable) {
             return new DispatchResult("unknown", "转交结果未知，请到" + brand.appName + " App 查看");
         }
-        dispatch = new Dispatch(target.cardId(), action, target.button().slot(), target.key(), approval);
+        dispatch = new Dispatch(target.cardId(), action, target.button().slot(), target.key(), approval, lynkFallback);
         confirmations.clear();
         main.postDelayed(controlTimeout, CONTROL_WAIT_MS);
         return new DispatchResult("dispatched", DISPATCHED);
     }
 
-    private LynkConfirmation lynkConfirmation(CarAction action, GalaxyWidgets.Target target) {
+    private LynkConfirmation lynkConfirmation(GalaxyWidgets.Target target) {
         if (brand != BrandConfig.LYNKCO || !widgets.hasValidReading(target.cardId())) return null;
-        return LynkConfirmation.forAction(action, target.lockState(), target.direction());
+        return LynkConfirmation.forMark(target.lockState(), target.direction());
     }
 
     private boolean replyIfControlPending(String node, BandMessage request) {
@@ -502,32 +509,43 @@ public final class GarageApp extends Application {
         dispatch = null;
         main.removeCallbacks(controlTimeout);
         if (widgets.hasOfficialConfirmation(finished.cardId())) {
-            if (confirmLynkDispatch(finished)) setResult("已提交领克官方确认，等待车况回传");
-            else setResult(ControlPause.PHONE_CONFIRM.message.replace("银河", brand.name));
+            if (brand == BrandConfig.LYNKCO) {
+                String fallback = confirmLynkDispatch(finished);
+                if (fallback.isEmpty()) {
+                    setResult("已提交领克官方确认，等待车况回传");
+                    return;
+                }
+                appendEvent("领克仍需手机确认", fallback, true);
+            }
+            setResult(ControlPause.PHONE_CONFIRM.message.replace("银河", brand.name));
         } else {
             changed();
         }
     }
 
-    private boolean confirmLynkDispatch(Dispatch finished) {
+    /** An empty result means the matching official confirmation was submitted. */
+    private String confirmLynkDispatch(Dispatch finished) {
         LynkApproval approval = finished.lynkApproval();
-        if (brand != BrandConfig.LYNKCO || approval == null || !isArmed()
-                || approval.authorization() != lynkAuthorization
-                || SystemClock.elapsedRealtime() >= approval.expiresAt()
-                || (approval.fromVoice() ? !voiceEnabled : !serviceRunning)) return false;
+        if (approval == null) return finished.lynkFallback();
+        if (!isArmed() || approval.authorization() != lynkAuthorization
+                || (approval.fromVoice() ? !voiceEnabled : !serviceRunning)) return "车控授权或连接已变化";
+        if (SystemClock.elapsedRealtime() >= approval.expiresAt()) return "官方确认超过 5 秒";
         GalaxyWidgets.Card card = widgets.primary();
         if (card == null || card.id != finished.cardId() || card.id == handledConfirmation
-                || widgets.revision(card) <= approval.revision()) return false;
+                || widgets.revision(card) <= approval.revision()) return "卡片已切换，或弹窗不是本次派发后出现";
         WidgetTree.OfficialConfirmation prompt = widgets.officialConfirmation(card);
-        if (prompt == null || !approval.expected().matches(prompt.title())) return false;
+        if (prompt == null) return "未读到可点击的官方确认按钮";
+        if (!approval.expected().matches(prompt.title())) {
+            return "已核对「" + approval.expected().label + "」，官方弹窗为「" + prompt.title() + "」";
+        }
         try {
-            if (!prompt.accept().performClick()) return false;
+            if (!prompt.accept().performClick()) return "官方确认按钮当前不可点击";
             handledConfirmation = card.id;
             updateConfirmationNotice();
-            return true;
+            return "";
         } catch (RuntimeException unavailable) {
             Log.w(TAG, "Unable to submit matched Lynk confirmation", unavailable);
-            return false;
+            return "提交官方确认时出现异常";
         }
     }
 
