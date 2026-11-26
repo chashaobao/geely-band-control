@@ -4,6 +4,7 @@ package com.mario.lynkband;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.graphics.drawable.Icon;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
@@ -20,7 +21,8 @@ public final class BandService extends Service {
         int pendingFlags = PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT;
         PendingIntent open = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), pendingFlags);
         Notification notice = new Notification.Builder(this, CHANNEL)
-                .setSmallIcon(R.drawable.ic_garage)
+                .setSmallIcon(R.drawable.ic_stat_sky)
+                .setLargeIcon(Icon.createWithResource(this, R.mipmap.ic_phone_sky))
                 .setContentTitle(getString(R.string.app_name))
                 .setContentText("穿戴通信正在运行")
                 .setContentIntent(open)

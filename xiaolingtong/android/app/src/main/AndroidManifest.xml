@@ -17,7 +17,7 @@
     <application android:name=".WristApp" android:label="@string/app_name"
         android:theme="@style/WristTheme" android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_phone_sky">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>

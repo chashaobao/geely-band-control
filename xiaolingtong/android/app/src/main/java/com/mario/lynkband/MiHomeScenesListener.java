@@ -3,6 +3,7 @@ package com.mario.lynkband;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.graphics.drawable.Icon;
 import android.content.ComponentName;
 import android.content.Context;
 import android.os.Bundle;
@@ -45,7 +46,8 @@ public final class MiHomeScenesListener extends NotificationListenerService {
         app.changed();
         NotificationManager manager = getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel(CHANNEL, "语音车控回执", NotificationManager.IMPORTANCE_DEFAULT));
-        manager.notify(32, new Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_garage)
+        manager.notify(32, new Notification.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_stat_sky)
+                .setLargeIcon(Icon.createWithResource(this, R.mipmap.ic_phone_sky))
                 .setContentTitle("领克语音车控").setContentText(result)
                 .setStyle(new Notification.BigTextStyle().bigText(result))
                 .setVisibility(Notification.VISIBILITY_PRIVATE).setTimeoutAfter(15000).setAutoCancel(true).build());
