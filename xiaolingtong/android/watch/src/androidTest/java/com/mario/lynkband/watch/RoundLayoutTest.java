@@ -288,7 +288,7 @@ public class RoundLayoutTest {
             assertCaptionFits(face, BuildConfig.VERSION_NAME);
             ViewGroup returnButton = (ViewGroup) find(face, "返回车况");
             TextView returnCaption = (TextView) returnButton.getChildAt(returnButton.getChildCount() - 1);
-            assertEquals(28f, returnCaption.getTextSize(), .1f);
+            assertEquals(32f, returnCaption.getTextSize(), .1f);
             returnButton.performClick();
             layout();
             assertNotNull(find(face, "设置"));

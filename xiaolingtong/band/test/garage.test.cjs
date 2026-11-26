@@ -32,19 +32,19 @@ const aiot = {
   }
 }
 
-function setup(device = {getInfo: ({success}) => success(square)}) {
+function setup(device = {getInfo: ({success}) => success(square)}, offline = false, hour = 12, store) {
   const sent = []
   const timers = new Map()
   let now = 100000
   let next = 0
   const connection = {send: message => sent.push(message.data)}
   const runtime = {
-    Date: {now: () => now},
+    Date: class extends Date { static now() { return now } getHours() { return hour } },
     aiot,
     $translateStyle$: css => Object.fromEntries(css.split(';').map(s => s.trim().split(/:\s*/))),
     $app_require$: name => ({
-      '@app-module/system.interconnect':{instance: () => connection},
-      '@app-module/system.storage':{}, '@app-module/system.device':device
+      '@app-module/system.interconnect':offline ? undefined : {instance: () => connection},
+      '@app-module/system.storage':store, '@app-module/system.device':device
     })[name],
     setTimeout(fn, delay) { timers.set(++next, {fn, delay}); return next },
     clearTimeout(timer) { timers.delete(timer) }
@@ -60,7 +60,7 @@ function setup(device = {getInfo: ({success}) => success(square)}) {
     connection.onmessage({data: JSON.stringify({v:1, id:sent.at(-1).id, actions:[slot],
       data:{vehicle:'测试车辆', range:'320', battery:'52%', fuel:'17L', time:'14:30'}, ...payload})})
   }
-  return {page, sent, reply, connection, timers, feed: () => page.template(page).children[0], advance(ms) { now += ms }}
+  return {page, sent, reply, connection, timers, feed: () => page.template(page).children[1].children[0], advance(ms) { now += ms }}
 }
 
 test('home uses only current widget slots and refuses read-only actions', () => {
@@ -213,21 +213,21 @@ test('missing device API stays usable; late device info reflows existing actions
   }
 })
 
-test('icon badge uses reported state in both palettes; loading and unknown never arm', () => {
+test('icon badge uses reported state with either phone appearance; loading and unknown never arm', () => {
   for (const appearance of ['light','dark']) {
     const s = setup()
     const actions = ['open','closed','loading','unknown','unrecognized'].map((state, i) =>
       ({...slot, slot:'a' + i, controlState:state, controlName:'车窗', displayLabel:'车窗.开', enabled:true}))
     s.reply({actions, appearance})
     const tiles = s.feed().children.filter(row => row.type === 'actionpair').flatMap(row => row.children)
-    const colors = s.page.colors
+    const colors = {on:'#59cf91',tile:'#192b3e',loading:'#ffcc46',unknown:'#a2abb6'}
     assert.deepEqual(tiles.map(tile => tile.children[0].style['background-color']),
       [colors.on, colors.tile, colors.loading, colors.unknown, colors.unknown])
     assert.deepEqual(tiles.map(tile => tile.disabled), [false,false,true,true,true])
     for (const [i, tile] of tiles.entries()) {
       const badge = tile.children[0]
       assert.deepEqual(badge.classes, i === 2 ? ['badge','pulse'] : ['badge'])
-      const darkGlyph = appearance === 'light' || i !== 1
+      const darkGlyph = i !== 1
       assert.equal(badge.children[0].src, '/common/controls/' + (darkGlyph ? 'day/' : '') + 'OTHER.png')
     }
     for (const tile of tiles.slice(2)) tile.click()
@@ -307,16 +307,19 @@ test('leaving action page discards late prepare response', () => {
   assert.equal(s.page.choice, null)
 })
 
-test('appearance updates from the companion and older replies keep the chosen palette', () => {
+test('home paints a single readable default with missing firmware modules and either phone appearance', () => {
+  const offline = setup({}, true)
+  const title = offline.feed().children[0]
+  assert.equal(title.children[0].value, '小领通')
+  assert.match(title.children[1].value, /连接/)
+  assert.equal(offline.sent.length, 0)
   const s = setup()
-  s.reply({appearance:'light'})
-  assert.equal(s.page.colors.bg, '#f4f7fa')
-  s.page.refresh()
-  s.reply()
-  assert.equal(s.page.colors.bg, '#f4f7fa')
-  s.page.refresh()
-  s.reply({appearance:'dark'})
-  assert.equal(s.page.colors.bg, '#0a0d14')
+  for (const appearance of ['light', 'dark']) {
+    s.reply({appearance})
+    assert.equal(s.feed().children[0].children[0].value, '测试车辆')
+    assert.equal(compiledRule(s.page, 'page').backgroundColor, '#0a0d14')
+    s.page.refresh()
+  }
 })
 
 test('a lost connection retries immediately, backs off and never repeats a prepared action', () => {
@@ -333,4 +336,31 @@ test('a lost connection retries immediately, backs off and never repeats a prepa
   s.connection.onclose()
   retry(0)
   assert.equal(s.sent.filter(message => message.type === 'execute').length, 0)
+})
+
+test('band sky backgrounds and manual presets stay available offline', () => {
+  const s = setup({}, true)
+  assert.equal(s.page.skyMode, 'auto')
+  const theme = s.feed().children.find(row => row.type === 'theme').children[0]
+  theme.click()
+  assert.equal(s.page.template(s.page).children[0].src, '/common/sky/day.png')
+  theme.click()
+  assert.equal(s.page.template(s.page).children[0].src, '/common/sky/night.png')
+  theme.click()
+  assert.equal(s.page.skyMode, 'auto')
+})
+
+test('automatic sky uses local daylight boundaries and a failed theme store cannot prevent startup', () => {
+  const broken = {get() { throw Error('unavailable') }, set() { throw Error('unavailable') }}
+  for (const [hour, expect] of [[5,'night'],[6,'day'],[17,'day'],[18,'night']]) {
+    const s = setup({}, true, hour, broken)
+    assert.equal(s.page.skyImage, '/common/sky/' + expect + '.png')
+    s.page.cycleSky()
+    assert.equal(s.page.skyMode, 'day')
+  }
+  let delayed
+  const s = setup({}, true, 12, {get({success}) { delayed = success }})
+  s.page.cycleSky()
+  delayed('night')
+  assert.equal(s.page.skyMode, 'day')
 })

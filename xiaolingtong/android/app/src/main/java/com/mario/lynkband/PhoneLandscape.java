@@ -41,7 +41,7 @@ enum PhoneLandscape {
     }
 
     static PhoneLandscape selected(SharedPreferences prefs) {
-        String name = prefs.getString(KEY, SKY.name());
+        String name = ThemeSync.scene(prefs, KEY);
         for (PhoneLandscape scene : values()) if (scene.name().equals(name)) return scene;
         return SKY;
     }

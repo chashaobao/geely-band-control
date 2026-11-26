@@ -8,6 +8,21 @@ import org.json.JSONObject;
 public final class ThemeSync {
     private ThemeSync() {}
 
+    public static String scene(SharedPreferences prefs, String key) {
+        Object raw = prefs.getAll().get(key);
+        return raw instanceof String value && validScene(value) ? value : "SKY";
+    }
+
+    public static boolean flag(SharedPreferences prefs, String key, boolean fallback) {
+        Object raw = prefs.getAll().get(key);
+        return raw instanceof Boolean value ? value : fallback;
+    }
+
+    public static int minute(SharedPreferences prefs, String key, int fallback) {
+        Object raw = prefs.getAll().get(key);
+        return raw instanceof Integer value && value >= 0 && value < 1440 ? value : fallback;
+    }
+
     private static boolean validScene(String scene) {
         return "SKY".equals(scene) || "RIDGE".equals(scene) || "CITY".equals(scene)
                 || "COAST".equals(scene) || "ALPINE".equals(scene);
@@ -15,7 +30,9 @@ public final class ThemeSync {
 
     private static long revision(SharedPreferences prefs, String key) {
         // On upgrade a previously selected theme outranks a fresh installation's default.
-        return prefs.getLong(key + ".revision", prefs.contains(key) ? 1L : 0L);
+        if (!(prefs.getAll().get(key) instanceof String value) || !validScene(value)) return 0L;
+        Object stored = prefs.getAll().get(key + ".revision");
+        return stored instanceof Long v && v >= 0 && v <= 253402300799999L ? v : 1L;
     }
 
     public static synchronized void select(SharedPreferences prefs, String key, String scene, boolean phone) {
@@ -30,11 +47,11 @@ public final class ThemeSync {
     }
 
     public static synchronized JSONObject snapshot(SharedPreferences prefs, String key, boolean phone) {
-        String scene = prefs.getString(key, "SKY");
+        String scene = scene(prefs, key);
         try {
             return new JSONObject().put("scene", validScene(scene) ? scene : "SKY")
                     .put("revision", revision(prefs, key))
-                    .put("fromPhone", prefs.getBoolean(key + ".fromPhone", phone));
+                    .put("fromPhone", flag(prefs, key + ".fromPhone", phone));
         } catch (JSONException invalidConstantKey) { throw new AssertionError(invalidConstantKey); }
     }
 
@@ -47,8 +64,8 @@ public final class ThemeSync {
         if (time < 0 || time > 253402300799999L) return false;
         long local = revision(prefs, key);
         int order = Long.compare(time, local);
-        if (order == 0) order = Boolean.compare(fromPhone, prefs.getBoolean(key + ".fromPhone", phone));
-        if (order == 0) order = scene.compareTo(prefs.getString(key, "SKY"));
+        if (order == 0) order = Boolean.compare(fromPhone, flag(prefs, key + ".fromPhone", phone));
+        if (order == 0) order = scene.compareTo(scene(prefs, key));
         if (order <= 0) return false;
         save(prefs, key, scene, time, fromPhone);
         return true;

@@ -1,16 +1,16 @@
 {
   "package": "com.mario.lynkband.phone",
   "name": "小领通",
-  "versionName": "0.2.7",
-  "versionCode": 9,
+  "versionName": "0.2.9",
+  "versionCode": 11,
   "minPlatformVersion": 1000,
   "minAPILevel": 1,
   "icon": "/common/icon.png",
   "deviceTypeList": ["watch"],
   "features": [
     { "name": "system.device" },
-    { "name": "system.interconnect" },
     { "name": "system.storage" },
+    { "name": "system.interconnect" },
     { "name": "system.vibrator" }
   ],
   "config": {

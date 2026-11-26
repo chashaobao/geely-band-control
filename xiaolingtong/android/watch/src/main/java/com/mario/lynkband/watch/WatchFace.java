@@ -626,7 +626,7 @@ final class WatchFace extends FrameLayout {
     }
 
     private Scene storedScene() {
-        try { return Scene.valueOf(themeSettings.getString(SCENE_KEY, Scene.SKY.name())); }
+        try { return Scene.valueOf(ThemeSync.scene(themeSettings, SCENE_KEY)); }
         catch (IllegalArgumentException unknown) { return Scene.SKY; }
     }
 
@@ -647,7 +647,7 @@ final class WatchFace extends FrameLayout {
 
     private void solarPage() {
         label("日出日落", 30, color(R.color.ink), true, 100, 53, 280, 46);
-        boolean manual = themeSettings.getBoolean("manual", false);
+        boolean manual = ThemeSync.flag(themeSettings, "manual", false);
         actionButton("自动", manual ? "" : "check", !manual, 111, () -> setManual(false));
         actionButton("用户设定", manual ? "check" : "", manual, 213, () -> setManual(true));
         if (manual) {
@@ -671,7 +671,7 @@ final class WatchFace extends FrameLayout {
 
     private void timeButton(boolean sunrise, int y) {
         String key = sunrise ? "riseMinute" : "setMinute";
-        int minute = themeSettings.getInt(key, sunrise ? 360 : 1080);
+        int minute = ThemeSync.minute(themeSettings, key, sunrise ? 360 : 1080);
         String title = sunrise ? "日出" : "日落";
         String caption = String.format(java.util.Locale.ROOT, "%s  %02d:%02d", title, minute / 60, minute % 60);
         actionButton(caption, "", false, y, () -> {
@@ -679,7 +679,7 @@ final class WatchFace extends FrameLayout {
                     nightScene() ? android.R.style.Theme_Material_Dialog_Alert : android.R.style.Theme_Material_Light_Dialog_Alert,
                     (picker, h, m) -> {
                         int selected = h * 60 + m;
-                        if (selected == themeSettings.getInt(sunrise ? "setMinute" : "riseMinute", sunrise ? 1080 : 360)) {
+                        if (selected == ThemeSync.minute(themeSettings, sunrise ? "setMinute" : "riseMinute", sunrise ? 1080 : 360)) {
                             Toast.makeText(getContext(), "请选择不同的日出和日落时间", Toast.LENGTH_SHORT).show();
                             return;
                         }

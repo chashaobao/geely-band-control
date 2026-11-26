@@ -26,6 +26,7 @@ class LynkWidget {
     private final Runnable changed;
     private final Handler main;
     private final VehiclePhoto photo = new VehiclePhoto();
+    private boolean listeningRequested;
     private boolean listening;
     private AppWidgetHostView view;
     private int id;
@@ -56,16 +57,25 @@ class LynkWidget {
     }
 
     void listening(boolean active) {
-        if (listening == active) return;
-        if (active) {
-            if (id > 0 && view == null) {
-                AppWidgetProviderInfo info = manager.getAppWidgetInfo(id);
-                if (info != null && MEDIUM.equals(info.provider)) attach(id, info);
-                else reset();
-            }
+        listeningRequested = active;
+        if (active && id > 0 && view == null) {
+            AppWidgetProviderInfo info = manager.getAppWidgetInfo(id);
+            if (info != null && MEDIUM.equals(info.provider)) attach(id, info);
+            else reset();
+        }
+        boolean needed = active && view != null;
+        if (needed == listening) return;
+        if (needed) {
             host.startListening();
-        } else host.stopListening();
-        listening = active;
+        } else {
+            try {
+                host.stopListening();
+            } catch (NullPointerException providerRemoved) {
+                // Some Android 11 widget services dereference an already removed provider on stop.
+                android.util.Log.w("WristLynkHost", "Provider disappeared while stopping widget host", providerRemoved);
+            }
+        }
+        listening = needed;
     }
 
     boolean autoBind() { return prefs.getBoolean("autoBind", true); }
@@ -115,6 +125,7 @@ class LynkWidget {
         }
         attach(candidate, info);
         prefs.edit().putInt("id", candidate).apply();
+        listening(listeningRequested);
         changed.run();
         return "已绑定领克中号卡片";
     }

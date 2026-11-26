@@ -53,7 +53,7 @@ public final class SolarController {
     /** Resolve resource configuration before inflation, using only an existing fix if permitted. */
     public static boolean initialNight(Context context, SharedPreferences prefs) {
         Location fix = null;
-        if (!prefs.getBoolean("manual", false) && allowed(context)) {
+        if (!ThemeSync.flag(prefs, "manual", false) && allowed(context)) {
             SolarLocation cached = new SolarLocation(context, new Handler(Looper.getMainLooper()), () -> {});
             cached.loadCached();
             fix = cached.recent();
@@ -62,7 +62,7 @@ public final class SolarController {
     }
 
     public void initialize() {
-        if (!prefs.getBoolean("manual", false) && allowed(activity)) location.loadCached();
+        if (!ThemeSync.flag(prefs, "manual", false) && allowed(activity)) location.loadCached();
         apply(true);
     }
 
@@ -94,9 +94,9 @@ public final class SolarController {
     public void settingsChanged() { refresh(false, false); }
 
     public void locate() {
-        if (!started || prefs.getBoolean("manual", false)) return;
+        if (!started || ThemeSync.flag(prefs, "manual", false)) return;
         if (allowed(activity)) refresh(false, true);
-        else if (prefs.getBoolean("locationAsked", false)
+        else if (ThemeSync.flag(prefs, "locationAsked", false)
                 && !activity.shouldShowRequestPermissionRationale(COARSE)) {
             try {
                 activity.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -121,28 +121,28 @@ public final class SolarController {
 
     private void recompute() {
         if (!started) return;
-        if (!prefs.getBoolean("manual", false) && allowed(activity) && location.awaitingFix()) apply(false);
+        if (!ThemeSync.flag(prefs, "manual", false) && allowed(activity) && location.awaitingFix()) apply(false);
         else refresh(false, false);
     }
 
     private void refresh(boolean initialize, boolean forceFix) {
         if (!started) return;
-        if (prefs.getBoolean("manual", false) || !allowed(activity)) location.forget();
+        if (ThemeSync.flag(prefs, "manual", false) || !allowed(activity)) location.forget();
         else location.refresh(forceFix);
         apply(initialize);
     }
 
     private static SolarScene calculate(SharedPreferences prefs, long now, Location fix) {
         ZoneId zone = ZoneId.systemDefault();
-        if (prefs.getBoolean("manual", false))
-            return SolarScene.manual(now, zone, prefs.getInt("riseMinute", 360), prefs.getInt("setMinute", 1080));
+        if (ThemeSync.flag(prefs, "manual", false))
+            return SolarScene.manual(now, zone, ThemeSync.minute(prefs, "riseMinute", 360), ThemeSync.minute(prefs, "setMinute", 1080));
         return SolarScene.at(now, zone, fix == null ? Double.NaN : fix.getLatitude(),
                 fix == null ? Double.NaN : fix.getLongitude());
     }
 
     private void apply(boolean initialize) {
         long now = System.currentTimeMillis();
-        Location fix = prefs.getBoolean("manual", false) || !allowed(activity) ? null : location.recent();
+        Location fix = ThemeSync.flag(prefs, "manual", false) || !allowed(activity) ? null : location.recent();
         SolarScene scene = calculate(prefs, now, fix);
         boolean changed = last == null || last.night != scene.night || !last.info.equals(scene.info);
         last = scene;

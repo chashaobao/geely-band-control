@@ -1,5 +1,6 @@
 package com.mario.lynkband;
 
+import com.mario.lynkband.solar.ThemeSync;
 import android.Manifest;
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -253,10 +254,10 @@ public final class MainActivity extends Activity {
         themeCaption.setText(caption);
         ((View) themeCaption.getParent()).setContentDescription(getString(R.string.app_name) + "，" + caption + "，选择主题");
         landscapeButton.setText("主题 · " + scene.title);
-        boolean manual = themePrefs.getBoolean("manual", false);
+        boolean manual = ThemeSync.flag(themePrefs, "manual", false);
         timingButton.setText(manual ? "日夜切换 · 手动时间" : "日夜切换 · 自动日出日落");
-        riseButton.setText("日出 · " + timeLabel(themePrefs.getInt("riseMinute", 360)));
-        setButton.setText("日落 · " + timeLabel(themePrefs.getInt("setMinute", 1080)));
+        riseButton.setText("日出 · " + timeLabel(ThemeSync.minute(themePrefs, "riseMinute", 360)));
+        setButton.setText("日落 · " + timeLabel(ThemeSync.minute(themePrefs, "setMinute", 1080)));
         riseButton.setVisibility(manual ? View.VISIBLE : View.GONE);
         setButton.setVisibility(manual ? View.VISIBLE : View.GONE);
         locationButton.setVisibility(manual ? View.GONE : View.VISIBLE);
@@ -286,7 +287,7 @@ public final class MainActivity extends Activity {
     }
 
     private void chooseTiming() {
-        boolean manual = themePrefs.getBoolean("manual", false);
+        boolean manual = ThemeSync.flag(themePrefs, "manual", false);
         new AlertDialog.Builder(this).setTitle("日夜切换")
                 .setSingleChoiceItems(new String[]{"自动日出日落", "手动设置时间"}, manual ? 1 : 0, (dialog, which) -> {
                     dialog.dismiss();
@@ -298,10 +299,10 @@ public final class MainActivity extends Activity {
 
     private void chooseTime(boolean sunrise) {
         String key = sunrise ? "riseMinute" : "setMinute";
-        int minute = themePrefs.getInt(key, sunrise ? 360 : 1080);
+        int minute = ThemeSync.minute(themePrefs, key, sunrise ? 360 : 1080);
         TimePickerDialog picker = new TimePickerDialog(this, (view, hour, min) -> {
             int selected = hour * 60 + min;
-            if (selected == themePrefs.getInt(sunrise ? "setMinute" : "riseMinute", sunrise ? 1080 : 360)) {
+            if (selected == ThemeSync.minute(themePrefs, sunrise ? "setMinute" : "riseMinute", sunrise ? 1080 : 360)) {
                 toast("日出和日落时间不能相同");
                 return;
             }
