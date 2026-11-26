@@ -357,14 +357,48 @@ public final class GarageApp extends Application {
             changed();
             return;
         }
-        CarAction action = MiHomeVoice.action(brand.namespace, command);
-        GalaxyWidgets.Control control = control(action);
+        LynkConfirmation toggle = brand == BrandConfig.LYNKCO ? switch (command) {
+            case WINDOW_TOGGLE -> LynkConfirmation.WINDOW_TOGGLE;
+            case LOCK_TOGGLE -> LynkConfirmation.LOCK_TOGGLE;
+            default -> null;
+        } : null;
+        CarAction action;
+        GalaxyWidgets.Control control;
+        if (toggle != null) {
+            boolean windowToggle = toggle == LynkConfirmation.WINDOW_TOGGLE;
+            String function = windowToggle ? "车窗" : "车锁";
+            Map.Entry<CarAction, GalaxyWidgets.Control> selected = null;
+            for (var entry : widgets.controls().entrySet()) {
+                GalaxyWidgets.Target target = entry.getValue().target();
+                if (target == null || !(windowToggle ? target.isLynkWindow() : target.isLynkLock())) continue;
+                if (selected != null) {
+                    setResult("语音" + toggle.label + " · 官方卡片有多个" + function + "按钮，请在穿戴端选择");
+                    return;
+                }
+                selected = entry;
+            }
+            if (selected == null) {
+                String notice = liveControlNotice(controlPause(), false);
+                setResult("语音" + toggle.label + " · " + (notice.isEmpty() ? "未识别到可用的领克" + function + "按钮" : notice));
+                return;
+            }
+            action = selected.getKey();
+            control = selected.getValue();
+        } else {
+            action = MiHomeVoice.action(brand.namespace, command);
+            control = control(action);
+        }
         String blocked = voiceBlockedReason(control);
         if (blocked.isEmpty()) {
-            blocked = brand == BrandConfig.LYNKCO ? widgets.voiceEvidence(command, control)
+            if (toggle != null && !widgets.hasValidReading(control.target().cardId())) {
+                blocked = "当前卡片状态不可读，请先刷新领克车况";
+            } else if (toggle == null) {
+                blocked = brand == BrandConfig.LYNKCO ? widgets.voiceEvidence(command, control)
                     : command.directionBlock(control.target().direction());
+            }
         }
-        DispatchResult result = blocked.isEmpty() ? dispatchControl(action, control.target(), true)
+        DispatchResult result = blocked.isEmpty() ? dispatchControl(action, control.target(), true,
+                toggle != null ? toggle : lynkConfirmation(control.target(), false))
                 : new DispatchResult("blocked", blocked);
         Log.i(TAG, "event=dispatch_result id=" + id + " type=voice action=" + action.id
                 + " command=" + command + " result=" + result.state());
@@ -420,7 +454,7 @@ public final class GarageApp extends Application {
             return;
         }
         String token = confirmations.prepare(node, request.action(), target.key(), SystemClock.elapsedRealtime());
-        LynkConfirmation known = lynkConfirmation(target);
+        LynkConfirmation known = lynkConfirmation(target, true);
         String title = known == null ? target.title() : "领克 · " + known.label;
         send(node, request.id(), () -> BandMessage.reply(request.id(), "confirm", title)
                 .put("token", token).put("action", request.action().id));
@@ -451,11 +485,12 @@ public final class GarageApp extends Application {
             dispatchReply(node, request, "blocked", "确认已失效或按钮已变化，请重新选择");
             return;
         }
-        DispatchResult result = dispatchControl(request.action(), target, false);
+        DispatchResult result = dispatchControl(request.action(), target, false, lynkConfirmation(target, true));
         receipt(node, request, result.state(), result.note());
     }
 
-    private DispatchResult dispatchControl(CarAction action, GalaxyWidgets.Target target, boolean fromVoice) {
+    private DispatchResult dispatchControl(CarAction action, GalaxyWidgets.Target target, boolean fromVoice,
+                                           LynkConfirmation expected) {
         if (action == CarAction.LOCK) {
             appendEvent("准备" + target.title(), "卡片状态「" + widgets.vehicle().motion()
                     + "」 · 锁态「" + target.lockState() + "」", false);
@@ -463,14 +498,13 @@ public final class GarageApp extends Application {
         LynkApproval approval = null;
         String lynkFallback = "";
         if (brand == BrandConfig.LYNKCO) {
-            LynkConfirmation expected = lynkConfirmation(target);
             long revision = widgets.revision(widgets.primary());
             if (widgets.hasOfficialConfirmation(target.cardId()) || revision < 0) {
                 lynkFallback = "派发前卡片已经在确认中或不可读";
             } else if (!widgets.hasValidReading(target.cardId())) {
                 lynkFallback = "本次派发前没有读到有效的领克车况";
             } else if (expected == null) {
-                lynkFallback = "当前槽位没有已核对的锁窗功能和方向";
+                lynkFallback = "当前槽位未识别为可切换的车锁或车窗，也没有已核对的动作方向";
             } else {
                 approval = new LynkApproval(expected, revision, SystemClock.elapsedRealtime() + CONTROL_WAIT_MS,
                         lynkAuthorization, fromVoice);
@@ -489,9 +523,14 @@ public final class GarageApp extends Application {
         return new DispatchResult("dispatched", DISPATCHED);
     }
 
-    private LynkConfirmation lynkConfirmation(GalaxyWidgets.Target target) {
+    private LynkConfirmation lynkConfirmation(GalaxyWidgets.Target target, boolean allowToggle) {
         if (brand != BrandConfig.LYNKCO || !widgets.hasValidReading(target.cardId())) return null;
-        return LynkConfirmation.forMark(target.lockState(), target.direction());
+        LynkConfirmation marked = LynkConfirmation.forMark(target.lockState(), target.direction());
+        if (marked == null && allowToggle) {
+            if (target.isLynkWindow()) return LynkConfirmation.WINDOW_TOGGLE;
+            if (target.isLynkLock()) return LynkConfirmation.LOCK_TOGGLE;
+        }
+        return marked;
     }
 
     private boolean replyIfControlPending(String node, BandMessage request) {

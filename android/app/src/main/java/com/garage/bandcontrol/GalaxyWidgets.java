@@ -50,6 +50,16 @@ class GalaxyWidgets {
             return cardId + ":" + button.slot() + ":" + button.fingerprint() + ":" + direction + ":" + title;
         }
 
+        boolean isLynkWindow() {
+            if (!lockState.isEmpty()) return "车窗微开".equals(lockState) || "车窗全开".equals(lockState);
+            return button.lynkIcon() != null && "车窗".equals(button.lynkIcon().category);
+        }
+
+        boolean isLynkLock() {
+            if (!lockState.isEmpty()) return "锁".equals(lockState);
+            return button.lynkIcon() != null && "车锁".equals(button.lynkIcon().category);
+        }
+
         String lynkShortLabel() {
             String category = lockState;
             if (category.isEmpty() && button.lynkIcon() != null) {

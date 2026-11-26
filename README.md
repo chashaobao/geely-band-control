@@ -115,6 +115,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1
 
 领克 4.2.9 的桌面中型小组件提供三个可配置位置。伴侣显示当前实际同步数量，扫描时仍兼容布局中的隐藏节点。手机识别或手动标记的功能会同步短名称至穿戴端，并显示和银河同风格的对应图标。动作方向仍需车主核对。穿戴端确认一次后，伴侣只自动提交紧随本次已核对的锁窗指令、且标题与动作匹配的官方确认。其他弹窗仍需在手机处理。
 
-银河使用原 `GARAGE_V1` 米家通知码；领克开放 `LYNKCO_V1:TEST`、`LOCK`、`UNLOCK`、`WINDOW_VENT`、`WINDOW_OPEN`、`WINDOW_CLOSE`。语音直控需开启允许车控与米家语音，并由车主事先核对当前按钮标记、锁窗状态和方向。命令通过检查后由手机直接派发，无需连接手环或手表。米家手动场景和小爱设置见 [领克语音](docs/lynkco/voice.md)。
+银河使用原 `GARAGE_V1` 米家通知码。领克的 `LYNKCO_V1:WINDOW_TOGGLE` 和 `LYNKCO_V1:LOCK_TOGGLE` 会点击官方卡片上唯一能识别的对应按钮，无需预先标记方向。明确的开窗、关窗及锁车指令仍需核对按钮功能和方向。开启车控授权与米家语音后，通过检查的命令由手机直接派发，无需连接穿戴设备。指令完整列表见 [领克语音](docs/lynkco/voice.md)。
 
 评审见 [lynk-integration-review.md](docs/lynk-integration-review.md)，来源与验证边界见 [领克适配说明](docs/lynkco/compatibility.md)。静态代码、测试和编译通过不代表真机配对或控车通过。

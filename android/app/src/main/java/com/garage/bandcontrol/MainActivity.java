@@ -562,7 +562,7 @@ public final class MainActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("允许车控")
                 .setMessage("请确认当前卡片选中目标车辆，且映射按钮与" + app.brand.name + "小组件配置一致。米家语音指令或穿戴端确认将触发对应的官方按钮。"
-                        + (app.brand == BrandConfig.LYNKCO ? "领克语音无需穿戴设备。已核对的锁窗动作若弹出匹配的官方确认，伴侣会自动提交。" : "")
+                        + (app.brand == BrandConfig.LYNKCO ? "领克语音无需穿戴设备。切换车锁或车窗会点击官方按钮，由车主判断当前状态。与本次动作匹配的官方弹窗可由伴侣提交。" : "")
                         + "\n\n安全与免责提示：本工具为独立开源项目，与吉利汽车及小米无官方关联。远程控车存在通信与刷新延迟，车辆实际状态以" + app.brand.appName + " App 为准；"
                         + "米家语音收到通知后将直接执行，请谨慎设置触发口令；如搭配穿戴设备使用，请开启锁屏密码，离车或非本人佩戴时及时关闭车控授权。")
                 .setNegativeButton("取消", null)

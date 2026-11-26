@@ -27,6 +27,8 @@ final class MiHomeVoice {
         DEFROST(CarAction.DEFROST),
         SENTRY(CarAction.SENTRY),
         WINDOW_CLOSE(CarAction.WINDOW_OPEN, "关窗", ControlDirection.CLOSE),
+        WINDOW_TOGGLE(CarAction.LYNK_WINDOW, "切换车窗", null),
+        LOCK_TOGGLE(CarAction.LYNK_UNLOCK, "切换车锁", null),
         ENGINE(null, "发动机（待验证）", null),
         SUNROOF(null, "天窗（待验证）", null);
 
@@ -65,10 +67,11 @@ final class MiHomeVoice {
             default -> false;
         };
         if ("LYNKCO_V1".equals(namespace)) return switch (command) {
-            case TEST, LOCK, UNLOCK, WINDOW_VENT, WINDOW_OPEN, WINDOW_CLOSE -> true;
+            case TEST, LOCK, UNLOCK, WINDOW_VENT, WINDOW_OPEN, WINDOW_CLOSE, WINDOW_TOGGLE, LOCK_TOGGLE -> true;
             default -> false;
         };
         return "GARAGE_V1".equals(namespace) && command != Command.WINDOW_CLOSE
+                && command != Command.WINDOW_TOGGLE && command != Command.LOCK_TOGGLE
                 && command != Command.ENGINE && command != Command.SUNROOF;
     }
 
@@ -81,6 +84,7 @@ final class MiHomeVoice {
         if ("LYNKCO_V1".equals(namespace)) return switch (command) {
             case LOCK, UNLOCK -> CarAction.LYNK_UNLOCK;
             case WINDOW_VENT, WINDOW_OPEN, WINDOW_CLOSE -> CarAction.LYNK_WINDOW;
+            case WINDOW_TOGGLE, LOCK_TOGGLE -> null; // Resolve the button on the live card.
             default -> null;
         };
         return command.action;
