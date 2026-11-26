@@ -4,6 +4,24 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public final class BrandConfigTest {
+    @Test public void geelyUsesItsOwnProviderAndStorage() {
+        BrandConfig geely = BrandConfig.fromId("GEELY");
+        assertSame(BrandConfig.GEELY, geely);
+        assertEquals("com.geely.consumer", geely.packageName);
+        assertEquals("com.geely.consumer.carcontrol.widget.appwidget.Wg_Middle", geely.provider);
+        assertEquals("wg_middle_unbound", geely.setupLayout);
+        assertEquals("wg_middle_unable", geely.unavailableLayout);
+        assertEquals(BrandConfig.GALAXY.slots, geely.slots);
+        for (BrandConfig other : java.util.List.of(BrandConfig.GALAXY, BrandConfig.LYNKCO)) {
+            assertNotEquals(other.hostId, geely.hostId);
+            assertNotEquals(other.cardsKey, geely.cardsKey);
+            assertNotEquals(other.namespace, geely.namespace);
+        }
+        assertEquals(MiHomeVoice.Command.FIND, MiHomeVoice.match(geely.namespace, "GEELY_V1:FIND", null, null).command());
+        assertNull(MiHomeVoice.match(geely.namespace, "GARAGE_V1:FIND", null, null));
+        assertNull(MiHomeVoice.match(geely.namespace, "GEELY_V1:WINDOW_VENT", null, null));
+    }
+
     @Test public void legacyGalaxyStorageAndHostStayStable() {
         assertSame(BrandConfig.GALAXY, BrandConfig.fromId(""));
         assertSame(BrandConfig.GALAXY, BrandConfig.fromId("unknown"));

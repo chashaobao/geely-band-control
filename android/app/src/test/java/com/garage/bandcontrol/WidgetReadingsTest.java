@@ -43,6 +43,18 @@ public final class WidgetReadingsTest {
                 energy("658", "km", 46), "已驻车", "11-24 21:15", NOW, SHANGHAI));
     }
 
+    @Test public void geelyRejectsInitialTemplateAndAcceptsFuelOnly() {
+        assertEquals(VehicleStatus.EMPTY, WidgetReadings.parse(BrandConfig.GEELY, distance("--", "km"),
+                energy("36", "%", 36), energy("37", "%", 37), "", "更新于03/15 12:00", NOW, SHANGHAI));
+        VehicleStatus status = WidgetReadings.parse(BrandConfig.GEELY, distance("0", "km"),
+                energy("", "", null), energy("0", "%", 0), "已停车", "更新于11/24 09:15", NOW, SHANGHAI);
+        assertEquals(Integer.valueOf(0), status.totalKm());
+        assertEquals(Integer.valueOf(0), status.fuelPercent());
+        assertNull(status.electricPercent());
+        assertNull(status.fuelKm());
+        assertEquals(NOW - 60_000, status.updatedAt());
+    }
+
     @Test public void interpretsDecemberCardDateInEarlyJanuary() {
         long january = Instant.parse("2026-12-31T16:01:00Z").toEpochMilli();
         VehicleStatus status = WidgetReadings.parse(distance("734", "km"), energy("76", "km", null),

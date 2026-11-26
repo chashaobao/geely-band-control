@@ -9,9 +9,9 @@ import java.util.function.Consumer;
 import java.util.regex.Pattern;
 
 record BandMessage(String id, String type, CarAction action, String token, ControlDirection direction,
-                   String imageHash, int imageIndex) {
+                   String imageHash, int imageIndex, String brand) {
     BandMessage(String id, String type, CarAction action, String token, ControlDirection direction) {
-        this(id, type, action, token, direction, "", -1);
+        this(id, type, action, token, direction, "", -1, "");
     }
 
     static final int MAX_BYTES = 2048;
@@ -51,7 +51,7 @@ record BandMessage(String id, String type, CarAction action, String token, Contr
                 }
                 ControlDirection direction = ControlDirection.fromId(desired);
                 if (!desired.isEmpty() && !action.acceptsDirection(direction)) return null;
-                return new BandMessage(id, type, action, "", direction);
+                return new BandMessage(id, type, action, "", direction, "", -1, input.optString("brand"));
             case "execute":
                 return action == null || token.length() != 36 ? null : new BandMessage(id, type, action, token, null);
             case "cancel": return token.length() != 36 ? null : new BandMessage(id, type, null, token, null);
@@ -59,7 +59,7 @@ record BandMessage(String id, String type, CarAction action, String token, Contr
                 String hash = input.optString("hash");
                 int index = input.optInt("index", -1);
                 if (!HASH.matcher(hash).matches() || index < 0 || index > 200) return null;
-                return new BandMessage(id, type, null, "", null, hash, index);
+                return new BandMessage(id, type, null, "", null, hash, index, "");
             default: return null;
         }
     }

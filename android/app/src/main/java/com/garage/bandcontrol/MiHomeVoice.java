@@ -60,6 +60,10 @@ final class MiHomeVoice {
     }
 
     static boolean enabled(String namespace, Command command) {
+        if ("GEELY_V1".equals(namespace)) return switch (command) {
+            case TEST, LOCK, UNLOCK, CLIMATE, FIND -> true;
+            default -> false;
+        };
         if ("LYNKCO_V1".equals(namespace)) return switch (command) {
             case TEST, LOCK, UNLOCK, WINDOW_VENT, WINDOW_OPEN, WINDOW_CLOSE -> true;
             default -> false;

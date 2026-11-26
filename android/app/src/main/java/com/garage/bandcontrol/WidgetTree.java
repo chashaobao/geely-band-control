@@ -42,7 +42,7 @@ final class WidgetTree {
         View alarm = named(root, config.alarm);
         View motion = named(alarm, config.motion);
         if (motion == null) motion = unique(alarm, view -> view instanceof TextView);
-        return WidgetReadings.parse(distance(mileage, config.mileageValue, config.mileageUnit),
+        return WidgetReadings.parse(config, distance(mileage, config.mileageValue, config.mileageUnit),
                 energy(root, config.electric, config.electricBar),
                 energy(root, config.oil, config.oilBar),
                 text(motion), text(named(root, config.time)), now, zone);
@@ -73,7 +73,9 @@ final class WidgetTree {
         View visibleBar = unique(container, view -> view instanceof ProgressBar && config.energyBars.contains(resource(view)));
         Integer barPercent = progressPercent(visibleBar);
         Integer textPercent = percents.size() == 1 ? percents.values().iterator().next() : null;
-        return new WidgetReadings.Energy(distance, barPercent != null ? barPercent : textPercent);
+        Integer percent = config == BrandConfig.GEELY && textPercent != null ? textPercent
+                : barPercent != null ? barPercent : textPercent;
+        return new WidgetReadings.Energy(distance, percent);
     }
 
     private Integer progressPercent(View view) {
@@ -120,8 +122,9 @@ final class WidgetTree {
         if (clickable(settings, root)) {
             buttons.add(new Button(settings, config.settings, "", bounds(root, settings), "配置", config.settings, null, null));
         }
-        View refresh = named(root, config.refresh);
-        if (!loading(root) && clickable(refresh, root)) {
+        View refresh = loading(root) ? null : unique(root,
+                view -> config.refreshViews.contains(resource(view)) && clickable(view, root));
+        if (refresh != null) {
             buttons.add(new Button(refresh, config.refresh, "", bounds(root, refresh), "刷新车况", config.refresh, null, null));
         }
 

@@ -51,6 +51,16 @@ final class WidgetIcons {
 
     private List<Icon> load(Resources resources) {
         List<Icon> icons = new ArrayList<>();
+        if (config == BrandConfig.GEELY) {
+            add(icons, resources, new Match(CarAction.LOCK, WidgetTree.LOCKED), "black_lock", "white_lock");
+            add(icons, resources, new Match(CarAction.LOCK, WidgetTree.UNLOCKED), "black_unlock", "white_unlock");
+            add(icons, resources, new Match(CarAction.CLIMATE, "", ControlDirection.OPEN), "black_air", "white_air");
+            add(icons, resources, new Match(CarAction.CLIMATE, "", ControlDirection.CLOSE),
+                    "black_air_opened", "white_air_opened");
+            add(icons, resources, new Match(CarAction.FIND, ""),
+                    "black_findcar", "white_findcar", "black_findcar_opened", "white_findcar_opened");
+            return icons;
+        }
         add(icons, resources, new Match(CarAction.LOCK, WidgetTree.LOCKED),
                 "door_lock_off_black", "door_lock_off_white");
         add(icons, resources, new Match(CarAction.LOCK, WidgetTree.UNLOCKED), "door_lock_on");

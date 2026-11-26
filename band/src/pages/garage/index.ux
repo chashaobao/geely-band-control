@@ -626,7 +626,7 @@ export default {
   loadSnapshot() {
     readSnapshot((snapshot, value) => {
       if (this.destroyed || this.hasReply || this.compatibilityNotice) return
-      const brand = snapshot.brand === 'LYNKCO' ? 'LYNKCO' : 'GALAXY'
+      const brand = this.normalizeBrand(snapshot.brand)
       if (this.brand !== brand) {
         this.brand = brand
         this.carImageHash = ''
@@ -1005,7 +1005,7 @@ export default {
       return
     }
     if (this.mapped.indexOf(action) < 0) {
-      this.showToast('请在手机核对银河小组件配置')
+      this.showToast('请在手机核对' + this.brandName() + '小组件配置')
       this.vibrateFailure()
       return
     }
@@ -1078,8 +1078,9 @@ export default {
     }
     if (action) request.action = action
     if (token) request.token = token
-    if (type === 'prepare' && this.controlDirections[action]) {
-      request.controlDirection = this.controlDirections[action]
+    if (type === 'prepare') {
+      request.brand = this.brand
+      if (this.controlDirections[action]) request.controlDirection = this.controlDirections[action]
     }
     this.busy = type !== 'status' && type !== 'car_image'
     this.pending = request
@@ -1125,8 +1126,16 @@ export default {
     return Date.now().toString(36) + '_' + this.sequence.toString(36)
   },
 
+  normalizeBrand(value) {
+    return value === 'LYNKCO' || value === 'GEELY' ? value : 'GALAXY'
+  },
+
+  brandName() {
+    return this.brand === 'LYNKCO' ? '领克' : this.brand === 'GEELY' ? '吉利汽车' : '银河'
+  },
+
   applyBrand(value) {
-    const brand = value === 'LYNKCO' ? 'LYNKCO' : 'GALAXY'
+    const brand = this.normalizeBrand(value)
     if (brand === this.brand) return
     this.brand = brand
     this.clearConfirmation()
@@ -1224,7 +1233,7 @@ export default {
     this.controlNotice = typeof reply.controlNotice === 'string' ? reply.controlNotice : ''
     this.blockedControls = reply.blocked && typeof reply.blocked === 'object' ? reply.blocked : {}
     this.controlPending = reply.controlPending === true || this.phoneConfirmation
-    if (this.phoneConfirmation) this.controlNotice = '请在手机确认' + (this.brand === 'LYNKCO' ? '领克' : '银河') + '操作'
+    if (this.phoneConfirmation) this.controlNotice = '请在手机确认' + this.brandName() + '操作'
     const forBrand = ids => knownActions(ids).filter(id => this.brand === 'LYNKCO' ? id.indexOf('lynk_') === 0 : id.indexOf('lynk_') !== 0)
     const available = forBrand(reply.available)
     const mapped = (Array.isArray(reply.mapped) ? forBrand(reply.mapped) : available).slice(0, HOME_ACTIONS)
@@ -1244,7 +1253,7 @@ export default {
         || !needsDirection(action, this.controlDirectionsSupported) && !(action === 'lock' && cachedVehicle)))
     this.controlDirections = this.controlPending && !firstReply && !cachedVehicle
       ? Object.assign({}, this.controlDirections, directions) : directions
-    this.emptyLabel = '请在手机配置' + (this.brand === 'LYNKCO' ? '领克' : '银河') + '卡片'
+    this.emptyLabel = '请在手机配置' + this.brandName() + '卡片'
     this.updateRows()
     if (typeof reply.vehicleName === 'string') {
       this.vehicleName = normalizeVehicleName(reply.vehicleName)
@@ -1384,7 +1393,7 @@ export default {
     if (controlInterrupted && reason !== 'hidden') this.vibrateFailure()
     if (report && this.visible) {
       this.reportedLinkIssue = true
-      const result = '结果未知，请在银河 App 查看'
+      const result = '结果未知，请在' + this.brandName() + ' App 查看'
       this.showToast(waitingForControl ? (replyError ? message + '，' + result : result) : message)
     }
     this.scheduleStatus()
