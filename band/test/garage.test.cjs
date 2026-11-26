@@ -865,15 +865,17 @@ test('energy readings fall back to battery percentage when kilometers are unavai
 })
 
 
-test('Lynk fixed slots stay neutral, show pending validation and use prepare/token/execute', () => {
+test('Lynk fixed slots use neutral fallbacks and retain prepare/token/execute', () => {
   const link = start()
   link.hello({ brand: 'LYNKCO' })
   const state = { brand: 'LYNKCO', mapped: ['lynk_unlock', 'lynk_window', 'lynk_kjck', 'lynk_ccqk'],
-    available: ['lynk_unlock', 'lynk_window', 'lynk_kjck', 'lynk_ccqk'], controlDirections: {} }
+    available: ['lynk_unlock', 'lynk_window', 'lynk_kjck', 'lynk_ccqk'], controlDirections: {},
+    controlLabels: { lynk_unlock: '车锁' } }
   link.reply(state)
   assert.equal(link.page.brand, 'LYNKCO')
-  assert.equal(link.page.displayRows[1].first.label, 'kjck')
-  assert.equal(link.page.displayRows[1].first.hint, '待验证')
+  assert.equal(link.page.displayRows[0].first.label, '车锁')
+  assert.equal(link.page.displayRows[1].first.label, '功能3')
+  assert.equal(link.page.displayRows[1].first.hint, '')
   link.page.select('lynk_kjck')
   assert.equal(link.sent.at(-1).data.type, 'prepare')
   assert.equal(link.sent.at(-1).data.action, 'lynk_kjck')
