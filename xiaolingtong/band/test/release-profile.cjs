@@ -6,6 +6,18 @@ const path = require('node:path')
 const [root, profile] = process.argv.slice(2)
 assert.ok(['standard', 'pill'].includes(profile))
 const script = name => '(' + readFileSync(path.join(root, name), 'utf8').trim().replace(/^export default /, '') + ')'
+{
+  // Check assets in the release itself. A valid source-tree path alone does not put it in the RPK.
+  for (const group of ['', 'day/', 'open/']) {
+    const categories = group === 'open/' ? ['LOCK','TRUNK','WINDOW','CLIMATE','SUNROOF','ENGINE'] : ['LOCK','WINDOW','FIND','TRUNK','ENGINE','SUNROOF','CLIMATE','OTHER']
+    for (const category of categories) {
+      const image = readFileSync(path.join(root, 'common/controls/local', group, category + '.png'))
+      assert.deepEqual([...image.subarray(0,8)], [137,80,78,71,13,10,26,10])
+      assert.equal(image.readUInt32BE(16), 64)
+      assert.equal(image.readUInt32BE(20), 64)
+    }
+  }
+}
 for (const info of [null, {screenShape:'pill-shaped', screenWidth:192, screenHeight:490}, {screenShape:'rect', screenWidth:336, screenHeight:480}]) {
   const sent = []
   const runtime = {

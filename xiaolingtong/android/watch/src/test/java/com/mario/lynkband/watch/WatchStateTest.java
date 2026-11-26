@@ -40,6 +40,23 @@ public final class WatchStateTest {
         assertEquals("21L",state.data.getString("fuel"));
         assertEquals("开启通风",state.actions.getJSONObject(0).getString("label"));
     }
+    @Test public void everyRequestAsksForLocalIconsAndKeepsLegacyActionMetadata() throws Exception {
+        JSONObject window = window("closed").put("icon", "legacy-png");
+        for (String type : new String[]{"status", "refresh", "prepare", "execute"}) {
+            JSONObject request = state.request(type, "prepare".equals(type) ? window : null, 10);
+            assertEquals(type, Boolean.TRUE, request.get("visualActions"));
+            assertEquals(type, Boolean.TRUE, request.get("localWatchIcons"));
+            JSONObject response = panel(request, "A", new JSONObject(window.toString()));
+            if ("prepare".equals(type)) response.put("token", "once").put("label", window.getString("label"));
+            state.apply(response, null, 11);
+            JSONObject item = state.actions.getJSONObject(0);
+            assertFalse(item.has("icon"));
+            assertEquals("WINDOW", item.getString("category"));
+            assertEquals("closed", item.getString("controlState"));
+            assertEquals(window.getString("key"), item.getString("key"));
+        }
+    }
+
     @Test public void phoneSolarIsOptionalAndBelongsOnlyToTheCurrentStatusConnection() throws Exception {
         JSONObject request = state.request("status", null, 1);
         assertEquals(Boolean.TRUE, request.get("watchSolar"));
@@ -282,15 +299,15 @@ public final class WatchStateTest {
         apply(reply(req).put("note","已请求刷新").toString(),11);
         assertFalse(state.confirming()); assertEquals("已请求刷新",state.note);
     }
-    @Test public void readonlyVisualSlotsNeverPrepareAndIconStaysWithItsAction() throws Exception {
+    @Test public void readonlySlotsNeverPrepareAndConfirmationUsesMatchedCategoryAndState() throws Exception {
         assertNull(state.request("prepare", slot().put("enabled",false), 0));
         JSONObject req = state.request("prepare", slot(), 10);
-        assertTrue(req.getBoolean("visualActions"));
-        JSONObject other = slot().put("key","other-icon").put("icon","wrong");
-        JSONObject current = slot().put("icon","correct");
+        JSONObject other = slot().put("key","other-key").put("category","LOCK").put("controlState","closed");
+        JSONObject current = slot().put("category","WINDOW").put("controlState","open").put("icon","obsolete");
         apply(reply(req).put("actions",new JSONArray().put(other).put(current))
                 .put("label","开启通风").put("token","ticket").toString(), 11);
-        assertEquals("correct",state.confirmIcon());
+        assertEquals(com.mario.lynkband.transport.ControlCategory.WINDOW, state.confirmCategory());
+        assertEquals(WatchState.ControlState.OPEN, state.confirmState());
         assertFalse(state.request("execute",null,12).has("icon"));
     }
     @Test public void changedSlotInPrepareReplyCannotExecute() throws Exception {

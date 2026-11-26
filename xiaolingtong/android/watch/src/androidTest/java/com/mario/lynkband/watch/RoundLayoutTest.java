@@ -34,6 +34,9 @@ public class RoundLayoutTest {
     private WatchActivity activity;
     private final WatchState state = new WatchState();
     private JSONObject selected;
+    // A valid legacy phone icon (solid red square) must never replace bundled artwork.
+    private static final String OLD_PHONE_ICON =
+            "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP8zwACTGCSAQANHQEDgslx_wAAAABJRU5ErkJggg==";
 
     @Test
     public void homeShowsOnlySelectedWidgetTargets() throws Exception {
@@ -56,6 +59,8 @@ public class RoundLayoutTest {
             String[] actions = {"上锁", "关窗", "关空调", "后备箱"};
             String[] captions = {"车锁", "车窗", "空调", "后备箱"};
             String[] descriptions = {"车锁.关", "车窗.开", "空调.开", "后备箱.关"};
+            int[] artwork = {R.drawable.watch_control_lock, R.drawable.watch_control_window_open,
+                    R.drawable.watch_control_climate_open, R.drawable.watch_control_trunk};
             for (int i = 0; i < actions.length; i++)
                 state.actions.put(
                         new JSONObject()
@@ -66,7 +71,7 @@ public class RoundLayoutTest {
                                 .put("controlState", i == 1 || i == 2 ? "open" : "closed")
                                 .put("displayLabel", descriptions[i])
                                 .put("enabled", true)
-                                .put("icon", icon(i)));
+                                .put("icon", OLD_PHONE_ICON));
             device.runOnMainSync(
                     () -> {
                         face =
@@ -106,7 +111,7 @@ public class RoundLayoutTest {
                                     ViewGroup emblem = (ViewGroup) ((ViewGroup) tile).getChildAt(0);
                                     assertTrue(emblem.getWidth() >= 64 && emblem.getWidth() <= tile.getWidth());
                                     assertEquals(emblem.getWidth(), emblem.getHeight());
-                                    assertNotNull(findImage(emblem));
+                                    assertArtwork(emblem, artwork[i]);
                                     TextView caption = (TextView) ((ViewGroup) tile).getChildAt(1);
                                     assertEquals(20f, caption.getTextSize(), .1f);
                                     Bitmap drawn = Bitmap.createBitmap(70, 70, Bitmap.Config.ARGB_8888);
@@ -186,16 +191,7 @@ public class RoundLayoutTest {
                                 save("watch5-confirm.png");
                                 assertInsideDial(find(face, "确认操作"));
                                 assertCaptionFits(face, "关空调");
-                                ImageView icon = findImage(face);
-                                assertNotNull(icon);
-                                byte[] wire =
-                                        Base64.decode(
-                                                state.actions.getJSONObject(2).getString("icon"),
-                                                Base64.URL_SAFE);
-                                Bitmap original=BitmapFactory.decodeByteArray(wire,0,wire.length);
-                                Bitmap visible=((BitmapDrawable)icon.getDrawable()).getBitmap();
-                                assertTrue(visible.getWidth()<=original.getWidth());
-                                assertTrue(visible.getHeight()<=original.getHeight());
+                                assertArtwork(face, R.drawable.watch_control_climate_open);
                                 JSONObject execute = state.request("execute", null, 105);
                                 face.show(state, true, true);
                                 layout();
@@ -203,6 +199,7 @@ public class RoundLayoutTest {
                                 assertNotNull(waiting);
                                 assertFalse(waiting.isEnabled());
                                 assertFalse(waiting.isClickable());
+                                assertNull(findImage(waiting)); // Execution replaces the glyph with a spinner.
                                 assertNull(find(face, "空调.开"));
                                 state.apply(new JSONObject().put("v", 1).put("id", execute.getString("id"))
                                         .put("type", "executeAck").put("accepted", true).put("note", "已转交领克卡片"), null, 110);
@@ -228,7 +225,7 @@ public class RoundLayoutTest {
                                 face.show(state, true, true);
                                 layout();
                                 assertNull(find(face, "空调·执行中"));
-                                assertNotNull(find(face, "空调.关"));
+                                assertArtwork(find(face, "空调.关"), R.drawable.watch_control_climate);
                                 state.actions.getJSONObject(1).put("enabled", true)
                                         .put("controlState", "unknown").put("displayLabel", "车窗.未知");
                                 face.show(state, true, true);
@@ -340,11 +337,9 @@ public class RoundLayoutTest {
             state.status = "已允许穿戴车控";
             String[] names = {"车锁", "车窗", "空调", "后备箱"};
             String[] actions = {"解锁", "关窗", "开空调", "开后备箱"};
-            String[] resources = {"ic_ck_js_off", "ic_ck_cc_on", "ic_ck_kt_off", "ic_ck_hbx_off"};
             for (int i = 0; i < names.length; i++) {
                 state.actions.put(new JSONObject().put("slot", "slot" + i).put("key", "key" + i)
-                        .put("controlName", names[i]).put("label", actions[i]).put("controlState", i == 1 ? "open" : "closed")
-                        .put("icon", previewControl(resources[i], i)));
+                        .put("controlName", names[i]).put("label", actions[i]).put("controlState", i == 1 ? "open" : "closed"));
             }
             int[][] sizes = {{480,480}, {400,400}, {336,396}, {192,490}};
             for (int index = 0; index < sizes.length; index++) {
@@ -430,7 +425,6 @@ public class RoundLayoutTest {
             JSONObject first = photoFixture(Bitmap.CompressFormat.PNG, 120, 48, Color.RED);
             JSONObject next = photoFixture(Bitmap.CompressFormat.WEBP, 96, 32, Color.BLUE);
             String firstId = first.getString("carPhotoId"), nextId = next.getString("carPhotoId");
-            String lockIcon = previewControl("ic_ck_js_off", 0), acIcon = previewControl("ic_ck_kt_off", 2);
             JSONObject preview = previewPhoto().put("vehicle", "小银魔").put("range", "217").put("unit", "km")
                     .put("battery", "31%").put("fuel", "12.2 L").put("condition", "已驻车").put("time", "14:05");
             FutureTask<Void> check = new FutureTask<>(() -> {
@@ -474,8 +468,8 @@ public class RoundLayoutTest {
                 state.offline("断开");
                 assertNull(state.carPhoto);
                 state.actions = new JSONArray()
-                        .put(new JSONObject().put("slot", "lock").put("controlName", "车锁").put("label", "解锁").put("controlState", "closed").put("icon", lockIcon))
-                        .put(new JSONObject().put("slot", "ac").put("controlName", "空调").put("label", "开空调").put("controlState", "closed").put("icon", acIcon));
+                        .put(new JSONObject().put("slot", "lock").put("controlName", "车锁").put("label", "解锁").put("controlState", "closed"))
+                        .put(new JSONObject().put("slot", "ac").put("controlName", "空调").put("label", "开空调").put("controlState", "closed"));
                 showPhotoReply("", preview);
                 return null;
             });
@@ -617,20 +611,6 @@ public class RoundLayoutTest {
         return wirePhoto(out.toByteArray());
     }
 
-    private String previewControl(String name, int fallback) throws Exception {
-        String owner = "com.lynkco.customer";
-        try {
-            var resources = device.getContext().getPackageManager().getResourcesForApplication(owner);
-            int id = resources.getIdentifier(name, "mipmap", owner);
-            if (id != 0) {
-                return com.mario.lynkband.transport.WatchIconCodec.encodeResource(resources, id, true);
-            }
-        } catch (android.content.pm.PackageManager.NameNotFoundException unavailable) {
-            // A standalone layout test can also use the generated fixture glyph.
-        }
-        return icon(fallback);
-    }
-
     private JSONObject previewPhoto() throws Exception {
         String pkg = "com.lynkco.customer";
         try {
@@ -730,58 +710,13 @@ public class RoundLayoutTest {
                 assertTrue(r.toString(), Math.hypot(x - 240, y - 240) <= 240);
     }
 
-    // Four independent fixture glyphs are transmitted as PNG pixels, just like the phone card.
-    private static String icon(int index) throws IOException {
-        Bitmap bmp = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888);
-        Canvas c = new Canvas(bmp);
-        c.scale(2, 2);
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setColor(0xffe9f5ed);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeJoin(Paint.Join.ROUND);
-        p.setStrokeCap(Paint.Cap.ROUND);
-        p.setStrokeWidth(1.6f);
-        Path path = new Path();
-        switch (index) {
-            case 0 -> {
-                c.drawRoundRect(5, 10, 19, 21, 2, 2, p);
-                c.drawArc(8, 3, 16, 17, 180, 180, false, p);
-                c.drawLine(12, 14, 12, 17, p);
-            }
-            case 1 -> {
-                path.moveTo(3, 17);
-                path.lineTo(6, 9);
-                path.quadTo(8, 5, 12, 5);
-                path.lineTo(21, 5);
-                path.lineTo(21, 17);
-                path.close();
-                c.drawPath(path, p);
-                c.drawLine(3, 20, 21, 20, p);
-            }
-            case 2 -> {
-                for (int i = 0; i < 3; i++) {
-                    c.drawLine(12, 3, 12, 21, p);
-                    path.reset();
-                    path.moveTo(9, 5);
-                    path.lineTo(12, 8);
-                    path.lineTo(15, 5);
-                    c.drawPath(path, p);
-                    c.rotate(120, 12, 12);
-                }
-            }
-            default -> {
-                path.moveTo(2, 15);
-                path.lineTo(6, 11);
-                path.lineTo(14, 11);
-                path.lineTo(18, 6);
-                path.lineTo(21, 6);
-                c.drawPath(path, p);
-                c.drawLine(3, 16, 20, 16, p);
-                c.drawCircle(7, 18, 2, p);
-                c.drawCircle(17, 18, 2, p);
-            }
-        }
-        return com.mario.lynkband.transport.WatchIconCodec.encode(bmp);
+    private static void assertArtwork(View root, int expectedResource) {
+        assertNotNull(root);
+        ImageView image = findImage(root);
+        assertNotNull(image);
+        Bitmap expected = ((BitmapDrawable) root.getContext().getDrawable(expectedResource)).getBitmap();
+        Bitmap actual = ((BitmapDrawable) image.getDrawable()).getBitmap();
+        assertTrue("Expected bundled " + root.getResources().getResourceEntryName(expectedResource), expected.sameAs(actual));
     }
 
     private static ImageView findImage(View v) {

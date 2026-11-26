@@ -12,7 +12,6 @@ import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.text.TextUtils;
-import android.util.LruCache;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -20,7 +19,6 @@ import android.widget.*;
 
 import com.mario.lynkband.solar.ThemeSync;
 import com.mario.lynkband.transport.ControlCategory;
-import com.mario.lynkband.transport.WatchIconCodec;
 
 import org.json.JSONObject;
 
@@ -51,7 +49,6 @@ final class WatchFace extends FrameLayout {
     }
 
     private final Controls events;
-    private final LruCache<String, Bitmap> icons = new LruCache<>(20);
     private final FrameLayout dial;
     private final Path roundViewport = new Path();
     private int windowWidth, windowHeight;
@@ -217,7 +214,7 @@ final class WatchFace extends FrameLayout {
                         + paired
                         + model.confirming()
                         + model.title()
-                        + model.confirmIcon()
+                        + model.confirmCategory() + model.confirmState()
                         + model.status
                         + "|"
                         + model.note
@@ -470,7 +467,7 @@ final class WatchFace extends FrameLayout {
         private final TextView caption;
         private final FrameLayout emblem;
         private View glyph;
-        private String iconKey;
+        private int iconResource;
         private JSONObject bound;
         private WatchState.ControlState state;
         private int tint;
@@ -498,21 +495,18 @@ final class WatchFace extends FrameLayout {
             String action = item.optString("label");
             String name = executing ? WatchState.controlName(item) + "·执行中" : WatchState.tileCaption(item);
             ControlCategory category = ControlCategory.resolve(item.optString("category"), action);
-            String encoded = item.optString("icon");
             WatchState.ControlState next = executing ? WatchState.ControlState.LOADING : WatchState.ControlState.of(item);
-            String symbol = category == ControlCategory.LOCK && next == WatchState.ControlState.OPEN
-                    ? "unlock" : category.symbol;
-            String key = executing ? "pending" : symbol + ":" + encoded;
-            boolean newGlyph = !key.equals(iconKey);
+            int drawable = executing ? 0 : controlDrawable(category, next);
+            boolean newGlyph = glyph == null || iconResource != drawable;
             if (newGlyph) {
-                iconKey = key;
+                iconResource = drawable;
                 emblem.removeAllViews();
                 if (executing) {
                     Symbol spinner = new Symbol("executing", stateTint(next));
                     glyph = spinner;
                     emblem.addView(spinner, new FrameLayout.LayoutParams(px(46), px(46), Gravity.CENTER));
                 } else {
-                    glyph = actionIcon(encoded, symbol);
+                    glyph = actionIcon(drawable);
                     emblem.addView(glyph, -1, -1);
                 }
             }
@@ -549,16 +543,6 @@ final class WatchFace extends FrameLayout {
             } else if (newGlyph) paintTint(transition != null && transition.isRunning() ? tint : target);
         }
 
-        private int stateTint(WatchState.ControlState state) {
-            boolean dark = nightScene();
-            return switch (state) {
-                case OPEN -> dark ? 0xff63d998 : 0xff16703e;
-                case LOADING -> dark ? 0xffffd358 : 0xff886500;
-                case UNKNOWN -> dark ? 0xffa5a9ae : 0xff666b70;
-                default -> color(R.color.ink);
-            };
-        }
-
         private void paintTint(int color) {
             tint = color;
             if (glyph instanceof ImageView image) image.setImageTintList(ColorStateList.valueOf(color));
@@ -578,7 +562,10 @@ final class WatchFace extends FrameLayout {
     private void confirmPage() {
         label("确认车控", 22, color(R.color.muted), false, 110, 32, 260, 34);
         FrameLayout emblem = new FrameLayout(getContext());
-        place(emblem, actionIcon(model.confirmIcon(), model.title(), model.confirmCategory()), 14, 14, 60, 60);
+        WatchState.ControlState state = model.confirmState();
+        ImageView icon = actionIcon(controlDrawable(model.confirmCategory(), state));
+        icon.setImageTintList(ColorStateList.valueOf(stateTint(state)));
+        place(emblem, icon, 14, 14, 60, 60);
         put(emblem, 196, 62, 88, 88);
         label(model.title(), 36, color(R.color.ink), true, 65, 146, 350, 54);
         label(value("vehicle", "领克官方卡片"), 20, color(R.color.muted), false, 85, 201, 310, 32);
@@ -727,40 +714,36 @@ final class WatchFace extends FrameLayout {
         return s.isEmpty() ? fallback : s;
     }
 
-    private View actionIcon(String encoded, String name, ControlCategory category) {
-        String symbol = category == ControlCategory.LOCK && name.contains("解") ? "unlock" : category.symbol;
-        return actionIcon(encoded, symbol);
+    private int stateTint(WatchState.ControlState state) {
+        boolean dark = nightScene();
+        return switch (state) {
+            case OPEN -> dark ? 0xff63d998 : 0xff16703e;
+            case LOADING -> dark ? 0xffffd358 : 0xff886500;
+            case UNKNOWN -> dark ? 0xffa5a9ae : 0xff666b70;
+            default -> color(R.color.ink);
+        };
     }
 
-    private View actionIcon(String encoded, String fallbackSymbol) {
-        Bitmap bitmap = icons.get(encoded);
-        if (bitmap == null) {
-            bitmap = WatchIconCodec.decode(encoded);
-            if (bitmap != null) {
-                int w = bitmap.getWidth(), h = bitmap.getHeight();
-                int[] pixels = new int[w * h];
-                bitmap.getPixels(pixels, 0, w, 0, 0, w, h);
-                Rect ink = new Rect();
-                for (int y = 0; y < h; y++) {
-                    for (int x = 0; x < w; x++) {
-                        if (Color.alpha(pixels[y * w + x]) > 12) ink.union(x, y, x + 1, y + 1);
-                    }
-                }
-                if (ink.isEmpty()) return new Symbol(fallbackSymbol, color(R.color.link));
-                bitmap = Bitmap.createBitmap(bitmap, ink.left, ink.top, ink.width(), ink.height());
-                bitmap.setDensity(Bitmap.DENSITY_NONE);
-                icons.put(encoded, bitmap);
-            }
-        }
-        if (bitmap != null) {
-            ImageView iv = new ImageView(getContext());
-            iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            iv.setImageBitmap(bitmap);
-            iv.setPadding(px(5), px(5), px(5), px(5));
-            iv.setImageTintList(ColorStateList.valueOf(color(R.color.ink)));
-            return iv;
-        }
-        return new Symbol(fallbackSymbol, color(R.color.link));
+    // The PNGs include their optical padding. The watch palette supplies day/night contrast.
+    private ImageView actionIcon(int drawable) {
+        ImageView image = new ImageView(getContext());
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        image.setImageResource(drawable);
+        return image;
+    }
+
+    private static int controlDrawable(ControlCategory category, WatchState.ControlState state) {
+        boolean open = state == WatchState.ControlState.OPEN;
+        return switch (category) {
+            case LOCK -> open ? R.drawable.watch_control_lock_open : R.drawable.watch_control_lock;
+            case WINDOW -> open ? R.drawable.watch_control_window_open : R.drawable.watch_control_window;
+            case ENGINE -> open ? R.drawable.watch_control_engine_open : R.drawable.watch_control_engine;
+            case TRUNK -> open ? R.drawable.watch_control_trunk_open : R.drawable.watch_control_trunk;
+            case SUNROOF -> open ? R.drawable.watch_control_sunroof_open : R.drawable.watch_control_sunroof;
+            case CLIMATE -> open ? R.drawable.watch_control_climate_open : R.drawable.watch_control_climate;
+            case FIND -> R.drawable.watch_control_find;
+            case OTHER -> R.drawable.watch_control_other;
+        };
     }
 
     private void label(String s, int size, int color, boolean bold, int x, int y, int w, int h) {
@@ -919,59 +902,6 @@ final class WatchFace extends FrameLayout {
                     line(c, 7, 12, 21, 12);
                 }
                 case "check" -> line(c, 4, 12, 10, 18, 21, 6);
-                case "lock", "unlock" -> {
-                    c.drawRoundRect(5, 10, 19, 21, 2, 2, pen);
-                    c.drawArc(8, 3, 16, 15, 180, id.equals("lock") ? 180 : 120, false, pen);
-                    line(c, 12, 14, 12, 17);
-                }
-                case "window" -> {
-                    line(c, 3, 17, 6, 8, 10, 5, 20, 5, 20, 17, 3, 17);
-                    line(c, 3, 20, 21, 20);
-                }
-                case "climate" -> {
-                    for (int i = 0; i < 3; i++) {
-                        line(c, 12, 3, 12, 21);
-                        line(c, 9, 5, 12, 8, 15, 5);
-                        c.rotate(120, 12, 12);
-                    }
-                }
-                case "trunk" -> {
-                    line(c, 2, 15, 6, 10, 14, 10, 18, 5, 21, 5);
-                    line(c, 3, 16, 20, 16, 20, 13, 15, 12);
-                    c.drawCircle(6, 18, 1.6f, pen);
-                    c.drawCircle(17, 18, 1.6f, pen);
-                }
-                case "find" -> {
-                    Path pin = new Path();
-                    pin.moveTo(12, 22);
-                    pin.cubicTo(10, 20, 4, 14, 4, 10);
-                    pin.cubicTo(4, 0, 20, 0, 20, 10);
-                    pin.cubicTo(20, 14, 14, 20, 12, 22);
-                    c.drawPath(pin, pen);
-                    c.drawCircle(12, 10, 2.5f, pen);
-                }
-                case "engine" -> {
-                    line(
-                            c, 4, 9, 7, 9, 9, 6, 15, 6, 17, 9, 20, 9, 20, 12, 22, 11, 22, 17, 19,
-                            16, 17, 19, 9, 19, 6, 16, 4, 16, 4, 9);
-                    line(c, 9, 3, 15, 3);
-                    line(c, 12, 3, 12, 6);
-                    line(c, 1, 10, 1, 15);
-                }
-                case "sunroof" -> {
-                    line(c, 3, 16, 6, 10, 19, 10, 22, 16, 3, 16);
-                    line(c, 7, 13, 17, 13);
-                    line(c, 9, 7, 15, 4);
-                    line(c, 11, 20, 15, 20);
-                }
-                case "more" -> {
-                    for (int x : new int[] {5, 12, 19}) c.drawCircle(x, 12, 1, pen);
-                }
-                default -> {
-                    for (int x : new int[] {4, 14})
-                        for (int y : new int[] {4, 14})
-                            c.drawRoundRect(x, y, x + 6, y + 6, 1, 1, pen);
-                }
             }
             c.restore();
         }

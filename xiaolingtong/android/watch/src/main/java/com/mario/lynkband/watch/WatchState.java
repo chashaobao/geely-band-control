@@ -135,7 +135,7 @@ final class WatchState {
     }
     boolean confirming() { return choice != null; }
     String title() { return choice == null ? "" : choice.optString("label"); }
-    String confirmIcon() { return choice == null ? "" : choice.optString("icon"); }
+    ControlState confirmState() { return choice == null ? ControlState.LEGACY : ControlState.of(choice); }
     ControlCategory confirmCategory() {
         return ControlCategory.resolve(choice == null ? "" : choice.optString("category"), title());
     }
@@ -146,8 +146,8 @@ final class WatchState {
         if (loading != null && now >= loadingDeadline) finishUnknown();
         if (type.equals("prepare") && !canControl(action)) return null;
         JSONObject request = new JSONObject().put("v", 1).put("id", UUID.randomUUID().toString())
-                .put("type", type).put("visualActions", true).put("supportsControlState", true)
-                .put(com.mario.lynkband.transport.WatchIconCodec.HD_CAPABILITY, true).put("carPhotoId", carPhotoId);
+                .put("type", type).put("visualActions", true).put("localWatchIcons", true)
+                .put("supportsControlState", true).put("carPhotoId", carPhotoId);
         if ("status".equals(type)) request.put("watchSolar", true);
         if (type.equals("execute")) {
             if (choice == null) return null;
@@ -201,6 +201,11 @@ final class WatchState {
         if (data.remove("carPhoto") != null || !carPhotoId.equals(incomingId)) {
             carPhoto = decodedPhoto;
             carPhotoId = decodedPhoto == null ? "" : incomingId;
+        }
+        // Older phones still send PNGs with visual metadata. Keep them out of display and confirmation state.
+        for (int i = 0; i < nextActions.length(); i++) {
+            JSONObject item = nextActions.optJSONObject(i);
+            if (item != null) item.remove("icon");
         }
         actions = nextActions;
         status = nextStatus;

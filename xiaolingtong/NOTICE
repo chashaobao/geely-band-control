@@ -10,6 +10,7 @@ host, phone and wrist user interfaces, control protocol and tests.
 The Gradle Wrapper retains its upstream notices. The Xiaomi Wearable SDK included
 in the local Android build is subject to Xiaomi's terms. The build downloads the
 pinned AAR from the official sample and checks its SHA-256. The Android and Vela
-toolchains and their dependencies retain their original licenses. The official
-Lynk & Co application and its widget resources are supplied by the owner’s
-installed application and are not included in this project.
+toolchains and their dependencies retain their original licenses. The Watch 5 and Vela packages
+include control pictograms from the Chinese Lynk & Co 4.3.1 widget, adapted for
+small displays. These pictograms belong to their respective rights holders.
+Vehicle photographs and live widget content come from the owner's installed app.

@@ -445,6 +445,7 @@ public class WristApp extends Application {
         JSONArray actions = new JSONArray();
         boolean permitted = permits(node);
         boolean visual = node.startsWith("watch:") && request.optBoolean("visualActions");
+        boolean sendWatchIcons = visual && !Boolean.TRUE.equals(request.opt("localWatchIcons"));
         boolean listSelected = visual || (node.startsWith("band:") && request.optBoolean("selectedActions"));
         String bandIconKey = node.startsWith("band:") && "status".equals(request.opt("type"))
                 && request.opt("bandIconKey") instanceof String key && !key.isEmpty()
@@ -455,7 +456,7 @@ public class WristApp extends Application {
                 if (control.action().isEmpty() && !listSelected) continue;
                 JSONObject item = control.wireAction(slot, listSelected, permitted);
                 boolean bandIcon = slot.signature().equals(bandIconKey);
-                if ((visual && slot.icon() != null) || bandIcon) {
+                if ((sendWatchIcons && slot.icon() != null) || bandIcon) {
                     WatchIconCodec.Profile profile = bandIcon ? WatchIconCodec.Profile.BAND
                             : request.optBoolean(WatchIconCodec.HD_CAPABILITY) ? WatchIconCodec.Profile.HD
                             : WatchIconCodec.Profile.LEGACY;

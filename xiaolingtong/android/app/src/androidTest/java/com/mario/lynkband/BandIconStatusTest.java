@@ -78,6 +78,59 @@ public class BandIconStatusTest {
         work.get();
     }
 
+    @Test public void localWatchIconsSkipEncodingForEverySnapshotAndKeepVisualMetadata() throws Exception {
+        var instrumentation = InstrumentationRegistry.getInstrumentation();
+        var work = new FutureTask<Void>(() -> {
+            Context context = instrumentation.getContext();
+            FrameLayout live = named(new FrameLayout(context), "rl_widget_cal_state");
+            var vehicle = named(new TextView(context), "widget_name");
+            vehicle.setText("Read-only vehicle");
+            live.addView(vehicle);
+            var glyph = addGlyph(live, "fr_window", "window", Color.BLUE);
+            var icon = new ColorDrawable(Color.BLUE) {
+                int artworkDraws;
+                @Override public void draw(android.graphics.Canvas canvas) {
+                    // Slot identity and state matching draw at 48px. The encoder draws this icon at 96px.
+                    if (canvas.getWidth() == 96) artworkDraws++;
+                    super.draw(canvas);
+                }
+            };
+            glyph.setImageDrawable(icon);
+            var phone = new FixturePhone(instrumentation.getTargetContext(), live);
+            phone.paired = true;
+            try {
+                var request = new JSONObject().put("v", 1).put("id", "watch-icons").put("visualActions", true)
+                        .put("hdActionIcons", true).put("localWatchIcons", true);
+                for (String type : new String[]{"status", "refresh", "prepare", "execute"}) {
+                    var actions = phone.status("watch:fixture", request.put("type", type)).getJSONArray("actions");
+                    assertEquals(1, actions.length());
+                    var item = actions.getJSONObject(0);
+                    for (String field : new String[]{"slot", "key", "label", "category", "displayLabel", "controlName", "controlState"})
+                        assertTrue(field, item.has(field));
+                    assertFalse(item.getBoolean("enabled"));
+                    assertFalse(item.has("icon"));
+                    assertFalse(item.has("bandIconPng"));
+                }
+                assertEquals(0, icon.artworkDraws);
+
+                request.put("type", "status");
+                for (Object legacyFlag : new Object[]{null, false, "true"}) {
+                    request.put("localWatchIcons", legacyFlag);
+                    var item = phone.status("watch:fixture", request).getJSONArray("actions").getJSONObject(0);
+                    assertTrue(item.getString("icon").startsWith("iVBORw0KGgo"));
+                }
+                assertTrue(icon.artworkDraws > 0);
+                var warm = phone.status("watch:fixture", request.put("localWatchIcons", true)).getJSONArray("actions").getJSONObject(0);
+                assertFalse(warm.has("icon"));
+                request.put("selectedActions", true).put("bandIconKey", warm.getString("key"));
+                assertTrue(phone.status(request).getJSONObject(0).getString("bandIconPng").startsWith("iVBORw0KGgo"));
+            } finally { phone.disarm(); }
+            return null;
+        });
+        instrumentation.runOnMainSync(work);
+        work.get();
+    }
+
     @Test public void themeAndPhoneSolarRelayBetweenPairedWatchAndBand() throws Exception {
         var instrumentation = InstrumentationRegistry.getInstrumentation();
         var task = new FutureTask<Void>(() -> {

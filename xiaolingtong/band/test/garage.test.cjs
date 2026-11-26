@@ -170,9 +170,7 @@ test('pill and undetected layouts ignore even unsolicited valid photos', () => {
 test('controls and refresh preempt in-flight photo statuses and ignore their late replies', () => {
   const s = photoSession()
   s.chunk('a', 0, 100, {}, [slot])
-  const next = s.poll()
-  if (next.bandIconKey) s.reply({actions:[{...slot, bandIconPng:''}]})
-  const stale = next.bandPhoto ? next : s.poll()
+  const stale = s.poll()
   assert.equal(stale.bandPhoto, true)
   assert.equal(stale.photoOffset, 100)
   s.page.prepare(slot.slot)
@@ -188,6 +186,27 @@ test('controls and refresh preempt in-flight photo statuses and ignore their lat
   s.page.refresh()
   assert.equal(s.sent.at(-1).type, 'refresh')
   assertNoPhotoFields(s.sent.at(-1))
+})
+
+test('partial photos yield to command follow-up and queued refresh, then resume at the saved offset', () => {
+  const s = photoSession()
+  const item = {...slot, category:'WINDOW', controlState:'open'}
+  s.chunk('image', 0, 100, {}, [item]); s.poll()
+  s.page.prepare(item.slot); s.reply({actions:[item], token:'once', label:item.label})
+  s.advance(501); s.page.confirm()
+  s.reply({type:'executeAck', accepted:true, note:'已转交'})
+  const required = s.sent.at(-1)
+  assert.equal(required.type, 'status'); assertNoPhotoFields(required)
+  s.page.refresh()
+  assert.equal(s.sent.at(-1), required)
+  s.reply({actions:[item]})
+  assert.equal(s.sent.at(-1).type, 'refresh'); assertNoPhotoFields(s.sent.at(-1))
+  s.reply({actions:[item]})
+  assertNoPhotoFields(s.poll())
+  s.reply({actions:[{...item, controlState:'closed'}]})
+  const resumed = s.poll()
+  assert.equal(resumed.photoTransferId, 'image'); assert.equal(resumed.photoOffset, 100)
+  assert.equal(s.sent.filter(request => request.type === 'execute').length, 1)
 })
 
 test('bad metadata, oversized, reordered or mixed chunks discard partial transfers', () => {
@@ -220,16 +239,93 @@ test('late cache writes cannot revive photos after revocation, hiding or disconn
   }
 })
 
+test('cold and warm photo timing with a frame-limited .37 phone', t => {
+  const s = photoSession()
+  const bytes = readFileSync(path.resolve(__dirname, '../src/common/icon.png'))
+  const payload = bytes.toString('base64'), id = 'digest'
+  const actions = [slot, {...slot, slot:'door', key:'card/door'}]
+  // Simulate a 4 KiB status envelope with room for 768 base64 characters.
+  // Measure scheduled idle time separately from transport and native decoder latency.
+  function visit() {
+    let idleMs = 0, chunks = 0, replies = 0
+    while (!s.row()) {
+      assert.ok(replies < 30, 'transfer must finish')
+      if (replies++) {
+        idleMs += s.timers.get(s.page.pollTimer).delay
+        s.poll()
+      }
+      const request = s.sent.at(-1), data = {vehicle:'测试车辆'}
+      assert.equal(request.type, 'status')
+      if (request.bandPhoto) {
+        data.carPhotoId = id
+        if (request.carPhotoId !== id) {
+          const offset = request.photoTransferId === id ? request.photoOffset : 0
+          Object.assign(data, {carPhotoOffset:offset, carPhotoLength:payload.length,
+            carPhotoMime:'image/png', carPhotoChunk:payload.slice(offset, offset + 768)})
+          chunks++
+        }
+      }
+      const writes = s.writes.length
+      s.reply({actions, data})
+      if (s.writes.length > writes) {
+        assert.deepEqual(Buffer.from(s.writes.at(-1).buffer), bytes)
+        s.writes.at(-1).success()
+      }
+    }
+    return {idleMs, chunks, replies}
+  }
+  const cold = visit()
+  s.page.onHide(); s.page.onShow()
+  const warm = visit()
+  t.diagnostic(JSON.stringify({base64Chars:payload.length, cold, warm}))
+  assert.deepEqual(cold, {idleMs:288, chunks:10, replies:10})
+  assert.deepEqual(warm, {idleMs:0, chunks:0, replies:1})
+  assert.equal(s.writes.length, 1)
+})
+
+test('a suspended completed photo requires a fresh vehicle and photo ID, and is deleted on destroy', () => {
+  for (const interrupt of ['hide','disconnect']) {
+    for (const next of ['same','vehicle','missingVehicle','missingId','changedId','emptyId']) {
+      const s = photoSession()
+      s.chunk('original', 0, encoded.length, {}, [slot]); s.writes[0].success()
+      const uri = s.row().children[0].src, stale = s.poll()
+      if (interrupt === 'hide') { s.page.onHide(); s.page.onShow() }
+      else { s.connection.onclose(); s.poll() }
+      assert.equal(s.row(), undefined)
+      assert.deepEqual(s.deleted, [])
+      assert.equal(s.sent.at(-1).carPhotoId, 'original')
+      s.reply({id:stale.id, data:{vehicle:'测试车辆', carPhotoId:'original'}})
+      assert.equal(s.row(), undefined)
+      const data = {vehicle:next === 'vehicle' ? '另一辆车' : '测试车辆', carPhotoId:'original'}
+      if (next === 'missingVehicle') delete data.vehicle
+      if (next === 'missingId') delete data.carPhotoId
+      if (next === 'emptyId') data.carPhotoId = ''
+      if (next === 'changedId') data.carPhotoId = 'different'
+      s.reply({data})
+      if (next === 'same') {
+        assert.equal(s.row().children[0].src, uri)
+        assert.equal(s.writes.length, 1)
+        s.page.onHide()
+        assert.equal(s.row(), undefined)
+        s.page.onDestroy()
+      } else assert.equal(s.row(), undefined)
+      assert.deepEqual(s.deleted, [uri])
+      if (next !== 'same') assert.equal(s.poll().carPhotoId, '')
+    }
+  }
+})
+
 test('paced photo retries have a bounded burst even if a peer sends a character per status', () => {
   const s = photoSession()
   const delays = []
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 20; i++) {
     s.chunk('small', i, i + 1)
     delays.push(s.timers.get(s.page.pollTimer).delay)
     assert.equal(s.poll().photoOffset, i + 1)
   }
-  assert.ok(delays.every(delay => delay >= 300))
-  assert.ok(delays.includes(5000))
+  assert.deepEqual(delays.slice(0, 16), Array(16).fill(32))
+  assert.equal(delays[16], 5000)
+  assert.equal(delays[17], 32)
 })
 
 test('home uses only current widget slots and refuses read-only actions', () => {
@@ -402,7 +498,7 @@ test('icon badge uses reported state with either phone appearance; loading and u
       const badge = tile.children[0]
       assert.deepEqual(badge.classes, i === 2 ? ['badge','pulse'] : ['badge'])
       const darkGlyph = i !== 1
-      assert.equal(badge.children[0].src, '/common/controls/' + (darkGlyph ? 'day/' : '') + 'OTHER.png')
+      assert.equal(badge.children[0].src, '/common/controls/local/' + (darkGlyph ? 'day/' : '') + 'OTHER.png')
     }
     for (const tile of tiles.slice(2)) tile.click()
     assert.equal(s.sent.length, 1)
@@ -846,144 +942,55 @@ for (const [width, height, shape, themed] of [
 
 const pillIcons = {getInfo:({success}) => success({screenShape:'pill-shaped', screenWidth:192, screenHeight:490})}
 const iconAction = {...slot, category:'WINDOW', controlState:'closed'}
-const lockAction = {...iconAction, slot:'fr_unlock', key:'card/lock/current', category:'LOCK', enabled:false}
-
-for (const [shape, device] of [['standard', undefined], ['pill', pillIcons]]) {
-  test(`${shape} renders only the requested official glyph and retains it through confirmation`, () => {
+for (const [layout, device] of [['square', undefined], ['standard single', {getInfo:({success}) => success({...square, screenHeight:396})}], ['capsule', pillIcons]]) {
+  test(`${layout} maps bundled art by reported category and keeps unchanged rows mounted`, () => {
     const s = photoSession(device)
-    const actions = [iconAction, lockAction]
-    const rows = () => s.feed().children.filter(row => row.type === (shape === 'pill' ? 'actionSingle' : 'actionpair'))
-    const tiles = () => rows().flatMap(row => row.children)
-    const glyph = tile => tile.children[0].children[0].src
-    assert.equal(compiledRule(s.page, 'glyph').objectFit, 'contain')
+    // These are the companion's ControlCategory names. Keys and slot order deliberately carry no category information.
+    const categories = ['WINDOW','FIND','LOCK','OTHER','CLIMATE','TRUNK','ENGINE','SUNROOF','future/category']
+    const actions = categories.map((category, i) => ({...iconAction, category, slot:'s' + i, key:'opaque-' + i,
+      controlName:category, bandIconPng:encoded}))
+    const tiles = () => s.feed().children.filter(row => row.type === 'actionSingle' || row.type === 'actionpair').flatMap(row => row.children)
+    function checkBadge(badge, filename) {
+      assert.equal(badge.children.length, 1)
+      const [image] = badge.children
+      assert.equal(image.src, '/common/controls/local/' + filename + '.png')
+      const packaged = readFileSync(path.join(__dirname, '../build', image.src))
+      assert.equal(packaged.subarray(0, 8).toString('hex'), '89504e470d0a1a0a')
+      if (filename.startsWith('open/')) assert.equal(badge.style.backgroundColor, '#192b3e')
+      assert.equal(image.complete, undefined)
+      assert.equal(image.error, undefined)
+    }
     s.reply({actions})
-    const wanted = s.poll()
-    assert.equal(wanted.bandIconKey, slot.key)
-    assertNoPhotoFields(wanted)
-    s.reply({actions:actions.map(item => ({...item, bandIconPng:encoded}))})
-    assert.equal(s.writes.length, 1)
-    assert.deepEqual(Buffer.from(s.writes[0].buffer), png)
-    assert.equal(glyph(tiles()[0]), '/common/controls/WINDOW.png')
-    s.writes[0].success()
-    assert.match(s.writes[0].uri, /^internal:\/\/cache\/garage-control-\d+\.png$/)
-    assert.equal(glyph(tiles()[0]), s.writes[0].uri)
-    assert.equal(glyph(tiles()[1]), '/common/controls/LOCK.png')
-    assert.equal(tiles()[1].disabled, true)
-    tiles()[1].click(); assert.equal(s.sent.at(-1), wanted)
-    tiles()[0].click(); assert.equal(s.sent.at(-1).type, 'prepare')
-    assert.equal(s.sent.at(-1).bandIconKey, undefined)
-    s.reply({actions, token:'ticket', label:slot.label})
-    assert.equal(s.feed().children[0].children[1].children[0].src, s.writes[0].uri)
-    s.page.confirm(); assert.equal(s.sent.at(-1).type, 'prepare')
-    s.advance(501); s.page.confirm()
-    assert.equal(s.sent.at(-1).type, 'execute')
-    assert.equal(s.sent.at(-1).token, 'ticket')
-    assert.equal(s.sent.at(-1).bandIconKey, undefined)
+    for (const [i, tile] of tiles().entries()) checkBadge(tile.children[0], i === 8 ? 'OTHER' : categories[i])
+    const rows = s.visibleRows()
+    assert.equal(s.poll().bandPhoto, layout === 'capsule' ? undefined : true)
+    s.reply({actions})
+    assert.equal(s.visibleRows(), rows)
+    const rekeyed = actions.map((item, i) => ({...item, key:'new-' + (8 - i)}))
+    s.poll(); s.reply({actions:rekeyed})
+    assert.equal(s.visibleRows(), rows)
+    const pending = rekeyed.map((item, i) => ({...item, controlState:i % 2 ? 'loading' : 'unknown'}))
+    s.poll(); s.reply({actions:pending})
+    for (const [i, tile] of tiles().entries()) {
+      checkBadge(tile.children[0], 'day/' + (i === 8 ? 'OTHER' : categories[i]))
+      assert.equal(tile.disabled, true)
+    }
+    const momentary = {...rekeyed[1], controlState:undefined, momentary:true}
+    s.poll(); s.reply({actions:[momentary]})
+    checkBadge(tiles()[0].children[0], 'FIND')
+    const reversed = rekeyed.slice().reverse().map(item => ({...item, controlState:'open'}))
+    s.poll(); s.reply({actions:reversed})
+    const openArt = ['day/OTHER','open/SUNROOF','open/ENGINE','open/TRUNK','open/CLIMATE','day/OTHER','open/LOCK','day/FIND','open/WINDOW']
+    for (const [i, tile] of tiles().entries()) checkBadge(tile.children[0], openArt[i])
+    for (const [i, action] of reversed.entries()) {
+      tiles()[i].click()
+      assert.equal(s.sent.at(-1).key, action.key)
+      assert.equal(s.sent.at(-1).slot, action.slot)
+      s.reply({actions:reversed, token:'ticket', label:action.label})
+      checkBadge(s.feed().children[0].children[1], openArt[i])
+      s.page.cancel()
+    }
+    assert.equal(s.sent.some(request => 'bandIconKey' in request), false)
+    assert.equal(s.writes.length, 0)
   })
 }
-
-test('standard alternates missing keys with car photo, preserving partial and ready photo state', () => {
-  const s = photoSession()
-  const actions = [iconAction, lockAction]
-  s.chunk('car', 0, 256, {}, actions)
-  assert.equal(s.poll().bandIconKey, slot.key)
-  s.reply({data:{}, actions:[{...iconAction, bandIconPng:''}, lockAction]})
-  const more = s.poll()
-  assert.equal(more.photoOffset, 256)
-  assert.equal(more.bandIconKey, undefined)
-  s.chunk('car', 256, encoded.length, {}, actions)
-  s.writes[0].success()
-  const next = s.poll()
-  assertNoPhotoFields(next)
-  assert.equal(next.bandIconKey, lockAction.key)
-  s.reply({data:{}, actions:[iconAction, {...lockAction, bandIconPng:encoded}]})
-  assert.equal(s.row().children[0].src, s.writes[0].uri)
-  s.writes[1].success()
-  assert.equal(s.visibleRows()[0].right.glyph, s.writes[1].uri)
-  assert.equal(s.visibleRows()[0].right.enabled, false)
-  assert.equal(s.poll().carPhotoId, 'car')
-})
-
-test('stale icon replies and writes cannot replace the active glyph or disturb the selected action', () => {
-  const s = photoSession(pillIcons)
-  const changed = {...iconAction, key:'new/widget/artwork'}
-  s.reply({actions:[iconAction]}); const stale = s.poll()
-  s.page.prepare(slot.slot)
-  s.reply({id:stale.id, actions:[{...iconAction, bandIconPng:encoded}]})
-  assert.equal(s.page.pending.type, 'prepare'); assert.equal(s.writes.length, 0)
-  s.reply({actions:[iconAction]}); assert.equal(s.poll().bandIconKey, slot.key)
-  s.reply({actions:[{...iconAction, bandIconPng:encoded}]})
-  s.page.refresh(); s.reply({actions:[changed]}); assert.equal(s.poll().bandIconKey, changed.key)
-  s.reply({actions:[{...changed, bandIconPng:encoded}]})
-  assert.notEqual(s.writes[0].uri, s.writes[1].uri)
-  s.writes[0].success(); assert.equal(s.visibleRows()[0].left.glyph, '/common/controls/WINDOW.png')
-  s.page.prepare(changed.slot); s.reply({actions:[changed], token:'valid', label:changed.label})
-  s.writes[1].success(); assert.equal(s.page.confirmTile.glyph, s.writes[1].uri)
-  s.page.onHide(); s.writes[1].success()
-  assert.equal(s.visibleRows().length, 0)
-})
-
-test('Band 9 renders each native mark even without image events, then replaces it only after decode', () => {
-  const s = photoSession(pillIcons)
-  const categories = ['LOCK','FIND','ENGINE','TRUNK','SUNROOF','CLIMATE','WINDOW','OTHER']
-  const actions = categories.map((category, i) => ({...iconAction, category, key:'art-' + i, slot:'tile-' + i}))
-  const badges = () => s.feed().children.filter(row => row.type === 'actionSingle').map(row => row.children[0].children[0])
-  s.reply({actions})
-  assert.deepEqual(badges().map(badge => badge.children[1].value), ['锁','寻','擎','箱','顶','温','窗','控'])
-  const edge = parseFloat(compiledRule(s.page, 'glyph').width)
-  const badgeEdge = parseFloat(compiledRule(s.page, 'badge').width)
-  assert.ok(edge * 192 / designWidth >= 24 && edge < badgeEdge)
-  const local = badges()[0].children[0]
-  local.complete({width:48, height:48})
-  assert.equal(badges()[0].children.length, 1)
-  local.error()
-  assert.equal(badges()[0].children[1].value, '锁')
-  assert.equal(s.poll().bandIconKey, actions[0].key)
-  s.reply({actions:[{...actions[0], bandIconPng:encoded}, ...actions.slice(1)]})
-  assert.deepEqual(s.truncated, [s.writes[0].uri])
-  assert.equal(s.writes[0].position, 0)
-  assert.equal(s.writes[0].append, false)
-  s.writes[0].fail('parameter error', 202)
-  assert.equal(s.writes.length, 2)
-  assert.equal(Object.prototype.toString.call(s.writes[1].buffer), '[object ArrayBuffer]')
-  assert.deepEqual(Buffer.from(s.writes[1].buffer), png)
-  s.writes[1].success()
-  const candidate = badges()[0].children[0]
-  assert.equal(candidate.src, s.writes[1].uri)
-  assert.equal(candidate.style.backgroundColor, undefined)
-  assert.equal(compiledRule(s.page, 'glyph').backgroundColor, undefined)
-  const pending = badges()[0]
-  assert.equal(pending.children[1].value, '锁') // A silent decoder still has a native mark.
-  assert.ok(parseFloat(candidate.style.left) >= parseFloat(pending.children[1].style.width))
-  assert.ok(parseFloat(candidate.style.left) + edge <= parseFloat(pending.style.width))
-  const capsuleTile = s.feed().children.find(row => row.type === 'actionSingle').children[0]
-  const nameFraction = parseFloat(compiledRule(s.page, 'singleTileName').width) / 100
-  assert.ok(parseFloat(capsuleTile.style.width) * (1 - nameFraction) >= parseFloat(pending.style.width))
-  candidate.complete({width:48, height:48})
-  assert.equal(badges()[0].children.length, 1)
-  candidate.error()
-  assert.equal(badges()[0].children[0].src, '/common/controls/LOCK.png')
-  assert.equal(badges()[0].children[1].value, '锁')
-  candidate.complete({width:48, height:48}) // Late callback from the discarded file URI.
-  assert.equal(badges()[0].children[1].value, '锁')
-})
-
-test('legacy, empty, malformed, oversized or unwritable icons settle on the bundled glyph', () => {
-  for (const sample of [undefined, '', 'not-a-png', encoded + 'A'.repeat(2048), 'write-fails', 'read-fails']) {
-    const s = photoSession(pillIcons)
-    s.reply({actions:[iconAction]}); assert.equal(s.poll().bandIconKey, slot.key)
-    const hasImage = sample === 'write-fails' || sample === 'read-fails'
-    const data = hasImage ? encoded : sample
-    s.reply({actions:[{...iconAction, ...(data === undefined ? {} : {bandIconPng:data})}]})
-    assert.equal(s.writes.length, hasImage ? 1 : 0)
-    if (sample === 'write-fails') s.writes[0].fail()
-    if (sample === 'read-fails') { s.writes[0].success(); s.page.iconFailed(slot.key, s.writes[0].uri) }
-    assert.equal(s.visibleRows()[0].left.glyph, '/common/controls/WINDOW.png')
-    assert.equal(s.poll().bandIconKey, undefined)
-  }
-  const s = setup(pillIcons) // Device firmware has no file module.
-  s.reply({actions:[{...iconAction, bandIconPng:encoded}]})
-  s.timers.get(s.page.pollTimer).fn()
-  assert.equal(s.sent.at(-1).bandIconKey, undefined)
-  assert.equal(s.visibleRows()[0].left.glyph, '/common/controls/WINDOW.png')
-})

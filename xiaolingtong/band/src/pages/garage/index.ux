@@ -37,8 +37,7 @@
       <list-item class="singleSlotRow" style="{{ layout.rowStyle }}" type="actionSingle" for="{{ singleRows }}" tid="id">
         <div class="tile singleTile" style="{{ layout.tileStyle }}" disabled="{{ !$item.left.enabled }}" @click="prepare($item.left.slot)">
           <stack class="{{ $item.left.state === 'loading' ? 'badge pulse' : 'badge' }}" style="{{ $item.left.badgeStyle }}">
-            <image class="glyph" style="{{ $item.left.glyphStyle }}" src="{{ $item.left.glyph }}" alt="blank" @complete="iconLoaded($item.left.key, $item.left.glyph)" @error="iconFailed($item.left.key, $item.left.glyph)"></image>
-            <text class="glyphMark" if="{{ !$item.left.loaded }}" style="{{ $item.left.markStyle }}">{{ $item.left.mark }}</text>
+            <image class="glyph" src="{{ $item.left.glyph }}" alt="blank"></image>
           </stack>
           <text class="singleTileName" style="{{ layout.captionStyle }}">{{ $item.left.controlName }}</text>
         </div>
@@ -46,15 +45,13 @@
       <list-item class="slotRow" style="{{ layout.rowStyle }}" type="actionpair" for="{{ pairedRows }}" tid="id">
         <div class="tile" style="{{ layout.tileStyle }}" disabled="{{ !$item.left.enabled }}" @click="prepare($item.left.slot)">
           <stack class="{{ $item.left.state === 'loading' ? 'badge pulse' : 'badge' }}" style="{{ $item.left.badgeStyle }}">
-            <image class="glyph" style="{{ $item.left.glyphStyle }}" src="{{ $item.left.glyph }}" alt="blank" @complete="iconLoaded($item.left.key, $item.left.glyph)" @error="iconFailed($item.left.key, $item.left.glyph)"></image>
-            <text class="glyphMark" if="{{ !$item.left.loaded }}" style="{{ $item.left.markStyle }}">{{ $item.left.mark }}</text>
+            <image class="glyph" src="{{ $item.left.glyph }}" alt="blank"></image>
           </stack>
           <text class="tileName" style="{{ layout.captionStyle }}">{{ $item.left.controlName }}</text>
         </div>
         <div class="tile" show="{{ $item.right.slot !== '' }}" style="{{ layout.tileStyle }}" disabled="{{ !$item.right.enabled }}" @click="prepare($item.right.slot)">
           <stack class="{{ $item.right.state === 'loading' ? 'badge pulse' : 'badge' }}" style="{{ $item.right.badgeStyle }}">
-            <image class="glyph" style="{{ $item.right.glyphStyle }}" src="{{ $item.right.glyph }}" alt="blank" @complete="iconLoaded($item.right.key, $item.right.glyph)" @error="iconFailed($item.right.key, $item.right.glyph)"></image>
-            <text class="glyphMark" if="{{ !$item.right.loaded }}" style="{{ $item.right.markStyle }}">{{ $item.right.mark }}</text>
+            <image class="glyph" src="{{ $item.right.glyph }}" alt="blank"></image>
           </stack>
           <text class="tileName" style="{{ layout.captionStyle }}">{{ $item.right.controlName }}</text>
         </div>
@@ -99,8 +96,7 @@
       <list-item class="block questionRow" type="question">
         <text class="caption link" style="{{ layout.captionStyle }}">确认车辆操作</text>
         <stack class="badge" style="{{ confirmTile.badgeStyle }}">
-          <image class="glyph" style="{{ confirmTile.glyphStyle }}" src="{{ confirmTile.glyph }}" alt="blank" @complete="iconLoaded(confirmTile.key, confirmTile.glyph)" @error="iconFailed(confirmTile.key, confirmTile.glyph)"></image>
-          <text class="glyphMark" if="{{ !confirmTile.loaded }}" style="{{ confirmTile.markStyle }}">{{ confirmTile.mark }}</text>
+          <image class="glyph" src="{{ confirmTile.glyph }}" alt="blank"></image>
         </stack>
         <text class="title">{{ question }}</text>
         <text class="caption" style="{{ layout.captionStyle }}">由手机领克卡片执行</text>
@@ -117,7 +113,6 @@
 
 <script>
 import {screenProfile} from '../../common/screen-profile'
-import {createBandIconCache} from '../../common/band-icons'
 
 const colors = {tile:'#192b3e', on:'#59cf91', loading:'#ffcc46', unknown:'#a2abb6'}
 const scenes = ['SKY','RIDGE','CITY','COAST','ALPINE']
@@ -161,6 +156,10 @@ function screenLayout(info) {
 }
 const maxPhotoChars = 32768
 const maxChunkChars = 2048
+// Let the UI process taps between read-only status replies. A full .37 image is up to
+// 16 KiB of base64, often split into >8 chunks by the 4 KiB envelope's action list.
+const photoChunkDelay = 32
+const maxFastPhotoPolls = 16
 // Fixed paths bound storage even after a process kill. Keep each path reserved through async deletion.
 const photoPaths = ['internal://cache/garage-car-0.png', 'internal://cache/garage-car-1.png']
 const busyPhotoPaths = [false, false]
@@ -189,7 +188,7 @@ function decodePng(text, maxEdge = 512) {
   const end = bytes.length - 12
   return size(end) === 0 && size(end + 4) === 0x49454e44 && size(end + 8) === 0xae426082 ? bytes : null
 }
-const marks = {LOCK:'锁', FIND:'寻', ENGINE:'擎', TRUNK:'箱', SUNROOF:'顶', CLIMATE:'温', WINDOW:'窗', OTHER:'控'}
+const controlCategories = ['LOCK','FIND','ENGINE','TRUNK','SUNROOF','CLIMATE','WINDOW','OTHER']
 function controlState(item) {
   if (item.controlState !== undefined) {
     return ['open','closed','loading'].indexOf(item.controlState) >= 0 ? item.controlState : 'unknown'
@@ -214,18 +213,19 @@ function sameAction(a, b) {
 function sameControl(a, b) {
   return a.slot === b.slot && a.category === b.category
 }
-function controlTile(item, officialGlyph, loading = false, blocked = false) {
+function controlTile(item, loading = false, blocked = false) {
   const state = loading ? 'loading' : controlState(item)
-  const tint = state === 'open' ? colors.on : state === 'loading' ? colors.loading : state === 'unknown' ? colors.unknown : colors.tile
-  const category = Object.prototype.hasOwnProperty.call(marks, item.category) ? item.category : 'OTHER'
-  // The badge owns the state color; the image shows only the PNG artwork.
+  const category = controlCategories.indexOf(item.category) >= 0 ? item.category : 'OTHER'
+  // Stateful controls carry green in their open artwork. The bright warning badges use dark strokes.
+  const openShape = state === 'open' && category !== 'FIND' && category !== 'OTHER'
+  const tint = state === 'loading' ? colors.loading : state === 'unknown' ? colors.unknown :
+    state === 'open' && !openShape ? colors.on : colors.tile
   const bright = tint !== colors.tile
   const name = typeof item.controlName === 'string' && item.controlName.trim() ||
     (typeof item.displayLabel === 'string' && item.displayLabel.replace(/\.(开|关|加载|未知)$/, '')) || item.label || '待标记'
-  return {slot:item.slot, key:item.key, controlName:name, enabled:!blocked && actionable(item), state:state, badgeStyle:{backgroundColor:tint},
-    glyph:officialGlyph || '/common/controls/' + (bright ? 'day/' : '') + category + '.png',
-    glyphStyle:{}, mark:marks[category],
-    markStyle:{backgroundColor:tint, color:bright ? '#162635' : '#e9edf3'}, loaded:false}
+  const variant = openShape ? 'open/' : bright ? 'day/' : ''
+  return {slot:item.slot, controlName:name, enabled:!blocked && actionable(item), state:state, badgeStyle:{backgroundColor:tint},
+    glyph:'/common/controls/local/' + variant + category + '.png'}
 }
 export default {
   private: {
@@ -271,10 +271,6 @@ export default {
     this.photoTransfer = null
     this.photoFile = null
     this.photoBurst = 0
-    this.lastMediaWasIcon = false
-    let file
-    try { file = require('@system.file') } catch (error) { /* Use bundled controls. */ }
-    this.iconCache = createBandIconCache(file, decodePng, () => this.updateRows())
     if (this.layout.supportsTheme) this.loadAppearance()
     try {
       require('@system.device').getInfo({success: info => {
@@ -453,6 +449,12 @@ export default {
     if (photo && photo.ready) deletePhotoFile(photo)
     // An invalidated writer releases its own path when its callback arrives.
   },
+  suspendPhoto() {
+    // Unmount until the next opted-in snapshot confirms both vehicle and photo ID.
+    // Partial transfers and native writes must never survive the connection that started them.
+    if (!this.destroyed && this.photoFile && this.photoFile.ready) this.photoSrc = ''
+    else this.clearPhoto()
+  },
   savePhoto(id, text) {
     const slot = busyPhotoPaths[nextPhotoPath] ? 1 - nextPhotoPath : nextPhotoPath
     if (busyPhotoPaths[slot]) return
@@ -499,8 +501,15 @@ export default {
   receivePhoto(request, data) {
     // Only an opted-in status reply is authoritative. An empty or missing id also covers old phones.
     const id = data.carPhotoId
-    if (typeof id !== 'string' || !id || id.length > 128) { this.clearPhoto(); return false }
-    if (this.photoFile && this.photoFile.id === id) return false
+    if (typeof data.vehicle !== 'string' || !data.vehicle.trim() || typeof id !== 'string' || !id || id.length > 128) {
+      this.clearPhoto()
+      return false
+    }
+    if (this.photoFile && this.photoFile.id === id) {
+      // receive() invalidates the file on a vehicle change before we get here.
+      if (this.photoFile.ready && !this.photoSrc) this.photoSrc = this.photoFile.uri
+      return false
+    }
     if (this.photoFile || (this.photoTransfer && this.photoTransfer.id !== id)) this.clearPhoto()
     const transfer = this.photoTransfer
     const offset = data.carPhotoOffset, total = data.carPhotoLength, chunk = data.carPhotoChunk
@@ -521,25 +530,6 @@ export default {
     this.photoTransfer = {id:id, total:total, text:text}
     return true
   },
-  iconFailed(key, src) {
-    if (this.iconCache.imageFailed(key, src)) this.updateRows()
-  },
-  iconLoaded(key, src) {
-    if (this.iconCache.imageLoaded(key, src)) this.updateRows()
-  },
-  iconTile(item, loading, blocked) {
-    const official = this.iconCache.glyph(item.key)
-    const tile = controlTile(item, official, loading, blocked)
-    tile.loaded = this.iconCache.isLoaded(item.key, tile.glyph)
-    // Some firmware draws cached images without emitting complete. Keep the
-    // candidate beside the native mark until confirmed; never mask official art.
-    if (official && !tile.loaded) {
-      tile.badgeStyle.width = '100px'
-      tile.glyphStyle.left = '50px'
-      tile.markStyle.width = '48px'
-    }
-    return tile
-  },
   updateRows() {
     const columns = this.layout.single ? 1 : 2
     const active = this.operation && this.status !== '车况只读' && this.operation.item
@@ -555,13 +545,9 @@ export default {
     const tiles = items.map(item => {
       const loading = !!active && sameControl(item, active)
       const title = loading ? active : item
-      return this.iconTile(title, loading, blocked)
+      return controlTile(title, loading, blocked)
     })
-    if (this.mode === 'confirm' && this.choice) {
-      const target = this.actions.find(item => item.key === this.choice.key && item.slot === this.choice.slot)
-      if (target) this.confirmTile = this.iconTile(target)
-    }
-    const empty = {slot:'', controlName:'', enabled:false, badgeStyle:{backgroundColor:colors.tile}, glyph:'/common/controls/OTHER.png'}
+    const empty = {slot:'', controlName:'', enabled:false, badgeStyle:{backgroundColor:colors.tile}, glyph:'/common/controls/local/OTHER.png'}
     const rows = []
     for (let i = 0; i < tiles.length; i += columns) {
       rows.push({id:tiles[i].slot, left:tiles[i], right:columns === 2 && tiles[i + 1] || empty})
@@ -615,9 +601,7 @@ export default {
     if (this.operation) this.note = unknownResult
     this.operation = null
     this.fastPollUntil = 0
-    this.clearPhoto()
-    this.iconCache.clear()
-    this.lastMediaWasIcon = false
+    this.suspendPhoto()
     this.photoBurst = 0
     this.actions = []
     this.singleRows = []
@@ -667,9 +651,7 @@ export default {
     this.updateSky()
     this.mode = settingsMode
     this.fastPollUntil = 0
-    this.clearPhoto()
-    this.iconCache.clear()
-    this.lastMediaWasIcon = false
+    this.suspendPhoto()
     this.photoBurst = 0
     this.actions = []
     this.singleRows = []
@@ -696,12 +678,8 @@ export default {
         this.sceneRetryAt = Date.now() + this.sceneAttempts * 5000
       }
     }
-    const key = type === 'status' && this.iconCache.nextKey(this.actions)
-    if (key && (!this.layout.supportsTheme || !this.lastMediaWasIcon)) {
-      request.bandIconKey = key
-      this.lastMediaWasIcon = true
-    } else if (type === 'status' && this.layout.supportsTheme) {
-      this.lastMediaWasIcon = false
+    if (type === 'status' && this.layout.supportsTheme && !this.requiresStatus && !this.operation &&
+        !this.queuedChoice && !this.queuedRefresh) {
       request.bandPhoto = true
       request.carPhotoId = this.photoFile && this.photoFile.ready ? this.photoFile.id : ''
       request.photoTransferId = this.photoTransfer ? this.photoTransfer.id : ''
@@ -751,9 +729,9 @@ export default {
     this.retries = 0
     if (request.type === 'status') this.acceptTheme(reply, request)
     const s = reply.data || {}
-    const vehicle = s.vehicle || (request.bandIconKey ? this.vehicle : '小领通')
+    const vehicle = s.vehicle || '小领通'
     const vehicleChanged = vehicle !== this.vehicle
-    if (vehicleChanged) { this.clearPhoto(); this.iconCache.clear() }
+    if (vehicleChanged) this.clearPhoto()
     const morePhoto = request.bandPhoto && this.layout.supportsTheme && this.receivePhoto(request, s)
     this.vehicle = vehicle
     this.range = s.range || '—'
@@ -775,9 +753,6 @@ export default {
     }
     if (reply.note) this.note = reply.note
     this.observeOperation(s.vehicle)
-    const iconActions = this.operation && this.status !== '车况只读' ? [...this.actions, this.operation.item] : this.actions
-    this.iconCache.sync(iconActions)
-    if (request.bandIconKey && !vehicleChanged) this.iconCache.receive(request.bandIconKey, this.actions)
     this.updateRows()
     if (request.type === 'prepare' && typeof reply.token === 'string' && reply.token && reply.label === request.label) {
       const target = this.actions.find(item => sameAction(item, request) && this.canControl(item))
@@ -787,7 +762,7 @@ export default {
         return
       }
       this.choice = {...target, token:reply.token}
-      this.confirmTile = this.iconTile(target)
+      this.confirmTile = controlTile(target)
       this.confirmOpened = Date.now()
       this.question = reply.label
       this.mode = 'confirm'
@@ -797,14 +772,12 @@ export default {
     if (this.dispatchQueued()) return
     if (this.pendingScene && !this.sceneAttempts && this.layout.supportsTheme) { this.send('status'); return }
     // Limit even a peer that keeps changing the id or sends tiny chunks to a short burst.
-    const fastPhoto = morePhoto && this.photoBurst < 8
+    const fastPhoto = morePhoto && this.photoBurst < maxFastPhotoPolls
     if (request.bandPhoto) this.photoBurst = fastPhoto ? this.photoBurst + 1 : 0
-    const moreIcons = request.type === 'status' && this.iconCache.nextKey(this.actions)
-    const resumePhoto = request.bandIconKey && this.photoTransfer && this.photoBurst > 0
     const now = Date.now()
     const operationDelay = this.operation ? Math.max(0, this.operation.deadline - now) : 500
     this.schedule(this.operation || now < this.fastPollUntil ? Math.min(500, operationDelay) :
-      (fastPhoto || moreIcons || resumePhoto) ? 350 : request.type === 'refresh' ? 1600 : 5000)
+      fastPhoto ? photoChunkDelay : request.type === 'refresh' ? 1600 : 5000)
   },
   canControl(item) {
     return this.controlsAllowed && !this.operation && !this.requiresStatus && actionable(item)
@@ -844,13 +817,13 @@ export default {
     }
     return false
   },
-  yieldMediaStatus() {
-    // Media requests are read-only. Their late replies cannot match the new request.
-    if (!this.requiresStatus && this.pending && (this.pending.bandPhoto || this.pending.bandIconKey)) this.clearRequest()
+  yieldPhotoStatus() {
+    // Photo requests are read-only. Their late replies cannot match the new request.
+    if (!this.requiresStatus && this.pending && this.pending.bandPhoto) this.clearRequest()
   },
   refresh() {
     if (!this.visible || this.choice) return
-    this.yieldMediaStatus()
+    this.yieldPhotoStatus()
     if (!this.conn || this.pending) {
       if (!this.pending || this.pending.type !== 'refresh') this.queuedRefresh = true
       if (!this.conn) this.open()
@@ -878,7 +851,7 @@ export default {
       if (!this.operation && !this.requiresStatus) this.note = '请在手机核对动作标记和卡片状态'
       return
     }
-    this.yieldMediaStatus()
+    this.yieldPhotoStatus()
     if (this.pending) {
       if (this.pending.type === 'status') this.queuedChoice = {...selected, vehicle:this.vehicle}
       else this.note = '正在同步，请稍候'
@@ -953,7 +926,6 @@ export default {
 .singleTile { flex-direction:row; }
 .singleTileName { color:#e9edf3; width:62%; text-align:center; lines:2; text-overflow:ellipsis; }
 .glyph { left:6px; top:6px; width:44px; height:44px; object-fit:contain; }
-.glyphMark { left:0; top:0; width:56px; height:56px; border-radius:28px; font-size:32px; text-align:center; }
 .tileName { lines:2; text-overflow:ellipsis; }
 .button { width:98%; border-radius:18px; font-size:27px; text-align:center; }
 .title, .number, .energyText, .tileName, .button { color:#e9edf3; }
