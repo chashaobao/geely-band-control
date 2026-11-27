@@ -86,6 +86,20 @@ public final class WatchStateTest {
         assertNull(state.phoneSolar());
     }
 
+    @Test public void themeChunkDoesNotReplaceVehicleSnapshotOrBlockTheNextControl() throws Exception {
+        JSONObject status = state.request("status", null, 1);
+        state.apply(reply(status), null, 2);
+        JSONObject transfer = state.request("themeAsset", null, 3);
+        assertTrue(state.reading());
+        assertTrue(state.readingTheme());
+        assertFalse(state.controlPending());
+        state.apply(new JSONObject().put("v", 1).put("id", transfer.getString("id"))
+                .put("type", "themeAsset"), null, 4);
+        assertFalse(state.busy());
+        assertEquals("318", state.data.getString("range"));
+        assertNotNull(state.request("prepare", slot(), 5));
+    }
+
     @Test public void confirmedActionIsSentOnlyOnce() throws Exception {
         prepare();
         assertTrue(state.confirming());

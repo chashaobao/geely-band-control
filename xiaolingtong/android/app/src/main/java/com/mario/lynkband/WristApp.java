@@ -1,5 +1,6 @@
 package com.mario.lynkband;
 
+import com.mario.lynkband.solar.ThemeArt;
 import com.mario.lynkband.solar.ThemeSync;
 import com.mario.lynkband.transport.ControlCategory;
 import com.mario.lynkband.transport.WatchIconCodec;
@@ -15,6 +16,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -41,6 +43,7 @@ public class WristApp extends Application {
     private final android.util.LruCache<String, String> watchIcons = new android.util.LruCache<>(16);
     private static final String VOICE = "local:mi-home";
     final VoiceScenes voice = new VoiceScenes();
+    ThemeLibrary themes;
     LynkWidget card;
     XiaomiLink link;
     WatchServer watch;
@@ -50,12 +53,20 @@ public class WristApp extends Application {
     private String lockedRefreshTime;
     boolean service;
     private boolean screen;
+    private boolean recoveringTheme;
+    private final Runnable retryLegacyTheme = this::restoreLegacyTheme;
     private String readyVehicle = "";
     private Runnable observer;
     String last = "";
 
     @Override public void onCreate() {
         super.onCreate();
+        themes = new ThemeLibrary(this);
+        if (themes.selected() != null) {
+            SharedPreferences prefs = PhoneLandscape.preferences(this);
+            PhoneLandscape compatible = PhoneLandscape.compatibleWith(themes.selected());
+            if (compatible != PhoneLandscape.selected(prefs)) compatible.select(prefs);
+        }
         labels = getSharedPreferences("buttonLabels", MODE_PRIVATE);
         card = new LynkWidget(this, main, this::cardChanged);
         if (!labels.contains("wearType")) {
@@ -71,11 +82,21 @@ public class WristApp extends Application {
                 () -> forgetDevice(watchNode()), this::changed);
     }
 
+    boolean syncThemeToWearable() {
+        return PhoneLandscape.preferences(this).getBoolean("syncThemeToWearable", true);
+    }
+
+    void setThemeSyncToWearable(boolean enabled) {
+        SharedPreferences prefs = PhoneLandscape.preferences(this);
+        prefs.edit().putBoolean("syncThemeToWearable", enabled).apply();
+        selectPhoneLandscape(PhoneLandscape.selected(prefs));
+    }
+
     void selectPhoneLandscape(PhoneLandscape scene) {
         SharedPreferences prefs = PhoneLandscape.preferences(this);
         scene.select(prefs);
         if (!service || bandThemeSubscribers.isEmpty()) return;
-        JSONObject state = ThemeSync.snapshot(prefs, PhoneLandscape.KEY, true);
+        JSONObject state = wearableLandscape(prefs);
         try {
             String message = new JSONObject().put("v", 1).put("type", "bandThemeChanged")
                     .put("theme", state.getString("scene")).put("bandThemeRevision", state.getLong("revision")).toString();
@@ -85,6 +106,44 @@ public class WristApp extends Application {
         } catch (JSONException invalid) { throw new IllegalStateException(invalid); }
     }
 
+    private JSONObject wearableLandscape(SharedPreferences prefs) {
+        JSONObject state = ThemeSync.snapshot(prefs, PhoneLandscape.KEY, true);
+        try {
+            if (!syncThemeToWearable()) state.put("scene", PhoneLandscape.SKY.name());
+            return state;
+        } catch (JSONException invalid) { throw new IllegalStateException(invalid); }
+    }
+
+    private void restoreLegacyTheme() {
+        if ((!screen && !service) || recoveringTheme || themes.selected() != null) return;
+        SharedPreferences prefs = PhoneLandscape.preferences(this);
+        PhoneLandscape previous = PhoneLandscape.selected(prefs);
+        if (previous == PhoneLandscape.SKY) return;
+        main.removeCallbacks(retryLegacyTheme);
+        recoveringTheme = true;
+        new Thread(() -> {
+            ThemeLibrary.Pack recovered = null;
+            try { recovered = themes.recoverLegacyTheme(previous.themeId()); }
+            catch (IOException | JSONException unavailable) { /* The default stays visible while offline. */ }
+            ThemeLibrary.Pack next = recovered;
+            main.post(() -> {
+                recoveringTheme = false;
+                if (themes.selected() != null || PhoneLandscape.selected(prefs) != previous) {
+                    restoreLegacyTheme();
+                    return;
+                }
+                if (next != null) {
+                    try {
+                        themes.select(next);
+                        changed();
+                        return;
+                    } catch (IOException | JSONException unavailable) { /* Retry the private copy. */ }
+                }
+                if (screen || service) main.postDelayed(retryLegacyTheme, 30_000L);
+            });
+        }, "legacy-theme").start();
+    }
+
     void sendBandTheme(String node, String message) {
         link.send(node, message, failure -> android.util.Log.i("WristLynkHost", "Band theme will sync on next status"));
     }
@@ -92,6 +151,7 @@ public class WristApp extends Application {
     void screen(boolean visible, Runnable listener) {
         screen = visible;
         observer = listener;
+        if (visible) restoreLegacyTheme();
         card.listening(screen || service);
         changed();
     }
@@ -99,7 +159,7 @@ public class WristApp extends Application {
     void setService(boolean active) {
         if (active == service) return;
         service = active;
-        if (active) syncTransports();
+        if (active) { syncTransports(); restoreLegacyTheme(); }
         else { bandThemeSubscribers.clear(); watch.stop(); disarm(); link.stop(); }
         card.listening(screen || active);
         if (active && !card.bound() && card.autoBind() && !card.binding()) card.bind(null);
@@ -376,6 +436,13 @@ public class WristApp extends Application {
             JSONObject out = new JSONObject().put("v", 1).put("id", id);
             String type = request.optString("type");
             boolean band = node.startsWith("band:");
+            if (ThemeArt.TRANSFER.equals(type)) {
+                out.put("type", ThemeArt.TRANSFER);
+                if (syncThemeToWearable() && (band || node.startsWith("watch:")) && permitsWearable(node)) {
+                    themes.chunk(request, out, band);
+                }
+                return out.toString();
+            }
             boolean compact = (node.startsWith("watch:") || (band && permitsWearable(node)))
                     && "execute".equals(type) && Boolean.TRUE.equals(request.opt("compactExecuteAck"));
             if (compact) out.put("accepted", false);
@@ -400,16 +467,17 @@ public class WristApp extends Application {
             }
             if (solarStatus && band) {
                 SharedPreferences prefs = PhoneLandscape.preferences(this);
-                JSONObject theme = ThemeSync.snapshot(prefs, PhoneLandscape.KEY, true);
+                JSONObject theme = wearableLandscape(prefs);
                 long revision = theme.getLong("revision");
-                Object choice = request.opt("bandThemeChoice");
+                Object choice = syncThemeToWearable() && themes.selected() == null ? request.opt("bandThemeChoice") : null;
                 for (PhoneLandscape scene : PhoneLandscape.values()) {
                     if (!scene.name().equals(choice) || scene.name().equals(theme.getString("scene"))) continue;
                     if (request.has("bandThemeBaseRevision") && request.optLong("bandThemeBaseRevision", -1) != revision) {
                         out.put("bandThemeConflict", true);
                     } else {
                         scene.select(prefs);
-                        theme = ThemeSync.snapshot(prefs, PhoneLandscape.KEY, true);
+                        restoreLegacyTheme();
+                        theme = wearableLandscape(prefs);
                     }
                     break;
                 }
@@ -419,8 +487,14 @@ public class WristApp extends Application {
             if ("status".equals(type) && node.startsWith("watch:") && permitsWearable(node)
                     && request.opt("landscapeSync") instanceof JSONObject peer) {
                 SharedPreferences prefs = PhoneLandscape.preferences(this);
-                ThemeSync.merge(prefs, PhoneLandscape.KEY, true, peer);
-                out.put("landscapeSync", ThemeSync.snapshot(prefs, PhoneLandscape.KEY, true));
+                if (syncThemeToWearable() && themes.selected() == null
+                        && ThemeSync.merge(prefs, PhoneLandscape.KEY, true, peer)) restoreLegacyTheme();
+                out.put("landscapeSync", wearableLandscape(prefs));
+            }
+            if (solarStatus && Boolean.TRUE.equals(request.opt(ThemeArt.CAPABILITY))) {
+                if (!syncThemeToWearable()) out.put(ThemeArt.OFFER, JSONObject.NULL);
+                else if (themes.selected() != null || PhoneLandscape.selected(PhoneLandscape.preferences(this)) == PhoneLandscape.SKY)
+                    out.put(ThemeArt.OFFER, themes.offer(band));
             }
             try {
                 updateReadyVehicle();

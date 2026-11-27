@@ -1,5 +1,6 @@
 package com.mario.lynkband;
 
+import org.json.JSONException;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -26,6 +27,33 @@ public class PhoneWearUpdatesTest {
     private static final String TAG = "xiaolingtong-v0.3.35";
     private static final String SHA = "a".repeat(64);
     @Rule public TemporaryFolder temp = new TemporaryFolder();
+
+    @Test public void cnbIndexRequiresAllFourSignedPackageEntriesWithChecksums() throws Exception {
+        String index = """
+                {"schema":1,"releases":[{"tag":"%s","assets":[
+                  {"name":"lynk-companion-phone.apk","size":4000,"sha256":"%s"},
+                  {"name":"lynk-watch.apk","size":4500,"sha256":"%s"},
+                  {"name":"lynk-band-pill-0.2.27.rpk","size":2000,"sha256":"%s"},
+                  {"name":"lynk-band-standard-0.2.27.rpk","size":3000,"sha256":"%s"}
+                ]}]}
+                """.formatted(TAG, SHA, SHA, SHA, SHA);
+        var release = PhoneWearReleases.parseCnb(index).get(0);
+        assertEquals(PhoneWearReleases.Source.CNB, release.source());
+        assertEquals(TAG, release.tag());
+        assertEquals(4, release.assets().size());
+        assertEquals(SHA, release.assets().get(1).digest());
+        assertEquals(4500, release.assets().get(1).size());
+        assertEquals("https://cnb.cool/sidabakesi/xiaolingtong/-/git/raw/main/downloads/" + TAG + "/lynk-watch.apk",
+                PhoneWearReleases.cnbDownloadUrl(TAG, "lynk-watch.apk").toString());
+        assertThrows(JSONException.class, () -> PhoneWearReleases.parseCnb(index.replace(SHA, "invalid")));
+        assertThrows(JSONException.class, () -> PhoneWearReleases.parseCnb(index.replace("4500", "4500.5")));
+        assertThrows(JSONException.class, () -> PhoneWearReleases.parseCnb(
+                index.replace("lynk-band-standard", "lynk-band-pill")));
+        assertThrows(JSONException.class, () -> PhoneWearReleases.parseCnb(
+                index.replace("lynk-band-standard", "other-app")));
+        assertThrows(IllegalArgumentException.class,
+                () -> PhoneWearReleases.cnbDownloadUrl(TAG, "../lynk-watch.apk"));
+    }
 
     @Test public void releaseApiFiltersOtherProjectsAndSelectsMatchingAssets() throws Exception {
         String watch = uploaded(TAG, "lynk-watch.apk", "https://github.com", 4000);

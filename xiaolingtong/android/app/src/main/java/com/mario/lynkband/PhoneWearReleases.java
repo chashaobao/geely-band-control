@@ -5,6 +5,8 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -28,6 +30,8 @@ final class PhoneWearReleases {
     static final long MAX_RPK = 32L * 1024 * 1024;
     static final String WATCH_APK = "lynk-watch.apk";
     static final String PHONE_APK = "lynk-companion-phone.apk";
+    static final String CNB_RAW = "https://cnb.cool/sidabakesi/xiaolingtong/-/git/raw/main/";
+    private static final String CNB_DOWNLOADS = CNB_RAW + "downloads/";
     private static final String REPO = "/chashaobao/geely-band-control/releases";
     private static final String WEB = "https://github.com" + REPO;
     private static final URI API = URI.create("https://api.github.com/repos" + REPO + "?per_page=30");
@@ -42,9 +46,11 @@ final class PhoneWearReleases {
     private static final long MAX_METADATA = 2L * 1024 * 1024;
     private static final long MAX_SUMS = 64L * 1024;
 
-    record Release(String tag, List<Asset> assets) {
+    record Release(String tag, List<Asset> assets, Source source) {
         String version() { return tag.substring("xiaolingtong-v".length()); }
     }
+
+    enum Source { CNB, GitHub }
 
     record Asset(String name, long size, String digest) {
         boolean isWatch() { return WATCH_APK.equals(name); }
@@ -55,6 +61,17 @@ final class PhoneWearReleases {
     interface Check { void run() throws IOException; }
 
     static List<Release> list(Check check) throws IOException {
+        try {
+            List<Release> releases = parseCnb(text(URI.create(CNB_DOWNLOADS + "releases.json"),
+                    MAX_METADATA, false, 20_000, check));
+            if (!releases.isEmpty()) return releases;
+        } catch (IOException | JSONException ignored) {
+            check.run();
+        }
+        return listGithub(check);
+    }
+
+    private static List<Release> listGithub(Check check) throws IOException {
         try {
             List<Release> releases = parseApi(text(API, MAX_METADATA, false, 20_000, check));
             if (!releases.isEmpty()) return releases;
@@ -71,7 +88,7 @@ final class PhoneWearReleases {
                 MAX_METADATA, false, 20_000, check));
     }
 
-    static void download(Release release, Asset asset, List<Asset> assets, OutputStream output,
+    static void download(Release release, Asset asset, List<Asset> assets, File file,
                          Check check, LongConsumer progress) throws IOException {
         String expected = asset.digest();
         if (expected == null && assets.stream().anyMatch(item -> SUMS.equals(item.name()))) {
@@ -79,13 +96,68 @@ final class PhoneWearReleases {
             if (expected == null) throw new IOException("发布校验文件缺少此安装包的 SHA-256。");
         }
         if (expected == null) throw new IOException("此发布未提供安装包的 SHA-256，无法验证下载。");
+        if (release.source() == Source.CNB) {
+            try {
+                downloadFile(cnbDownloadUrl(release.tag(), asset.name()), asset, expected, file, false, check, progress);
+                return;
+            } catch (IOException cnbFailure) {
+                check.run();
+                progress.accept(0);
+                // Try the same release and verify it against the same checksum.
+                try {
+                    downloadFile(downloadUrl(release.tag(), asset.name()), asset, expected, file, true, check, progress);
+                    return;
+                } catch (IOException githubFailure) {
+                    githubFailure.addSuppressed(cnbFailure);
+                    throw githubFailure;
+                }
+            }
+        }
+        downloadFile(downloadUrl(release.tag(), asset.name()), asset, expected, file, true, check, progress);
+    }
+
+    private static void downloadFile(URI url, Asset asset, String expected, File file, boolean allowCdn,
+                                     Check check, LongConsumer progress) throws IOException {
         long limit = sizeLimit(asset.name());
         MessageDigest sha256 = sha256();
-        long size = fetch(downloadUrl(release.tag(), asset.name()), output, limit, asset.size(),
-                true, 120_000, check, progress, sha256);
-        if (size == 0 || !expected.equalsIgnoreCase(hex(sha256.digest()))) {
-            throw new IOException("下载文件为空或 SHA-256 校验不一致。");
+        try (OutputStream out = new FileOutputStream(file)) {
+            long size = fetch(url, out, limit, asset.size(), allowCdn, 120_000, check, progress, sha256);
+            if (size == 0 || !expected.equalsIgnoreCase(hex(sha256.digest()))) {
+                throw new IOException("下载文件为空或 SHA-256 校验不一致。");
+            }
         }
+    }
+
+    static List<Release> parseCnb(String source) throws JSONException {
+        JSONObject index = new JSONObject(source);
+        JSONArray entries = index.getJSONArray("releases");
+        if (!Integer.valueOf(1).equals(index.opt("schema")) || entries.length() > 100)
+            throw new JSONException("Invalid CNB release index");
+        Map<String, Release> releases = new LinkedHashMap<>();
+        for (int i = 0; i < entries.length(); i++) {
+            JSONObject entry = entries.getJSONObject(i);
+            String tag = entry.getString("tag");
+            JSONArray values = entry.getJSONArray("assets");
+            if (!TAG.matcher(tag).matches() || values.length() != 4 || releases.containsKey(tag))
+                throw new JSONException("Invalid CNB release");
+            Map<String, Asset> assets = new LinkedHashMap<>();
+            for (int j = 0; j < values.length(); j++) {
+                JSONObject value = values.getJSONObject(j);
+                String name = value.getString("name");
+                String digest = value.getString("sha256");
+                long size = value.opt("size") instanceof Integer number ? number : -1;
+                if ((!PHONE_APK.equals(name) && !WATCH_APK.equals(name) && !PROFILE_RPK.matcher(name).matches())
+                        || size <= 0 || size > sizeLimit(name) || !SHA.matcher(digest).matches()
+                        || assets.putIfAbsent(name, new Asset(name, size, digest)) != null)
+                    throw new JSONException("Invalid CNB asset");
+            }
+            if (!assets.containsKey(PHONE_APK) || !assets.containsKey(WATCH_APK)
+                    || assets.keySet().stream().noneMatch(name -> name.startsWith("lynk-band-pill-"))
+                    || assets.keySet().stream().noneMatch(name -> name.startsWith("lynk-band-standard-")))
+                throw new JSONException("Missing CNB installation packages");
+            releases.put(tag, new Release(tag, new ArrayList<>(assets.values()), Source.CNB));
+        }
+        return sorted(new ArrayList<>(releases.values()));
     }
 
     static List<Release> parseApi(String source) throws JSONException {
@@ -112,7 +184,7 @@ final class PhoneWearReleases {
                 assets.putIfAbsent(name, new Asset(name, size, sha));
             }
             if (assets.values().stream().anyMatch(asset -> asset.isPhone() || asset.isWatch() || asset.isRpk())) {
-                releases.add(new Release(tag, new ArrayList<>(assets.values())));
+                releases.add(new Release(tag, new ArrayList<>(assets.values()), Source.GitHub));
             }
         }
         return sorted(releases);
@@ -123,7 +195,7 @@ final class PhoneWearReleases {
         Matcher matches = EXPANDED.matcher(source);
         while (matches.find()) {
             String tag = matches.group(1);
-            releases.putIfAbsent(tag, new Release(tag, null));
+            releases.putIfAbsent(tag, new Release(tag, null, Source.GitHub));
         }
         return sorted(new ArrayList<>(releases.values()));
     }
@@ -170,6 +242,11 @@ final class PhoneWearReleases {
         return URI.create(WEB + "/download/" + tag + "/" + name);
     }
 
+    static URI cnbDownloadUrl(String tag, String name) {
+        if (!TAG.matcher(tag).matches() || !allowedAsset(name)) throw new IllegalArgumentException("Invalid release asset");
+        return URI.create(CNB_DOWNLOADS + tag + "/" + name);
+    }
+
     private static boolean allowedAsset(String name) {
         Asset asset = new Asset(name, -1, null);
         return asset.isPhone() || asset.isWatch() || asset.isRpk() || SUMS.equals(name);
@@ -197,7 +274,7 @@ final class PhoneWearReleases {
         long deadline = System.nanoTime() + timeout * 1_000_000L;
         Check timed = () -> {
             check.run();
-            if (System.nanoTime() - deadline >= 0) throw new IOException("连接 GitHub 超时，请重试。");
+            if (System.nanoTime() - deadline >= 0) throw new IOException("连接更新服务器超时，请重试。");
         };
         for (int redirects = 0; redirects <= 2; redirects++) {
             timed.run();
@@ -219,7 +296,7 @@ final class PhoneWearReleases {
                     url = redirect;
                     continue;
                 }
-                if (status != 200) throw new IOException("GitHub 返回 HTTP " + status + "。");
+                if (status != 200) throw new IOException("更新服务器返回 HTTP " + status + "。");
                 long length = connection.getContentLengthLong();
                 if (length > limit || (length >= 0 && expected >= 0 && length != expected)) {
                     throw new IOException("下载文件大小与发布信息不符或超过限制。");

@@ -14,11 +14,13 @@ import com.mario.lynkband.transport.ControlCategory;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.appwidget.AppWidgetHostView;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -28,6 +30,12 @@ import android.widget.*;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import java.io.IOException;
+import java.io.InputStream;
+import org.json.JSONException;
 
 public final class MainActivity extends Activity {
     private WristApp app;
@@ -44,6 +52,9 @@ public final class MainActivity extends Activity {
     private AlertDialog itemPicker;
     private String pickerVehicle, pickerSlot;
     private SharedPreferences themePrefs;
+    private ThemeLibrary.Entry renderedTheme;
+    private final ExecutorService themeWorker = Executors.newSingleThreadExecutor();
+    private AlertDialog themeProgress;
     private final SharedPreferences.OnSharedPreferenceChangeListener landscapeListener = (prefs, key) -> {
         if (PhoneLandscape.KEY.equals(key)) refreshThemeControls();
     };
@@ -56,6 +67,7 @@ public final class MainActivity extends Activity {
     private TextView themeCaption, solarInfo;
     private Button landscapeButton, timingButton, riseButton, setButton, locationButton;
     private static final int REQUEST_COMMUNICATION = 74;
+    private static final int PICK_THEME_ZIP = 75;
 
     @Override protected void attachBaseContext(Context base) {
         super.attachBaseContext(base);
@@ -149,6 +161,13 @@ public final class MainActivity extends Activity {
         button("配置米家场景", v -> new VoiceSceneSetup(this, app).show());
         section("外观", true);
         landscapeButton = button("", v -> chooseLandscape());
+        Switch syncTheme = new Switch(this);
+        syncTheme.setText("同步主题到穿戴设备");
+        syncTheme.setTextColor(getColor(R.color.ink));
+        syncTheme.setMinHeight(dp(52));
+        syncTheme.setChecked(app.syncThemeToWearable());
+        syncTheme.setOnCheckedChangeListener((button, enabled) -> app.setThemeSyncToWearable(enabled));
+        group.addView(syncTheme);
         timingButton = button("", v -> chooseTiming());
         riseButton = button("", v -> chooseTime(true));
         setButton = button("", v -> chooseTime(false));
@@ -249,19 +268,24 @@ public final class MainActivity extends Activity {
     }
 
     private void refreshThemeControls() {
-        PhoneLandscape scene = PhoneLandscape.selected(themePrefs);
+        PhoneLandscape scene = PhoneLandscape.SKY;
+        ThemeLibrary.Entry selected = app.themes.selected();
+        renderedTheme = selected;
+        String title = selected == null ? scene.title : selected.title() + " · " + selected.versionLabel();
         int base = scene.baseColor(night);
         int rgb = base & 0x00ffffff;
         landscapeBackground.setBackgroundColor(base);
         landscapeFade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                 new int[]{rgb, rgb, rgb, rgb, rgb | 0x20000000, rgb | 0x85000000,
                         rgb | 0xdc000000, base}));
-        landscapeImage.setImageResource(scene.image(night));
-        landscapeMotion.setScene(scene.name(), night);
-        String caption = scene.title + (night ? " · 夜间" : " · 日间");
+        android.graphics.Bitmap preview = app.themes.preview(night);
+        if (preview == null) landscapeImage.setImageResource(scene.image(night));
+        else landscapeImage.setImageBitmap(preview);
+        landscapeMotion.setScene(selected == null ? scene.name() : selected.id().toUpperCase(java.util.Locale.ROOT), night);
+        String caption = title + (night ? " · 夜间" : " · 日间");
         themeCaption.setText(caption);
         ((View) themeCaption.getParent()).setContentDescription(getString(R.string.app_name) + "，" + caption + "，选择主题");
-        landscapeButton.setText("主题 · " + scene.title);
+        landscapeButton.setText("主题 · " + title);
         boolean manual = ThemeSync.flag(themePrefs, "manual", false);
         timingButton.setText(manual ? "日夜切换 · 手动时间" : "日夜切换 · 自动日出日落");
         riseButton.setText("日出 · " + timeLabel(ThemeSync.minute(themePrefs, "riseMinute", 360)));
@@ -284,14 +308,150 @@ public final class MainActivity extends Activity {
     }
 
     private void chooseLandscape() {
-        PhoneLandscape[] scenes = PhoneLandscape.values();
-        String[] titles = new String[scenes.length];
-        for (int i = 0; i < scenes.length; i++) titles[i] = scenes[i].title;
+        if (themeProgress != null) return;
+        List<ThemeLibrary.SavedTheme> entries = app.themes.savedCatalog();
+        List<String> titles = new ArrayList<>();
+        titles.add(PhoneLandscape.SKY.title);
+        int checked = app.themes.selected() == null ? 0 : -1;
+        for (ThemeLibrary.SavedTheme choice : entries) {
+            if (app.themes.isSelected(choice.entry())) checked = titles.size();
+            titles.add(choice.label());
+        }
         new AlertDialog.Builder(this).setTitle("选择主题")
-                .setSingleChoiceItems(titles, PhoneLandscape.selected(themePrefs).ordinal(), (dialog, which) -> {
-                    app.selectPhoneLandscape(scenes[which]);
+                .setSingleChoiceItems(titles.toArray(new String[0]), checked, (dialog, which) -> {
                     dialog.dismiss();
-                }).setNegativeButton("取消", null).show();
+                    if (which == 0) {
+                        applyTheme(null);
+                        return;
+                    }
+                    ThemeLibrary.SavedTheme choice = entries.get(which - 1);
+                    if (!app.themes.isSelected(choice.entry())) {
+                        loadTheme("正在读取主题", () -> app.themes.savedTheme(choice), pack -> {
+                            if (pack != null) applyTheme(pack);
+                            else toast(choice.readFailure());
+                        });
+                    }
+                }).setNeutralButton("导入主题包", (dialog, which) -> pickThemeZip())
+                .setPositiveButton("在线主题", (dialog, which) -> browseOnlineThemes())
+                .setNegativeButton("取消", null).show();
+    }
+
+    private void browseOnlineThemes() {
+        loadTheme("正在获取在线主题", ThemeLibrary::catalog, catalog -> {
+            if (catalog == null || catalog.isEmpty()) {
+                toast(catalog == null ? "暂时无法访问在线主题" : "暂无可下载主题");
+                return;
+            }
+            String[] titles = new String[catalog.size()];
+            ThemeLibrary.Entry[] saved = new ThemeLibrary.Entry[catalog.size()];
+            int checked = -1;
+            for (int i = 0; i < titles.length; i++) {
+                ThemeLibrary.Entry entry = catalog.get(i);
+                saved[i] = app.themes.downloadedEntry(entry.id());
+                titles[i] = onlineThemeLabel(entry, saved[i]);
+                if (app.themes.isSelected(entry)) checked = i;
+            }
+            new AlertDialog.Builder(this).setTitle("在线主题")
+                    .setSingleChoiceItems(titles, checked, (dialog, which) -> {
+                        dialog.dismiss();
+                        ThemeLibrary.Entry entry = catalog.get(which);
+                        ThemeLibrary.Entry previous = saved[which];
+                        if (app.themes.isSelected(entry) && entry.matches(previous)) return;
+                        loadTheme("正在获取" + entry.title(), () -> app.themes.onlineTheme(entry), pack -> {
+                            if (pack == null) {
+                                toast("主题下载、校验或保存失败，继续使用当前主题");
+                            } else if (applyTheme(pack)) {
+                                String action = "已下载";
+                                if (previous != null) {
+                                    if (entry.matches(previous)) action = "已应用";
+                                    else action = entry.version() < previous.version() ? "已切换" : "已更新";
+                                }
+                                toast(action + " · " + pack.entry.title() + " " + pack.entry.versionLabel());
+                            }
+                        });
+                    }).setNegativeButton("取消", null).show();
+        });
+    }
+
+    private static String onlineThemeLabel(ThemeLibrary.Entry entry, ThemeLibrary.Entry previous) {
+        String title = entry.title() + " · ";
+        if (previous == null) return title + "下载 " + entry.versionLabel();
+        if (entry.matches(previous)) return title + "已下载 " + entry.versionLabel();
+        if (entry.version() == previous.version()) return title + "更新 " + entry.versionLabel() + "（资源有变化）";
+        String action = entry.version() < previous.version() ? "切换 " : "更新 ";
+        return title + action + previous.versionLabel() + " → " + entry.versionLabel();
+    }
+
+    private void pickThemeZip() {
+        Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("*/*").putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                        "application/zip", "application/x-zip", "application/x-zip-compressed", "application/octet-stream"
+                });
+        try {
+            startActivityForResult(picker, PICK_THEME_ZIP);
+        } catch (ActivityNotFoundException unavailable) {
+            toast("系统文件选择器不可用");
+        }
+    }
+
+    private void importTheme(Uri file) {
+        loadTheme("正在校验主题包", () -> {
+            try (InputStream input = getContentResolver().openInputStream(file)) {
+                if (input == null) throw new IOException("Cannot open theme ZIP");
+                return ThemeLibrary.readZip(input);
+            }
+        }, pack -> {
+            if (pack == null) {
+                toast("主题包无效，请选择小领通主题 ZIP");
+                return;
+            }
+            try {
+                app.themes.saveLocal(pack);
+            } catch (IOException | JSONException failure) {
+                toast("无法保存本地主题");
+                return;
+            }
+            if (applyTheme(pack)) toast("已导入并应用 · " + pack.entry.title() + " " + pack.entry.versionLabel());
+        });
+    }
+
+    private interface ThemeTask<T> {
+        T run() throws IOException, JSONException;
+    }
+
+    private <T> void loadTheme(String message, ThemeTask<T> task, java.util.function.Consumer<T> finish) {
+        AlertDialog progress = new AlertDialog.Builder(this).setMessage(message).setNegativeButton("取消", null).show();
+        themeProgress = progress;
+        java.util.concurrent.Future<?> job = themeWorker.submit(() -> {
+            T result = null;
+            try { result = task.run(); }
+            catch (IOException | JSONException | SecurityException unavailable) { /* Keep the current theme. */ }
+            T value = result;
+            runOnUiThread(() -> {
+                if (themeProgress != progress || !progress.isShowing() || isFinishing() || isDestroyed()) return;
+                progress.dismiss();
+                themeProgress = null;
+                finish.accept(value);
+            });
+        });
+        progress.setOnDismissListener(dialog -> {
+            if (themeProgress == progress) {
+                job.cancel(true);
+                themeProgress = null;
+            }
+        });
+    }
+
+    private boolean applyTheme(ThemeLibrary.Pack pack) {
+        try {
+            app.themes.select(pack);
+            app.selectPhoneLandscape(PhoneLandscape.compatibleWith(pack == null ? null : pack.entry));
+            refreshThemeControls();
+            return true;
+        } catch (IOException | JSONException failure) {
+            toast("应用主题失败，继续使用当前主题");
+            return false;
+        }
     }
 
     private void chooseTiming() {
@@ -338,11 +498,17 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int code, int result, Intent data) {
         super.onActivityResult(code, result, data);
+        if (code == PICK_THEME_ZIP) {
+            if (result == RESULT_OK && data != null && data.getData() != null) importTheme(data.getData());
+            return;
+        }
         if (wearUpdates.activityResult(code, result, data)) return;
         if (code == LynkWidget.REQUEST) { toast(app.card.finish(result == RESULT_OK)); render(); }
     }
 
     @Override protected void onDestroy() {
+        if (themeProgress != null) themeProgress.dismiss();
+        themeWorker.shutdownNow();
         wearUpdates.destroy();
         super.onDestroy();
     }
@@ -388,6 +554,7 @@ public final class MainActivity extends Activity {
     }
 
     private void render() {
+        if (renderedTheme != app.themes.selected()) refreshThemeControls();
         AppWidgetHostView card = app.card.view();
         if (card != null && card.getParent() != hostFrame) {
             if (card.getParent() instanceof ViewGroup old) old.removeView(card);

@@ -67,7 +67,7 @@ function setup(device = {getInfo: ({success}) => success(square)}, offline = fal
     connection.onmessage({data: JSON.stringify({v:1, id:sent.at(-1).id, actions:[slot],
       data:{vehicle:'测试车辆', range:'320', battery:'52%', fuel:'17L', time:'14:30'}, ...payload})})
   }
-  return {page, sent, reply, connection, timers, visibleRows: () => page.layout.single ? page.singleRows : page.pairedRows, feed: () => page.template(page).children[0], advance(ms) { now += ms }}
+  return {page, sent, reply, connection, timers, visibleRows: () => page.layout.single ? page.singleRows : page.pairedRows, feed: () => page.template(page).children.find(child => child.tag === 'list'), backdrop: () => page.template(page).children.find(child => child.classes.includes('themeBackdrop')), advance(ms) { now += ms }}
 }
 
 // A real PNG exercises byte-for-byte transport, including the native file module's input type.
@@ -741,32 +741,32 @@ test('offline standard screen has two solar settings and a manual time picker', 
   assert.equal(s.feed().children.find(row => row.type === 'sunrise').children[1].tag, 'picker')
   s.page.setSunrise({hour:13, minute:0})
   assert.equal(s.page.riseTime, '13:00')
-  assert.equal(s.page.template(s.page).style.backgroundImage, '/common/sky/night.png')
+  assert.equal(s.backdrop()?.src, '/common/sky/night.png')
   s.page.setSunset({hour:13, minute:0})
   assert.equal(s.page.setTime, '18:00')
-  assert.equal(compiledRule(s.page, 'page').backgroundSize, 'cover')
+  assert.equal(compiledRule(s.page, 'themeBackdrop').objectFit, 'cover')
 })
 
-test('standard screen follows the shared scene and phone sunrise/sunset with a local override', () => {
+test('standard screen uses the default scene until assets arrive and allows a local solar override', () => {
   const s = setup()
-  const image = () => s.page.template(s.page).style.backgroundImage
+  const image = () => s.backdrop()?.src
   const solarInfo = '日出 06:29 · 日落 17:11'
   assert.equal(s.sent[0].bandTheme, true)
   s.reply({theme:'COAST', themeNight:true, solarInfo})
   assert.equal(s.page.solarInfo, solarInfo)
-  assert.equal(image(), '/common/sky/coast-night.png')
+  assert.equal(image(), '/common/sky/night.png')
   s.page.setSkyMode('manual')
-  assert.equal(image(), '/common/sky/coast-day.png')
+  assert.equal(image(), '/common/sky/day.png')
   s.feed().children.find(row => row.type === 'scene').children[0].click()
-  const options = s.feed().children.filter(row => row.type === 'sceneOption').map(row => row.children[0])
-  assert.deepEqual(options.map(button => button.value), ['蓝天与星空','山脊营地','城市天际线','海岸灯塔','雪山映湖'])
-  options.at(-1).click()
-  assert.equal(s.page.mode, 'home')
-  assert.equal(s.sent.at(-1).bandThemeChoice, 'ALPINE')
+  assert.equal(s.feed().children.find(row => row.type === 'sceneInfo').children[0].value, '在手机上选择主题')
+  assert.equal(s.feed().children.some(row => row.type === 'sceneOption'), false)
+  s.page.home()
+  s.page.open()
+  assert.equal(s.sent.at(-1).bandThemeChoice, undefined)
   s.reply({theme:'ALPINE', themeNight:true, solarInfo})
-  assert.equal(image(), '/common/sky/alpine-day.png')
+  assert.equal(image(), '/common/sky/day.png')
   s.page.setSkyMode('follow')
-  assert.equal(image(), '/common/sky/alpine-night.png')
+  assert.equal(image(), '/common/sky/night.png')
   s.page.open()
   assert.equal('bandThemeChoice' in s.sent.at(-1), false)
 })
@@ -790,8 +790,8 @@ test('stale and absent replies cannot reset a picked scene or flood a legacy pho
       const count = s.sent.length
       s.reply({...ignored, actions:[]})
       assert.equal(s.sent.length, count)
-      assert.equal(s.page.sceneLabel, '主题 · 城市天际线')
-      assert.equal(s.page.template(s.page).style.backgroundImage, '/common/sky/city-day.png')
+      assert.equal(s.page.theme, 'CITY')
+      assert.equal(s.backdrop()?.src, '/common/sky/day.png')
       const timer = s.timers.get(s.page.pollTimer)
       assert.equal(timer.delay, 5000)
       s.advance(timer.delay); timer.fn()
@@ -800,14 +800,14 @@ test('stale and absent replies cannot reset a picked scene or flood a legacy pho
     s.page.onHide(); s.page.onShow()
     assert.equal(s.sent.at(-1).bandThemeChoice, 'CITY')
     s.connection.onclose(); s.page.open()
-    assert.equal(s.page.sceneLabel, '主题 · 城市天际线')
+    assert.equal(s.page.theme, 'CITY')
     s.page.onDestroy()
     const next = setup(undefined, false, 12, store)
     assert.equal(next.sent[0].bandThemeChoice, 'CITY')
     next.reply({theme:'CITY'}) // .36 companion confirms without a revision.
     next.page.open(); assert.equal(next.sent.at(-1).bandThemeChoice, undefined)
     next.reply({theme:'RIDGE'})
-    assert.equal(next.page.sceneLabel, '主题 · 山脊营地')
+    assert.equal(next.page.theme, 'RIDGE')
   }
 })
 
@@ -815,29 +815,29 @@ test('phone theme pushes redraw immediately and preserve in-flight status and co
   const store = sceneStorage(), s = setup(undefined, false, 12, store)
   assert.equal(s.sent[0].bandThemePush, true)
   const push = (theme, revision) => s.connection.onmessage({data:JSON.stringify({v:1,type:'bandThemeChanged',theme,bandThemeRevision:revision})})
-  const image = () => s.page.template(s.page).style.backgroundImage
+  const image = () => s.backdrop()?.src
   const initial = s.page.pending
   push('COAST', 7)
   assert.equal(s.page.pending, initial)
-  assert.equal(image(), '/common/sky/coast-day.png')
+  assert.equal(image(), '/common/sky/day.png')
   s.reply({theme:'SKY', bandThemeRevision:0, themeNight:true, solarInfo:'手机日落'})
-  assert.equal(image(), '/common/sky/coast-night.png')
+  assert.equal(image(), '/common/sky/night.png')
   for (const r of [6,7,-1,1.2,'8',null,undefined,1e15]) push('SKY', r)
-  assert.equal(s.page.sceneLabel, '主题 · 海岸灯塔')
+  assert.equal(s.page.theme, 'COAST')
   s.page.prepare(slot.slot)
   const prepare = s.page.pending, timer = s.page.requestTimer
   push('ALPINE', 8)
   assert.equal(s.page.pending, prepare)
   assert.equal(s.page.requestTimer, timer)
   assert.equal(s.page.solarInfo, '手机日落')
-  assert.equal(image(), '/common/sky/alpine-night.png')
+  assert.equal(image(), '/common/sky/night.png')
   s.reply({token:'valid', label:slot.label})
   assert.equal(s.page.mode, 'confirm')
   push('RIDGE', 9)
   assert.equal(s.page.mode, 'confirm')
-  assert.equal(s.page.sceneLabel, '主题 · 山脊营地')
+  assert.equal(s.page.theme, 'RIDGE')
   s.page.onDestroy()
-  assert.equal(setup(undefined, true, 12, store).page.sceneLabel, '主题 · 山脊营地')
+  assert.equal(setup(undefined, true, 12, store).page.theme, 'RIDGE')
 })
 
 test('a later tap survives the first echo; a newer phone edit wins a revision conflict', () => {
@@ -847,15 +847,15 @@ test('a later tap survives the first echo; a newer phone edit wins a revision co
   assert.equal(s.sent.at(-1).bandThemeBaseRevision, 5)
   selectScene(s, 'CITY')
   s.reply({theme:'RIDGE', bandThemeRevision:6})
-  assert.equal(s.page.sceneLabel, '主题 · 城市天际线')
+  assert.equal(s.page.theme, 'CITY')
   assert.equal(s.sent.at(-1).bandThemeChoice, 'CITY')
   assert.equal(s.sent.at(-1).bandThemeBaseRevision, 6)
   s.reply({theme:'COAST', bandThemeRevision:7, bandThemeConflict:true})
-  assert.equal(s.page.sceneLabel, '主题 · 海岸灯塔')
+  assert.equal(s.page.theme, 'COAST')
   selectScene(s, 'ALPINE')
   s.connection.onmessage({data:{v:1,type:'bandThemeChanged',theme:'CITY',bandThemeRevision:8}})
   s.reply({theme:'COAST',bandThemeRevision:7})
-  assert.equal(s.page.sceneLabel, '主题 · 城市天际线')
+  assert.equal(s.page.theme, 'CITY')
 })
 
 test('theme restores independently of first reply, a more recent tap, or unavailable storage', () => {
@@ -866,14 +866,14 @@ test('theme restores independently of first reply, a more recent tap, or unavail
     s.reply({theme:'SKY',bandThemeRevision:0})
     if (tap) selectScene(s, 'RIDGE')
     restore(saved)
-    assert.equal(s.page.sceneLabel, tap ? '主题 · 山脊营地' : '主题 · 雪山映湖')
+    assert.equal(s.page.theme, tap ? 'RIDGE' : 'ALPINE')
     s.page.onHide(); s.page.onShow()
     assert.equal(s.sent.at(-1).bandThemeChoice, tap ? 'RIDGE' : 'ALPINE')
   }
   const offline = setup(undefined, true)
   selectScene(offline, 'CITY')
   offline.page.onHide(); offline.page.onShow()
-  assert.equal(offline.page.template(offline.page).style.backgroundImage, '/common/sky/city-day.png')
+  assert.equal(offline.backdrop()?.src, '/common/sky/day.png')
 })
 
 test('capsule never sends or applies shared themes', () => {
@@ -883,7 +883,7 @@ test('capsule never sends or applies shared themes', () => {
   s.connection.onmessage({data:{v:1,type:'bandThemeChanged',theme:'COAST',bandThemeRevision:50}})
   assert.equal(s.page.theme, 'SKY')
   s.reply({theme:'CITY', themeNight:true})
-  assert.equal(s.page.template(s.page).style.backgroundImage, undefined)
+  assert.equal(s.backdrop()?.src, undefined)
   assert.equal(s.feed().children.some(row => ['theme','scene'].includes(row.type)), false)
 })
 
@@ -891,7 +891,7 @@ test('offline daylight boundaries and a failed theme store cannot prevent startu
   const broken = {get() { throw Error('unavailable') }, set() { throw Error('unavailable') }}
   for (const [hour, expect] of [[5,'night'],[6,'day'],[17,'day'],[18,'night']]) {
     const s = setup(undefined, true, hour, broken)
-    assert.equal(s.page.template(s.page).style.backgroundImage, '/common/sky/' + expect + '.png')
+    assert.equal(s.backdrop()?.src, '/common/sky/' + expect + '.png')
     s.page.setSkyMode('manual')
     assert.equal(s.page.skyMode, 'manual')
   }
@@ -923,12 +923,12 @@ for (const [width, height, shape, themed] of [
     const s = setup({getInfo: ({success}) => { detected = success }}, false, 12,
       {get({success}) { reads++; success(JSON.stringify({mode:'manual', rise:780, set:1080})) }})
     const themeRow = () => s.feed().children.some(row => row.type === 'theme')
-    const image = () => s.page.template(s.page).style.backgroundImage
+    const image = () => s.backdrop()?.src
     assert.equal(themeRow(), false)
     assert.equal(image(), undefined)
     detected({screenWidth:width, screenHeight:height, screenShape:shape})
     assert.equal(themeRow(), themed)
-    assert.equal(reads, themed ? 2 : 0) // Separate scene and solar settings.
+    assert.equal(reads, themed ? 3 : 0) // Scene, solar settings and downloaded artwork.
     assert.equal(image(), themed ? '/common/sky/night.png' : undefined)
     s.reply({data:{battery:'50%', vehicle:'纯电车'}})
     assert.ok(s.feed().children.some(row => row.type === 'batteryOnly'))
@@ -994,3 +994,118 @@ for (const [layout, device] of [['square', undefined], ['standard single', {getI
     assert.equal(s.writes.length, 0)
   })
 }
+
+test('standard screen stores only a complete verified theme, restores it offline and clears it on request', () => {
+  const {crc32} = require('node:zlib')
+  const images = Object.fromEntries(['day','night'].map(part => [
+    part, readFileSync(path.resolve(__dirname, '../../themes/city/vela-' + part + '.png'))
+  ]))
+  const offer = {key:'a'.repeat(64), title:'城市天际线', dayCrc:crc32(images.day), nightCrc:crc32(images.night)}
+  const files = new Map(), saved = new Map()
+  const store = {
+    get({key, success}) { success(saved.get(key)) },
+    set({key, value, success}) { saved.set(key, value); if (success) success() }
+  }
+  const file = {
+    writeText({uri, success}) { files.set(uri, null); success() },
+    writeArrayBuffer({uri, buffer, success}) { files.set(uri, Buffer.from(buffer)); success() },
+    delete({uri}) { files.delete(uri) }
+  }
+  const s = setup(undefined, false, 12, store, file)
+  assert.equal(s.sent[0].remoteThemes, true)
+  s.reply({remoteTheme:offer, themeNight:false})
+  assert.equal(s.page.remoteBackdrop, '')
+
+  function transfer(target, count, night) {
+    let chunks = 0
+    for (let polls = 0; chunks < count && polls < count * 2; polls++) {
+      const timer = s.timers.get(s.page.pollTimer)
+      assert.ok(timer)
+      s.advance(timer.delay); timer.fn()
+      const request = s.sent.at(-1)
+      if (request.type === 'status') {
+        s.reply({remoteTheme:target, themeNight:night})
+        continue
+      }
+      assert.equal(request.type, 'themeAsset')
+      assert.equal(request.key, target.key)
+      const image = images[request.part]
+      const end = Math.min(image.length, request.offset + 1536)
+      chunks++
+      s.reply({type:'themeAsset', key:target.key, part:request.part, offset:request.offset,
+        length:image.length, chunk:image.subarray(request.offset, end).toString('base64')})
+      if (target === offer && chunks < count) assert.equal(s.page.remoteBackdrop, '')
+    }
+    assert.equal(chunks, count)
+  }
+  const dayChunks = Math.ceil(images.day.length / 1536)
+  transfer(offer, dayChunks + Math.ceil(images.night.length / 1536), false)
+  assert.equal(s.page.sceneLabel, '主题 · 城市天际线')
+  assert.ok(s.page.remoteBackdrop.endsWith('-day.png'))
+  assert.deepEqual(files.get(s.page.remoteBackdrop), images.day)
+  assert.equal(s.backdrop().src, s.page.remoteBackdrop)
+
+  s.page.open()
+  const bad = {...offer, key:'b'.repeat(64), dayCrc:0}
+  s.reply({remoteTheme:bad, themeNight:true})
+  const oldNight = s.page.remoteBackdrop
+  assert.deepEqual(files.get(oldNight), images.night)
+  transfer(bad, dayChunks, true)
+  assert.equal(s.page.remoteBackdrop, oldNight)
+  assert.equal(files.size, 2)
+
+  const restarted = setup(undefined, false, 12, store, file)
+  assert.equal(restarted.page.sceneLabel, '主题 · 城市天际线')
+  restarted.reply({remoteTheme:null})
+  assert.equal(restarted.page.remoteBackdrop, '')
+  assert.equal(restarted.page.sceneLabel, '主题 · 蓝天与星空')
+  assert.equal(files.size, 0)
+})
+
+// Official models exercise measured dimensions through the compiled Vela template.
+for (const [model, width, height, shape] of [
+  ['Xiaomi Watch S1 Pro', 480, 480, 'circle'], ['Xiaomi Watch H1', 466, 466, 'circle'],
+  ['Xiaomi Watch S3', 466, 466, 'circle'], ['Xiaomi Watch S4 / S4 Sport / 41 mm', 466, 466, 'circle'],
+  ['Xiaomi Watch S5', 480, 480, 'circle'], ['REDMI Watch 4', 390, 450, 'rect'],
+  ['REDMI Watch 5 / 6', 432, 514, 'rect'], ['Xiaomi Smart Band 8 Pro / 9 Pro', 336, 480, 'rect'],
+  ['Xiaomi Smart Band 9', 192, 490, 'pill-shaped'], ['Xiaomi Smart Band 10', 212, 520, 'pill-shaped'],
+  ['small rectangular firmware reports', 176, 220, 'rect'],
+  ['REDMI Watch 4 without shape', 390, 450, undefined]
+]) {
+  test(model + ' scales its artwork and keeps photo and motion on supported shapes', () => {
+    const s = setup({getInfo: ({success}) => success({screenWidth:width, screenHeight:height, screenShape:shape})})
+    const pill = shape === 'pill-shaped'
+    assert.equal(s.page.layout.supportsTheme, !pill)
+    s.reply()
+    const fallback = () => s.feed().children.find(row => row.type === 'defaultCarPhoto')
+    if (pill) {
+      assert.equal(s.backdrop(), undefined)
+      assert.equal(fallback(), undefined)
+      assert.equal(s.page.layout.single, true)
+      return
+    }
+    assert.equal(s.backdrop().src, '/common/sky/day.png')
+    assert.deepEqual([s.backdrop().style.width,s.backdrop().style.height], ['336px', Math.round(designWidth*height/width)+'px'])
+    assert.ok(s.backdrop().classes.includes('themeMoving'))
+    assert.equal(fallback().children[0].src, '/common/default-vehicle.png')
+    assert.equal(fallback().style.height, width < 280 ? '104px' : '128px')
+    if (width < 280) assert.equal(s.page.layout.single, true)
+    s.page.onHide()
+    assert.ok(!s.backdrop().classes.includes('themeMoving'))
+  })
+}
+
+test('an old companion keeps matching cached artwork visible and falls back if it selects a different preset', () => {
+  const saved = JSON.stringify({key:'a'.repeat(64), title:'海岸灯塔', scene:'coast', dayCrc:1, nightCrc:2, slot:0})
+  const s = setup(undefined, false, 12, {get({key,success}) { success(key === 'garageThemeArt' ? saved : undefined) }, set() {}})
+  assert.equal(s.page.sceneLabel, '主题 · 海岸灯塔')
+  s.reply({theme:'COAST'})
+  assert.equal(s.page.sceneLabel, '主题 · 海岸灯塔')
+  s.page.open()
+  s.reply({theme:'CITY'})
+  assert.equal(s.backdrop().src, '/common/sky/day.png')
+  assert.equal(s.page.themeActive.key, 'a'.repeat(64))
+  s.page.open()
+  s.reply({remoteTheme:JSON.parse(saved)})
+  assert.equal(s.page.sceneLabel, '主题 · 海岸灯塔')
+})

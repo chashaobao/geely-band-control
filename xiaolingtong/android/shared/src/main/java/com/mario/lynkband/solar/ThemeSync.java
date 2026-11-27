@@ -23,6 +23,21 @@ public final class ThemeSync {
         return raw instanceof Integer value && value >= 0 && value < 1440 ? value : fallback;
     }
 
+    public static String legacyThemeId(Object scene) {
+        return scene instanceof String value && validScene(value)
+                ? value.toLowerCase(java.util.Locale.ROOT) : null;
+    }
+
+    static String legacyIdForTitle(String title) {
+        return switch (title) {
+            case "山脊营地" -> "ridge";
+            case "城市天际线" -> "city";
+            case "海岸灯塔" -> "coast";
+            case "雪山映湖" -> "alpine";
+            default -> "generic";
+        };
+    }
+
     private static boolean validScene(String scene) {
         return "SKY".equals(scene) || "RIDGE".equals(scene) || "CITY".equals(scene)
                 || "COAST".equals(scene) || "ALPINE".equals(scene);

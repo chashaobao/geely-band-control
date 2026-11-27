@@ -20,6 +20,7 @@ import android.view.WindowManager;
 import android.widget.Toast;
 
 import com.mario.lynkband.transport.PairedDevice;
+import com.mario.lynkband.solar.ThemeArt;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -28,6 +29,8 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final WatchState state = new WatchState();
     private PhoneLink link;
+    private WatchThemes themes;
+    private int themeBurst;
     private WatchUpdate update;
     private WatchFace face;
     private SolarController solar;
@@ -40,7 +43,10 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
     private final Runnable reconnect = () -> { if (visible && !link.ready()) start(false); };
     private final Runnable poll =
             () -> {
-                if (visible && link.ready() && !state.confirming()) send("status", null);
+                if (!visible || !link.ready() || state.confirming()) return;
+                long now = SystemClock.elapsedRealtime();
+                boolean sendTheme = themeBurst < 4 && themes.ready() && state.canSyncTheme(now);
+                send(sendTheme ? ThemeArt.TRANSFER : "status", null);
             };
     private final Runnable expire =
             () -> {
@@ -109,12 +115,9 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
                                 update.receive();
                             }
 
-                            @Override public void landscapeSelected() {
-                                if (!state.busy() && !state.confirming()) send("status", null);
-                            }
-
                             @Override public void solarSettingsChanged() { solar.settingsChanged(); }
                         });
+        themes = face.themes();
         solar = new SolarController(this, getSharedPreferences("watchTheme", MODE_PRIVATE),
                 face::setLocalSolar, false);
         solar.initialize();
@@ -154,6 +157,7 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
         queuedChoice = null;
         queuedRefresh = false;
         link.close();
+        themes.disconnected();
         state.offline("等待手机连接");
         super.onStop();
     }
@@ -279,6 +283,7 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
         queuedChoice = null;
         queuedRefresh = false;
         String previousNote = state.note;
+        themes.disconnected();
         state.offline(reason);
         update.linkLost();
         if (visible) {
@@ -306,10 +311,18 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
         if (!visible) return;
         boolean wasConfirming = state.confirming();
         String previousNote = state.note;
-        boolean statusReply = state.reading();
+        boolean statusReply = state.readingStatus();
+        boolean themeReply = state.readingTheme();
         try {
             state.apply(response, photo, SystemClock.elapsedRealtime());
-            if (statusReply) face.mergeLandscape(response.optJSONObject("landscapeSync"));
+            if (statusReply) {
+                face.mergeLandscape(response.optJSONObject("landscapeSync"));
+                themes.acceptOffer(response);
+                themeBurst = 0;
+            } else if (themeReply) {
+                themes.acceptChunk(response);
+                themeBurst++;
+            }
             if (firstReply) {
                 firstReply = false;
                 Log.i("WristLynkLink", "Received first status on Bluetooth connection");
@@ -356,7 +369,12 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
 
     private void schedule() {
         main.removeCallbacks(poll);
-        if (visible && !update.holdsPhoneLink() && link.ready() && !state.confirming()) main.postDelayed(poll, state.pollDelay(SystemClock.elapsedRealtime()));
+        if (visible && !update.holdsPhoneLink() && link.ready() && !state.confirming()) {
+            long now = SystemClock.elapsedRealtime();
+            long delay = state.pollDelay(now);
+            if (state.canSyncTheme(now) && themes.ready()) delay = themeBurst < 4 ? 80 : 250;
+            main.postDelayed(poll, delay);
+        }
     }
 
     private void send(String type, JSONObject item) {
@@ -369,7 +387,8 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
             }
             main.removeCallbacks(poll);
             main.removeCallbacks(expire);
-            if ("status".equals(type)) request.put("landscapeSync", face.landscapeSnapshot());
+            if ("status".equals(type)) request.put("landscapeSync", face.landscapeSnapshot()).put(ThemeArt.CAPABILITY, true);
+            if (ThemeArt.TRANSFER.equals(type)) themes.request(request);
             request.put(com.mario.lynkband.transport.WatchReplyWait.CAPABILITY, true);
             link.send(request);
             render();

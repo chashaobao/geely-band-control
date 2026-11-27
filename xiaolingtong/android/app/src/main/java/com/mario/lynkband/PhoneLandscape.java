@@ -9,10 +9,10 @@ import com.mario.lynkband.solar.ThemeSync;
 /** The paired watch shares the landscape choice. Solar settings are local to the phone. */
 enum PhoneLandscape {
     SKY("蓝天与星空", R.drawable.phone_day_landscape, R.drawable.watch_stars),
-    RIDGE("山脊营地", R.drawable.phone_day_ridge, R.drawable.watch_ridge_night),
-    CITY("城市天际线", R.drawable.phone_day_city, R.drawable.watch_city_night),
-    COAST("海岸灯塔", R.drawable.phone_day_coast, R.drawable.watch_coast_night),
-    ALPINE("雪山映湖", R.drawable.phone_day_alpine, R.drawable.watch_alpine_night);
+    RIDGE("山脊营地", R.drawable.phone_day_landscape, R.drawable.watch_stars),
+    CITY("城市天际线", R.drawable.phone_day_landscape, R.drawable.watch_stars),
+    COAST("海岸灯塔", R.drawable.phone_day_landscape, R.drawable.watch_stars),
+    ALPINE("雪山映湖", R.drawable.phone_day_landscape, R.drawable.watch_stars);
 
     static final String KEY = "landscape";
     final String title;
@@ -43,6 +43,17 @@ enum PhoneLandscape {
     static PhoneLandscape selected(SharedPreferences prefs) {
         String name = ThemeSync.scene(prefs, KEY);
         for (PhoneLandscape scene : values()) if (scene.name().equals(name)) return scene;
+        return SKY;
+    }
+
+    String themeId() { return name().toLowerCase(java.util.Locale.ROOT); }
+
+    static PhoneLandscape compatibleWith(ThemeLibrary.Entry entry) {
+        if (entry != null) {
+            for (PhoneLandscape scene : values()) {
+                if (scene.themeId().equals(entry.id()) && scene.title.equals(entry.title())) return scene;
+            }
+        }
         return SKY;
     }
 

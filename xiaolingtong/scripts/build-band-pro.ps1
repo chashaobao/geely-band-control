@@ -19,6 +19,11 @@ try {
         $icon = Join-Path $PSScriptRoot '..\band\profiles\10-pro\launcher-pro.png'
         Copy-Item -LiteralPath $icon -Destination (Join-Path $stage 'src\common\launcher-pro.png')
         $config.icon = '/common/launcher-pro.png'
+    } else {
+        foreach ($name in 'sky\day.png','sky\night.png','default-vehicle.png') {
+            $asset = Join-Path $stage "src\common\$name"
+            Remove-Item -LiteralPath $asset
+        }
     }
     [IO.File]::WriteAllText($manifest, ($config | ConvertTo-Json -Depth 10))
     $modules = New-Item -ItemType Junction -Path (Join-Path $stage 'node_modules') -Target (Join-Path $band 'node_modules')

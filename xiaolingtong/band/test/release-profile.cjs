@@ -1,12 +1,15 @@
 // Exercise the compiled release against missing and contradictory firmware screen information.
 const assert = require('node:assert/strict')
-const {readFileSync} = require('node:fs')
+const {existsSync, readdirSync, readFileSync} = require('node:fs')
 const vm = require('node:vm')
 const path = require('node:path')
 const [root, profile] = process.argv.slice(2)
 assert.ok(['standard', 'pill'].includes(profile))
 const script = name => '(' + readFileSync(path.join(root, name), 'utf8').trim().replace(/^export default /, '') + ')'
 {
+  const sky = path.join(root, 'common/sky')
+  assert.deepEqual(existsSync(sky) ? readdirSync(sky).sort() : [], profile === 'standard' ? ['day.png', 'night.png'] : [])
+  assert.equal(existsSync(path.join(root, 'common/default-vehicle.png')), profile === 'standard')
   // Check assets in the release itself. A valid source-tree path alone does not put it in the RPK.
   for (const group of ['', 'day/', 'open/']) {
     const categories = group === 'open/' ? ['LOCK','TRUNK','WINDOW','CLIMATE','SUNROOF','ENGINE'] : ['LOCK','WINDOW','FIND','TRUNK','ENGINE','SUNROOF','CLIMATE','OTHER']
@@ -38,6 +41,7 @@ for (const info of [null, {screenShape:'pill-shaped', screenWidth:192, screenHei
   assert.equal(sent[0].bandVersionCode, 26)
   assert.equal(sent[0].bandPackageProfile, profile)
   assert.equal(!!sent[0].bandPhoto, profile === 'standard')
+  assert.equal(!!sent[0].remoteThemes, profile === 'standard')
   assert.equal(!!sent[0].bandTheme, profile === 'standard')
   if (profile === 'pill') assert.equal(page.layout.single, true)
 }

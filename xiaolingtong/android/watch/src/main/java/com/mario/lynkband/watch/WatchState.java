@@ -1,6 +1,8 @@
 package com.mario.lynkband.watch;
 
 import android.graphics.Bitmap;
+import com.mario.lynkband.solar.ThemeArt;
+
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -94,6 +96,10 @@ final class WatchState {
                 && !"车况只读".equals(status) && actionable(item);
     }
 
+    boolean canSyncTheme(long now) {
+        return loading == null && !needsStatusAfterAck && now >= fastPollUntil;
+    }
+
     long pollDelay(long now) {
         if (needsStatusAfterAck) return 0;
         if (loading != null) return Math.min(500, Math.max(0, loadingDeadline - now));
@@ -128,7 +134,9 @@ final class WatchState {
     }
 
     boolean busy() { return pending != null; }
-    boolean reading() { return busy() && "status".equals(pending.optString("type")); }
+    boolean readingStatus() { return busy() && "status".equals(pending.optString("type")); }
+    boolean readingTheme() { return busy() && ThemeArt.TRANSFER.equals(pending.optString("type")); }
+    boolean reading() { return readingStatus() || readingTheme(); }
     boolean controlPending() { return busy() && !reading(); }
     String preparingTitle() {
         return busy() && "prepare".equals(pending.optString("type")) ? pending.optString("label") : "";
@@ -172,6 +180,10 @@ final class WatchState {
             throw new JSONException("Wrong request ID or version");
         JSONObject request = pending;
         String type = request.getString("type");
+        if (ThemeArt.TRANSFER.equals(type)) {
+            pending = null;
+            return;
+        }
         if (reply.has("type")) {
             if (!"executeAck".equals(reply.opt("type")) || !"execute".equals(type)
                     || !Boolean.TRUE.equals(request.opt("compactExecuteAck"))

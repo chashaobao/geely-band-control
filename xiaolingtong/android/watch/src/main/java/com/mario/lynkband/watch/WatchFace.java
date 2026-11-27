@@ -19,6 +19,7 @@ import android.widget.*;
 
 import com.mario.lynkband.solar.ThemeSync;
 import com.mario.lynkband.transport.ControlCategory;
+import com.mario.lynkband.ui.AmbientMotion;
 
 import org.json.JSONObject;
 
@@ -39,7 +40,6 @@ final class WatchFace extends FrameLayout {
         void reconnect();
 
         default void receiveUpdate() {}
-        default void landscapeSelected() {}
         default void solarSettingsChanged() {}
     }
 
@@ -51,6 +51,7 @@ final class WatchFace extends FrameLayout {
 
     private final Controls events;
     private final FrameLayout dial;
+    private final AmbientMotion motion;
     private final Path roundViewport = new Path();
     private int windowWidth, windowHeight;
     private boolean round, narrow, singleColumn, scrollingHome;
@@ -63,18 +64,7 @@ final class WatchFace extends FrameLayout {
     private Screen screen = Screen.STATUS;
     private static final String SCENE_KEY = "scene";
     private final android.content.SharedPreferences themeSettings;
-    enum Scene {
-        SKY("蓝天与星空", R.drawable.watch_landscape, R.drawable.watch_stars),
-        RIDGE("山脊营地", R.drawable.watch_ridge, R.drawable.watch_ridge_night),
-        CITY("城市天际线", R.drawable.watch_city, R.drawable.watch_city_night),
-        COAST("海岸灯塔", R.drawable.watch_coast, R.drawable.watch_coast_night),
-        ALPINE("雪山映湖", R.drawable.watch_alpine, R.drawable.watch_alpine_night);
-
-        final String title;
-        final int day, night;
-        Scene(String title, int day, int night) { this.title = title; this.day = day; this.night = night; }
-    }
-    private Scene scene;
+    private final WatchThemes themes;
     private boolean localSolarNight, solarNight;
     private String localSolarInfo = "日出 06:00 · 日落 18:00";
     private Context palette;
@@ -100,7 +90,9 @@ final class WatchFace extends FrameLayout {
         super(context);
         this.events = events;
         themeSettings = context.getSharedPreferences("watchTheme", Context.MODE_PRIVATE);
-        scene = storedScene();
+        themes = new WatchThemes(context);
+        motion = new AmbientMotion(context);
+        motion.setCenterCrop(true);
         updatePalette();
         setBackgroundColor(0xff000000);
         dial = new FrameLayout(context);
@@ -210,7 +202,7 @@ final class WatchFace extends FrameLayout {
         if (scale <= 0 || model == null) return;
         String key =
                 screen
-                        + "|" + scene + "|"
+                        + "|" + themes.key() + "|" + themes.scene() + "|" + themes.waitingForLegacyArt() + "|"
                         + online
                         + paired
                         + model.confirming()
@@ -237,20 +229,24 @@ final class WatchFace extends FrameLayout {
         }
         dial.removeAllViews();
         scrollingHome = !model.confirming() && screen == Screen.STATUS && (online || paired);
-        boolean photoHome = scrollingHome && online && model.carPhoto != null;
+        boolean photoHome = scrollingHome;
         boolean night = nightScene();
         dial.setBackgroundColor(scrollingHome ? (night ? 0xff11151a : 0xff4c5a68) : color(R.color.bg));
         if (scrollingHome) {
-            View landscape = new View(getContext());
-            landscape.setBackgroundResource(night ? scene.night : scene.day);
-            if (!photoHome && !night) {
-                int tint = 0xb3ffffff;
-                landscape.setForeground(new android.graphics.drawable.ColorDrawable(tint));
+            android.widget.ImageView landscape = new android.widget.ImageView(getContext());
+            landscape.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+            android.graphics.Bitmap preview = themes.preview(night);
+            if (preview == null) landscape.setImageResource(night ? R.drawable.watch_stars : R.drawable.watch_landscape);
+            else landscape.setImageBitmap(preview);
+            if (!night) {
+                int[] shade = photoHome
+                        ? new int[]{0x900a1323, 0x640a1323, 0x300a1323, 0x000a1323}
+                        : new int[]{0x80ffffff, 0x8cffffff, 0x52ffffff, 0x14ffffff, 0x08ffffff};
+                landscape.setForeground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, shade));
             }
             landscape.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
             dial.addView(landscape, new FrameLayout.LayoutParams(-1, -1));
-            com.mario.lynkband.ui.AmbientMotion motion = new com.mario.lynkband.ui.AmbientMotion(getContext());
-            motion.setScene(scene.name(), night);
+            motion.setScene(themes.scene(), night);
             dial.addView(motion, new FrameLayout.LayoutParams(-1, -1));
         }
         createScrollPage();
@@ -357,8 +353,13 @@ final class WatchFace extends FrameLayout {
 
         ImageView photo = new ImageView(getContext());
         photo.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        photo.setImageBitmap(model.carPhoto);
-        photo.setContentDescription("车模图");
+        if (model.carPhoto != null) {
+            photo.setImageBitmap(model.carPhoto);
+            photo.setContentDescription("车模图");
+        } else {
+            photo.setImageResource(R.drawable.default_vehicle);
+            photo.setContentDescription("默认领克车图");
+        }
         put(photo, 60, 229, 360, 164);
         put(new Symbol("chevron", soft), 230, 425, 20, 14);
         return 480;
@@ -603,7 +604,7 @@ final class WatchFace extends FrameLayout {
         }
         actionButton("接收手机更新", "", false, y, events::receiveUpdate);
         y += 102;
-        actionButton("选主题", "", false, y, () -> go(Screen.THEME));
+        actionButton("主题和昼夜", "", false, y, () -> go(Screen.THEME));
         y += 102;
         if (online) {
             secondaryButton("返回车况", "back", y, () -> go(Screen.STATUS));
@@ -614,36 +615,23 @@ final class WatchFace extends FrameLayout {
     }
 
     private void themePage() {
-        label("选主题", 30, color(R.color.ink), true, 100, 40, 280, 46);
-        int y = 104;
-        for (Scene choice : Scene.values()) {
-            boolean selected = scene == choice;
-            actionButton(choice.title, selected ? "check" : "", selected, y, () -> selectScene(choice));
-            y += 102;
-        }
-        actionButton("日出日落", "", false, y, () -> go(Screen.SOLAR));
-        secondaryButton("返回", "back", y + 102, () -> go(Screen.PHONE));
-        page.setMinimumHeight(px(y + 252));
+        label("主题", 30, color(R.color.ink), true, 100, 40, 280, 46);
+        label(themes.title(), 21, color(R.color.ink), true, 66, 102, 348, 40);
+        label(themes.waitingForLegacyArt() ? "旧主题待同步" : "在手机上选择主题",
+                18, color(R.color.muted), false, 66, 147, 348, 34);
+        actionButton("日出日落", "", false, 195, () -> go(Screen.SOLAR));
+        secondaryButton("返回", "back", 297, () -> go(Screen.PHONE));
+        page.setMinimumHeight(px(447));
     }
 
-    private Scene storedScene() {
-        try { return Scene.valueOf(ThemeSync.scene(themeSettings, SCENE_KEY)); }
-        catch (IllegalArgumentException unknown) { return Scene.SKY; }
-    }
+    WatchThemes themes() { return themes; }
 
     JSONObject landscapeSnapshot() {
         return ThemeSync.snapshot(themeSettings, SCENE_KEY, false);
     }
 
     void mergeLandscape(JSONObject peer) {
-        if (ThemeSync.merge(themeSettings, SCENE_KEY, false, peer)) scene = storedScene();
-    }
-
-    private void selectScene(Scene choice) {
-        ThemeSync.select(themeSettings, SCENE_KEY, choice.name(), false);
-        scene = choice;
-        go(Screen.STATUS);
-        events.landscapeSelected();
+        ThemeSync.merge(themeSettings, SCENE_KEY, false, peer);
     }
 
     private boolean manualSolar() {

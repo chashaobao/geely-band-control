@@ -1,5 +1,8 @@
 <template>
-  <div class="page" style="{{ backdrop }}">
+  <div class="page">
+    <image class="{{ motionVisible && mode === 'home' ? 'themeBackdrop themeMoving' : 'themeBackdrop' }}"
+      if="{{ layout.supportsTheme && (remoteBackdrop || backdrop.backgroundImage) }}" style="{{ layout.backdropStyle }}"
+      src="{{ remoteBackdrop || backdrop.backgroundImage }}" alt="blank" @error="themeImageError"></image>
     <list class="feed" style="{{ layout.feedStyle }}" if="{{ mode === 'home' }}">
       <list-item type="vehicle" class="block headingRow">
         <text class="title">{{ vehicle }}</text>
@@ -31,8 +34,12 @@
       <list-item type="condition" class="block conditionRow" if="{{ condition }}">
         <text class="caption" style="{{ layout.captionStyle }}">{{ condition }}</text>
       </list-item>
-      <list-item type="carPhoto" class="photoRow" if="{{ layout.supportsTheme && !!photoSrc }}">
+      <list-item type="carPhoto" class="photoRow" style="{{ layout.photoRowStyle }}" if="{{ layout.supportsTheme && !!photoSrc }}">
         <image class="carPhoto" src="{{ photoSrc }}" alt="blank" @error="clearPhoto"></image>
+      </list-item>
+      <list-item type="defaultCarPhoto" class="photoRow" style="{{ layout.photoRowStyle }}"
+        if="{{ layout.supportsTheme && !photoSrc }}">
+        <image class="carPhoto" src="/common/default-vehicle.png" alt="blank"></image>
       </list-item>
       <list-item class="singleSlotRow" style="{{ layout.rowStyle }}" type="actionSingle" for="{{ singleRows }}" tid="id">
         <div class="tile singleTile" style="{{ layout.tileStyle }}" disabled="{{ !$item.left.enabled }}" @click="prepare($item.left.slot)">
@@ -71,9 +78,9 @@
       </list-item>
     </list>
     <list class="feed" style="{{ layout.feedStyle }}" if="{{ mode === 'scenes' && layout.supportsTheme }}">
-      <list-item class="block headingRow" type="sceneTitle"><text class="title">选择主题</text></list-item>
-      <list-item class="block buttonRow" type="sceneOption" for="{{ sceneOptions }}" tid="id">
-        <text class="button" style="{{ layout.buttonStyle }}" @click="selectScene($item.id)">{{ $item.name }}</text>
+      <list-item class="block headingRow" type="sceneTitle"><text class="title">主题</text></list-item>
+      <list-item class="block receiptRow" type="sceneInfo">
+        <text class="caption" style="{{ layout.captionStyle }}">在手机上选择主题</text>
       </list-item>
       <list-item class="block buttonRow" type="back"><text class="button" style="{{ layout.buttonStyle }}" @click="home">返回</text></list-item>
     </list>
@@ -132,6 +139,7 @@ function screenLayout(info) {
   const pill = screenProfile === 'pill' || (screenProfile === 'auto' && measuredPill)
   const rect = !pill && (info.screenShape === 'rect' || (screenProfile === 'standard' && !ratio))
   const rectangular = ratio > 0 && width !== height && info.screenShape !== 'circle'
+  const small = width > 0 && width < 280
   const single = pill || rectangular || !(width >= 280)
   // Center the scroll viewport inside the outline, so even its first/last row is reachable.
   // A capsule's two round ends together need just under half a screen width at 84% usable width.
@@ -146,6 +154,8 @@ function screenLayout(info) {
   return {
     single:single,
     supportsTheme:screenProfile === 'standard' || (ratio > 0 && !pill),
+    backdropStyle:ratio >= 0.6 && ratio <= 2.8 ? {width:'336px', height:Math.round(336 * ratio) + 'px'} : {width:'100%', height:'100%'},
+    photoRowStyle:{height:(small ? 104 : 128) + 'px'},
     feedStyle:{width:feedWidth + '%', height:usableHeight + '%'},
     captionStyle:{fontSize:caption + 'px'},
     energyStyle:{flexDirection:width >= 180 ? 'row' : 'column', height:width >= 180 ? '56px' : '104px'},
@@ -159,6 +169,42 @@ const maxChunkChars = 2048
 // Let the UI process taps between read-only status replies. A full .37 image is up to
 // 16 KiB of base64, often split into >8 chunks by the 4 KiB envelope's action list.
 const photoChunkDelay = 32
+const themeChunkBytes = 1536
+const maxThemeBytes = 48 * 1024
+const themeStorageKey = 'garageThemeArt'
+function themeUri(slot, part) { return 'internal://files/garage-theme-' + slot + '-' + part + '.png' }
+function validTheme(info) {
+  return info && typeof info.key === 'string' && /^[0-9a-f]{64}$/.test(info.key) &&
+    typeof info.title === 'string' && !!info.title.trim() && info.title.length <= 32 &&
+    [info.dayCrc, info.nightCrc].every(value => Number.isInteger(value) && value >= 0 && value <= 0xffffffff)
+}
+function pngCrc(bytes) {
+  let crc = 0xffffffff
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i]
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
+  }
+  return (crc ^ 0xffffffff) >>> 0
+}
+function deleteTheme(slot) {
+  try {
+    const file = require('@system.file')
+    file.delete({uri:themeUri(slot, 'day')})
+    file.delete({uri:themeUri(slot, 'night')})
+  } catch (error) { /* Both paths are reused on the next replacement. */ }
+}
+function writeThemePng(uri, bytes, success, fail) {
+  try {
+    const file = require('@system.file')
+    const attempt = raw => {
+      try {
+        file.writeArrayBuffer({uri:uri, buffer:raw ? bytes.buffer : bytes, position:0, append:false,
+          success:success, fail:(reason, code) => { if (raw && code === 202) attempt(false); else fail() }})
+      } catch (error) { fail() }
+    }
+    file.writeText({uri:uri, text:' ', append:false, success:() => attempt(true), fail:fail})
+  } catch (error) { fail() }
+}
 const maxFastPhotoPolls = 16
 // Fixed paths bound storage even after a process kill. Keep each path reserved through async deletion.
 const photoPaths = ['internal://cache/garage-car-0.png', 'internal://cache/garage-car-1.png']
@@ -232,8 +278,7 @@ export default {
     mode: 'home', vehicle: '小领通', status: '正在连接手机', range: '—', unit: 'km',
     condition: '', battery: '—', fuel: '', time: '等候卡片更新', note: '', photoSrc: '',
     actions: [], singleRows: [], pairedRows: [], layout: screenLayout({}), question: '', confirmTile: controlTile({}),
-    backdrop:{}, sceneLabel:'主题 · 蓝天与星空', skyLabel:'昼夜 · 跟随手机', skyMode:'follow',
-    sceneOptions:scenes.map(id => ({id:id, name:sceneNames[id]})),
+    backdrop:{}, motionVisible:false, remoteBackdrop:'', sceneLabel:'主题 · 蓝天与星空', skyLabel:'昼夜 · 跟随手机', skyMode:'follow',
     solarInfo:'', riseTime:'06:00', setTime:'18:00'
   },
   onInit() {
@@ -242,6 +287,13 @@ export default {
       if (info && Number.isInteger(info.versionCode) && info.versionCode > 0) this.installedVersionCode = info.versionCode
     } catch (error) { /* Older firmware can still report vehicle status. */ }
     this.backdropReady = false
+    this.themeActive = null
+    this.legacyThemeDisplay = ''
+    this.themeTarget = undefined
+    this.themeTransfer = null
+    this.themeWriting = false
+    this.themeRetryAt = 0
+    this.themeBurst = 0
     this.userPickedSky = false
     this.theme = 'SKY'
     this.syncedNight = null
@@ -291,6 +343,7 @@ export default {
     if (this.appearanceLoaded) return
     this.appearanceLoaded = true
     this.loadSkyMode()
+    this.restoreRemoteTheme()
     // A delayed storage read can race both the first phone snapshot and a new tap.
     // Never write that snapshot over an unread, unacknowledged band selection.
     this.sceneReading = true
@@ -342,6 +395,7 @@ export default {
   updateSky() {
     if (!this.layout.supportsTheme) {
       if (this.backdrop.backgroundImage) this.backdrop = {}
+      if (this.remoteBackdrop) this.remoteBackdrop = ''
       return
     }
     this.riseTime = minuteLabel(this.riseMinute)
@@ -357,13 +411,141 @@ export default {
       day = rise < set ? minute >= rise && minute < set : minute >= rise || minute < set
       this.solarInfo = (this.skyMode === 'follow' ? '本机 · ' : '') + '日出 ' + this.riseTime + ' · 日落 ' + this.setTime
     }
-    const prefix = this.theme === 'SKY' ? '' : this.theme.toLowerCase() + '-'
-    const image = '/common/sky/' + prefix + (day ? 'day' : 'night') + '.png'
-    if (this.backdropReady && this.backdrop.backgroundImage !== image) {
-      this.backdrop = {backgroundImage:image}
-    }
-    this.sceneLabel = '主题 · ' + sceneNames[this.theme]
+    const part = day ? 'day' : 'night'
+    const image = '/common/sky/' + part + '.png'
+    if (this.backdropReady && this.backdrop.backgroundImage !== image) this.backdrop = {backgroundImage:image}
+    const saved = this.themeActive
+    const legacy = this.legacyThemeDisplay
+    const active = saved && (!legacy || (legacy !== 'SKY' &&
+      (saved.scene ? saved.scene.toUpperCase() === legacy : saved.title === sceneNames[legacy]))) ? saved : null
+    const remote = this.backdropReady && active ? themeUri(active.slot, part) : ''
+    if (this.remoteBackdrop !== remote) this.remoteBackdrop = remote
+    this.sceneLabel = '主题 · ' + (active ? active.title : sceneNames.SKY)
     this.skyLabel = '昼夜 · ' + solarModes[this.skyMode]
+  },
+  restoreRemoteTheme() {
+    this.themeRestoring = true
+    const finish = value => {
+      this.themeRestoring = false
+      if (this.destroyed || this.themeTarget === null) return
+      let saved
+      try { if (typeof value === 'string' && value.length <= 512) saved = JSON.parse(value) } catch (error) { /* Ignore corrupt metadata. */ }
+      if (validTheme(saved) && (saved.slot === 0 || saved.slot === 1)) {
+        this.themeActive = saved
+        this.updateSky()
+      }
+    }
+    try {
+      require('@system.storage').get({key:themeStorageKey, success:finish, fail:() => finish()})
+    } catch (error) { finish() }
+  },
+  clearRemoteTheme() {
+    const previous = this.themeActive
+    this.themeActive = null
+    if (!previous && !this.themeRestoring) return
+    try { require('@system.storage').set({key:themeStorageKey, value:''}) } catch (error) { /* Use the built-in theme. */ }
+    if (previous) deleteTheme(previous.slot)
+  },
+  themeImageError() {
+    if (!this.remoteBackdrop) return
+    this.clearRemoteTheme()
+    this.themeRetryAt = Date.now() + 30000
+    this.updateSky()
+  },
+  acceptRemoteTheme(offer) {
+    if (offer === null) {
+      this.themeTarget = null
+      this.themeTransfer = null
+      if (!this.themeWriting) this.clearRemoteTheme()
+      else {
+        this.themeActive = null
+        this.themeClearPending = true
+      }
+      return
+    }
+    if (!validTheme(offer)) {
+      this.themeTarget = undefined
+      this.themeTransfer = null
+      return
+    }
+    if (!this.themeTarget || this.themeTarget.key !== offer.key) {
+      this.themeTarget = offer
+      this.themeTransfer = {offset:0, text:'', total:0, day:null}
+      this.themeRetryAt = 0
+    }
+  },
+  canReadTheme() {
+    return this.layout.supportsTheme && this.themeTarget && (!this.themeActive || this.themeActive.key !== this.themeTarget.key) &&
+      !this.themeRestoring && !this.themeWriting && !this.operation && !this.requiresStatus &&
+      !this.queuedChoice && !this.queuedRefresh && Date.now() >= this.themeRetryAt
+  },
+  themeFailed() {
+    this.themeTransfer = {offset:0, text:'', total:0, day:null}
+    this.themeRetryAt = Date.now() + 30000
+  },
+  receiveTheme(reply, request) {
+    const transfer = this.themeTransfer, target = this.themeTarget
+    if (!transfer || !target || request.key !== target.key) return
+    const chunk = reply.chunk, offset = reply.offset, total = reply.length
+    const size = Math.min(themeChunkBytes, total - offset)
+    if (reply.type !== 'themeAsset' || reply.key !== target.key || reply.part !== request.part ||
+        offset !== transfer.offset || !Number.isInteger(total) || total <= offset || total > maxThemeBytes ||
+        (offset > 0 && total !== transfer.total) || typeof chunk !== 'string' ||
+        chunk.length !== Math.ceil(size / 3) * 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(chunk) ||
+        (offset + size < total && chunk.indexOf('=') >= 0)) {
+      this.themeFailed()
+      return
+    }
+    transfer.text += chunk
+    transfer.offset += size
+    transfer.total = total
+    if (transfer.offset !== total) return
+    const bytes = decodePng(transfer.text)
+    if (!bytes || bytes.length !== total || pngCrc(bytes) !== (transfer.day ? target.nightCrc : target.dayCrc)) {
+      this.themeFailed()
+      return
+    }
+    if (!transfer.day) this.themeTransfer = {offset:0, text:'', total:0, day:bytes}
+    else this.saveRemoteTheme(target, transfer.day, bytes)
+  },
+  saveRemoteTheme(offer, day, night) {
+    const previous = this.themeActive
+    const slot = previous ? 1 - previous.slot : 0
+    const next = {...offer, slot:slot}
+    this.themeWriting = true
+    this.themeTransfer = null
+    const finish = saved => {
+      this.themeWriting = false
+      if (saved && this.themeTarget === offer && !this.destroyed) {
+        this.themeActive = next
+        if (previous) deleteTheme(previous.slot)
+      } else {
+        deleteTheme(slot)
+        if (this.themeClearPending) {
+          this.themeClearPending = false
+          if (previous) deleteTheme(previous.slot)
+          try { require('@system.storage').set({key:themeStorageKey, value:''}) } catch (error) { /* Default is active. */ }
+        } else if (saved) {
+          // If a new offer arrived during the native commit, restore the old metadata.
+          try { require('@system.storage').set({key:themeStorageKey, value:previous ? JSON.stringify(previous) : ''}) }
+          catch (error) { /* The built-in theme remains available. */ }
+        }
+        if (this.themeTarget === offer) this.themeFailed()
+      }
+      this.updateSky()
+    }
+    const current = () => this.themeTarget === offer && !this.destroyed
+    const commit = () => {
+      if (!current()) { finish(false); return }
+      try {
+        require('@system.storage').set({key:themeStorageKey, value:JSON.stringify(next),
+          success:() => finish(true), fail:() => finish(false)})
+      } catch (error) { finish(false) }
+    }
+    writeThemePng(themeUri(slot, 'day'), day, () => {
+      if (current()) writeThemePng(themeUri(slot, 'night'), night, commit, () => finish(false))
+      else finish(false)
+    }, () => finish(false))
   },
   showScenes() {
     if (this.layout.supportsTheme && !this.choice) this.mode = 'scenes'
@@ -408,6 +590,10 @@ export default {
   acceptTheme(reply, request) {
     if (!this.layout.supportsTheme || !request.bandTheme) return
     this.acceptScene(reply, request, false)
+    if (reply.remoteTheme === undefined && scenes.indexOf(reply.theme) >= 0) this.legacyThemeDisplay = reply.theme
+    else if (reply.remoteTheme === null || validTheme(reply.remoteTheme)) this.legacyThemeDisplay = ''
+    this.acceptRemoteTheme(reply.remoteTheme)
+    this.themeBurst = 0
     this.phoneSolarInfo = typeof reply.solarInfo === 'string' && reply.solarInfo.length <= 80 ? reply.solarInfo : ''
     this.syncedNight = null
     if (typeof reply.themeNight === 'boolean') this.syncedNight = reply.themeNight
@@ -566,6 +752,7 @@ export default {
     }
   },
   onShow() {
+    this.motionVisible = true
     this.updateSky()
     this.visible = true
     this.sceneAttempts = 0
@@ -594,6 +781,9 @@ export default {
   },
   sleepPage() {
     this.visible = false
+    this.motionVisible = false
+    this.themeTarget = undefined
+    this.themeTransfer = null
     this.syncedNight = null
     this.releaseConnection()
     clearTimeout(this.pollTimer)
@@ -624,7 +814,7 @@ export default {
         connection.onclose = () => this.lost('手机已断开')
         connection.onerror = () => this.lost('检查手机通信服务')
       }
-      if (!this.pending && !this.choice) this.send('status')
+      if (!this.pending && !this.choice) this.send(this.themeBurst < 4 && this.canReadTheme() ? 'themeAsset' : 'status')
     } catch (error) { this.lost('等待小米运动健康连接') }
   },
   schedule(delay) {
@@ -652,6 +842,8 @@ export default {
     this.operation = null
     this.controlsAllowed = false
     this.syncedNight = null
+    this.themeTarget = undefined
+    this.themeTransfer = null
     this.updateSky()
     this.mode = settingsMode
     this.fastPollUntil = 0
@@ -677,6 +869,7 @@ export default {
     }
     if (type === 'status' && this.layout.supportsTheme) {
       request.bandTheme = true
+      request.remoteThemes = true
       request.bandThemePush = true
       // Retry on ordinary polls, even if an older phone ignores the option entirely.
       if (this.pendingScene && this.sceneAttempts < 3 && Date.now() >= this.sceneRetryAt) {
@@ -693,6 +886,13 @@ export default {
       request.photoTransferId = this.photoTransfer ? this.photoTransfer.id : ''
       request.photoOffset = this.photoTransfer ? this.photoTransfer.text.length : 0
     }
+    if (type === 'themeAsset') {
+      if (!this.canReadTheme()) return
+      if (!this.themeTransfer) this.themeTransfer = {offset:0, text:'', total:0, day:null}
+      request.key = this.themeTarget.key
+      request.part = this.themeTransfer.day ? 'night' : 'day'
+      request.offset = this.themeTransfer.offset
+    }
     if (choice) {
       request.slot = choice.slot
       request.key = choice.key
@@ -703,7 +903,7 @@ export default {
     this.pending = request
     const fail = () => { if (this.pending === request) this.lost('手机未响应') }
     this.requestTimer = setTimeout(fail, 5500)
-    if (type !== 'status') this.updateRows()
+    if (type !== 'status' && type !== 'themeAsset') this.updateRows()
     try { this.conn.send({data:request, fail:fail}) } catch (error) { fail() }
   },
   receive(raw) {
@@ -717,6 +917,13 @@ export default {
       return
     }
     if (!request || reply.id !== request.id) return
+    if (request.type === 'themeAsset') {
+      this.clearRequest()
+      this.receiveTheme(reply, request)
+      this.themeBurst++
+      if (!this.dispatchQueued()) this.schedule(this.canReadTheme() ? (this.themeBurst < 4 ? 45 : 250) : 5000)
+      return
+    }
     if (reply.type !== undefined) {
       if (reply.type !== 'executeAck' || request.type !== 'execute' ||
           typeof reply.note !== 'string' || !reply.note.trim() ||
@@ -785,7 +992,7 @@ export default {
     const now = Date.now()
     const operationDelay = this.operation ? Math.max(0, this.operation.deadline - now) : 500
     this.schedule(this.operation || now < this.fastPollUntil ? Math.min(500, operationDelay) :
-      fastPhoto ? photoChunkDelay : request.type === 'refresh' ? 1600 : 5000)
+      fastPhoto ? photoChunkDelay : this.canReadTheme() ? 45 : request.type === 'refresh' ? 1600 : 5000)
   },
   canControl(item) {
     return this.controlsAllowed && !this.operation && !this.requiresStatus && actionable(item)
@@ -895,8 +1102,15 @@ export default {
 </script>
 
 <style>
-.page { width:100%; height:100%; background-size:cover; background-color:#0a0d14; justify-content:center; align-items:center; }
+.page { width:100%; height:100%; background-color:#0a0d14; justify-content:center; align-items:center; overflow:hidden; }
 
+.themeBackdrop { position:absolute; left:0px; top:0px; object-fit:cover; }
+.themeMoving { animation-name:landscapeDrift; animation-duration:9000ms; animation-iteration-count:infinite; animation-timing-function:ease-in-out; }
+@keyframes landscapeDrift {
+  0% { transform:scale(1.01); }
+  50% { transform:scale(1.08); }
+  100% { transform:scale(1.01); }
+}
 .feed { width:72%; height:66%; flex-direction:column; }
 .headingRow { width:100%; height:62px; justify-content:center; }
 .conditionRow { width:100%; height:64px; }
@@ -918,7 +1132,7 @@ export default {
 .connectionRow { width:100%; height:60px; flex-direction:row; justify-content:center; align-items:center; }
 .connectionDot { width:9px; height:9px; margin-right:7px; border-radius:5px; background-color:#68e5b2; }
 .photoRow { width:100%; height:128px; align-items:center; justify-content:center; }
-.carPhoto { width:100%; height:120px; object-fit:contain; }
+.carPhoto { width:100%; height:100%; object-fit:contain; }
 .connectionText { color:#5ab9fc; text-align:center; }
 .slotRow { width:100%; height:144px; padding:4px 0; flex-direction:row; justify-content:space-around; align-items:center; }
 .tile { border-radius:18px; align-items:center; justify-content:center; flex-direction:column; }

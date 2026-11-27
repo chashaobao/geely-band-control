@@ -68,7 +68,7 @@ final class PhoneWearUpdates {
     void show(boolean watch) {
         if (!resumed || operation != null) return;
         choose(watch ? "选择 Watch APK 来源" : "选择 Vela RPK 来源",
-                new String[]{"选择 GitHub 发布版本", "选择本地文件"}, which -> {
+                new String[]{"选择在线版本", "选择本地文件"}, which -> {
                     if (which == 0) releases(watch);
                     else openPackage(watch);
                 });
@@ -89,7 +89,7 @@ final class PhoneWearUpdates {
             return null;
         }, offered -> {
             if (offered == null) {
-                message("手机应用更新", "GitHub 暂无可用的手机 APK。");
+                message("手机应用更新", "暂无可用的手机 APK。");
                 return;
             }
             String version = offered.release().version();
@@ -99,7 +99,8 @@ final class PhoneWearUpdates {
             }
             String action = version.equals(BuildConfig.VERSION_NAME) ? "下载并覆盖" : "下载更新";
             display(new AlertDialog.Builder(activity).setTitle("手机应用更新")
-                    .setMessage("当前版本 " + BuildConfig.VERSION_NAME + "\nGitHub 版本 " + version)
+                    .setMessage("当前版本 " + BuildConfig.VERSION_NAME + "\n发布版本 " + version
+                            + " · " + offered.release().source())
                     .setNegativeButton("取消", null).setPositiveButton(action, (dialog, button) -> downloadPhone(offered)));
         });
     }
@@ -108,8 +109,8 @@ final class PhoneWearUpdates {
         run("手机应用更新", "正在下载手机 APK…", op -> {
             File file = phoneApk.createPackageFile();
             try {
-                writePackage(file, (out, active) -> PhoneWearReleases.download(offered.release(), offered.asset(),
-                        offered.assets(), out, active::check,
+                writePackage(file, (target, active) -> PhoneWearReleases.download(offered.release(), offered.asset(),
+                        offered.assets(), target, active::check,
                         bytes -> active.progress("正在下载并校验手机 APK…", bytes, offered.asset().size())), op);
                 String version = offered.release().version();
                 phoneApk.verify(file, version);
@@ -136,7 +137,7 @@ final class PhoneWearUpdates {
     }
 
     private void releases(boolean watch) {
-        run("正在获取 GitHub 发布版本…", op -> PhoneWearReleases.list(op::check), releases -> {
+        run("正在获取在线版本…", op -> PhoneWearReleases.list(op::check), releases -> {
             List<PhoneWearReleases.Release> choices = releases.stream().filter(release -> release.assets() == null
                     || release.assets().stream().anyMatch(asset -> watch ? asset.isWatch() : asset.isRpk()))
                     .collect(java.util.stream.Collectors.toList());
@@ -145,7 +146,7 @@ final class PhoneWearUpdates {
                 return;
             }
             String[] labels = choices.stream().map(PhoneWearReleases.Release::tag).toArray(String[]::new);
-            choose("选择 GitHub 发布版本", labels, which -> listAssets(watch, choices.get(which)));
+            choose("选择在线版本", labels, which -> listAssets(watch, choices.get(which)));
         });
     }
 
@@ -161,7 +162,7 @@ final class PhoneWearUpdates {
             choose(release.tag(), labels, which -> {
                 PhoneWearReleases.Asset selected = choices.get(which);
                 String download = "正在下载并校验 " + selected.name() + "…";
-                PackageSource source = (out, op) -> PhoneWearReleases.download(release, selected, assets, out,
+                PackageSource source = (file, op) -> PhoneWearReleases.download(release, selected, assets, file,
                         op::check, bytes -> op.progress(download, bytes, selected.size()));
                 if (watch) watchGuidance(source);
                 else stageRpk(source, selected.name());
@@ -177,8 +178,9 @@ final class PhoneWearUpdates {
     }
 
     private PackageSource local(Uri uri, long limit) {
-        return (out, op) -> {
-            try (InputStream in = activity.getContentResolver().openInputStream(uri)) {
+        return (file, op) -> {
+            try (InputStream in = activity.getContentResolver().openInputStream(uri);
+                 OutputStream out = new FileOutputStream(file)) {
                 if (in == null) throw new UpdateException("无法打开选中的文件。");
                 PhoneWearReleases.copy(in, out, limit, -1, op::check,
                         bytes -> op.progress("正在读取本地安装包…", bytes, -1), null);
@@ -252,7 +254,8 @@ final class PhoneWearUpdates {
     }
 
     private void writePackage(File file, PackageSource source, Operation operation) throws IOException {
-        try (OutputStream out = new FileOutputStream(file)) { source.copy(out, operation); }
+        operation.check();
+        source.copy(file, operation);
         operation.check();
         if (file.length() == 0) throw new UpdateException("安装包为空。");
     }
@@ -523,7 +526,7 @@ final class PhoneWearUpdates {
     private record PickerResult(int request, Uri uri) {}
     private record Export(File file, String version, String name) {}
     private interface Work<T> { T run(Operation op) throws IOException; }
-    private interface PackageSource { void copy(OutputStream out, Operation op) throws IOException; }
+    private interface PackageSource { void copy(File file, Operation op) throws IOException; }
     private static final class UpdateException extends IOException {
         UpdateException(String message) { super(message); }
     }

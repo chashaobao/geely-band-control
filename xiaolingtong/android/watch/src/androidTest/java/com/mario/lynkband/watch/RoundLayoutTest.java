@@ -102,7 +102,15 @@ public class RoundLayoutTest {
                     new FutureTask<>(
                             () -> {
                                 layout();
+                                assertNotNull(find(face, "默认领克车图"));
                                 save("watch5-dashboard.png");
+                                ViewGroup dial = (ViewGroup) face.getChildAt(0);
+                                View motion = dial.getChildAt(1);
+                                assertTrue(motion instanceof com.mario.lynkband.ui.AmbientMotion);
+                                state.data.put("time", "11/25 14:06");
+                                face.show(state, true, true);
+                                layout();
+                                assertSame(motion, dial.getChildAt(1));
                                 ScrollView grid = (ScrollView) find(face, "车况与车控");
                                 for (int i = 0; i < captions.length; i++) {
                                     View tile = find(face, descriptions[i]);
@@ -129,7 +137,7 @@ public class RoundLayoutTest {
                                         assertEquals(Color.blue(expected), Color.blue(tint), 1);
                                     }
                                     assertEquals(74+(i%2)*174,tile.getLeft());
-                                    assertEquals(234+(i/2)*148,tile.getTop());
+                                    assertEquals(480+(i/2)*148,tile.getTop());
                                 }
                                 assertNull(find(face,"引擎，不可用"));
                                 assertNull(find(face,"天窗"));
@@ -433,7 +441,9 @@ public class RoundLayoutTest {
                     public void refresh() {} public void prepare(JSONObject a) {} public void confirm() {}
                     public void cancel() {} public void pair() {} public void reconnect() {}
                 });
-                activity.setContentView(face);
+                android.widget.FrameLayout fixture = new android.widget.FrameLayout(activity);
+                fixture.addView(face, 480, 480);
+                activity.setContentView(fixture);
                 showPhotoReply("", new JSONObject()); // An older phone.
                 int compactTop = find(face, "按钮").getTop();
                 assertNull(find(face, "车模图"));
@@ -494,34 +504,35 @@ public class RoundLayoutTest {
             });
             device.runOnMainSync(screenshot);
             screenshot.get();
-            for (WatchFace.Scene scene : WatchFace.Scene.values()) {
-                device.runOnMainSync(() -> {
-                    find(face, "设置").performClick();
-                    find(face, "选主题").performClick();
-                    find(face, scene.title).performClick();
+            device.runOnMainSync(() -> {
+                find(face, "设置").performClick();
+                find(face, "主题和昼夜").performClick();
+                layout();
+                assertCaptionFits(face, "在手机上选择主题");
+                face.back();
+                face.back();
+                layout();
+                ((ScrollView) find(face, "车况与车控")).scrollTo(0, 0);
+            });
+            for (boolean night : new boolean[]{false, true}) {
+                device.runOnMainSync(() -> face.setLocalSolar(night, "日出 06:00 · 日落 18:00"));
+                device.waitForIdleSync();
+                FutureTask<Void> capture = new FutureTask<>(() -> {
                     layout();
-                    ((ScrollView) find(face, "车况与车控")).scrollTo(0, 0);
+                    assertCaptionFits(face, "217");
+                    save("theme-sky" + (night ? "-night.png" : "-day.png"));
+                    return null;
                 });
-                for (boolean night : new boolean[]{false, true}) {
-                    device.runOnMainSync(() -> face.setLocalSolar(night, "日出 06:00 · 日落 18:00"));
-                    device.waitForIdleSync();
-                    FutureTask<Void> capture = new FutureTask<>(() -> {
-                        layout();
-                        assertCaptionFits(face, "217");
-                        save("theme-" + scene.name().toLowerCase(java.util.Locale.ROOT) + (night ? "-night.png" : "-day.png"));
-                        return null;
-                    });
-                    device.runOnMainSync(capture);
-                    capture.get();
-                    if ("true".equals(InstrumentationRegistry.getArguments().getString("motionPreview"))) {
-                        for (int k = 0; k < 18; k++) {
-                            android.os.SystemClock.sleep(240);
-                            String frame = "motion-" + scene.name().toLowerCase(java.util.Locale.ROOT)
-                                    + (night ? "-night-" : "-day-") + k + ".png";
-                            FutureTask<Void> snap = new FutureTask<>(() -> { save(frame); return null; });
-                            device.runOnMainSync(snap);
-                            snap.get();
-                        }
+                device.runOnMainSync(capture);
+                capture.get();
+                if ("true".equals(InstrumentationRegistry.getArguments().getString("motionPreview"))) {
+                    for (int k = 0; k < 18; k++) {
+                        android.os.SystemClock.sleep(240);
+                        String frame = "motion-sky"
+                                + (night ? "-night-" : "-day-") + k + ".png";
+                        FutureTask<Void> snap = new FutureTask<>(() -> { save(frame); return null; });
+                        device.runOnMainSync(snap);
+                        snap.get();
                     }
                 }
             }
@@ -539,7 +550,7 @@ public class RoundLayoutTest {
                 String localTimes = "日出 06:00 · 日落 18:00";
                 face.setLocalSolar(false, localTimes);
                 find(face, "设置").performClick();
-                find(face, "选主题").performClick();
+                find(face, "主题和昼夜").performClick();
                 find(face, "日出日落").performClick();
                 assertNotNull(find(face, "日出  06:00"));
                 assertNotNull(find(face, "日落  18:00"));
@@ -569,7 +580,10 @@ public class RoundLayoutTest {
                 assertNotNull(find(face, "日出  06:00"));
                 assertNotNull(find(face, "日落  18:00"));
                 find(face, "返回").performClick();
-                find(face, WatchFace.Scene.SKY.title).performClick();
+                layout();
+                assertCaptionFits(face, "在手机上选择主题");
+                face.back();
+                face.back();
             } finally {
                 SharedPreferences.Editor edit = settings.edit();
                 if (hadMode) edit.putBoolean("manual", manual);
@@ -591,6 +605,50 @@ public class RoundLayoutTest {
         assertFalse(state.data.has("carPhoto"));
         face.show(state, true, true);
         layout();
+    }
+
+    @Test public void oldPhoneFallbackDoesNotDeleteCachedArtwork() throws Exception {
+        android.content.Context target = device.getTargetContext();
+        File temporary = java.nio.file.Files.createTempDirectory(target.getCacheDir().toPath(), "watch-theme-").toFile();
+        android.content.Context isolated = new android.content.ContextWrapper(target) {
+            @Override public File getFilesDir() { return temporary; }
+            @Override public SharedPreferences getSharedPreferences(String name, int mode) {
+                return super.getSharedPreferences(temporary.getName() + name, mode);
+            }
+        };
+        byte[] artwork;
+        try (InputStream in = target.getResources().openRawResource(R.drawable.watch_landscape);
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[4096];
+            for (int size; (size = in.read(buffer)) != -1;) out.write(buffer, 0, size);
+            artwork = out.toByteArray();
+        }
+        String hash = com.mario.lynkband.solar.ThemeArt.digest(artwork);
+        JSONObject oldOffer = new JSONObject().put("key", hash).put("title", "海岸灯塔").put("day", hash).put("night", hash);
+        File file = new File(temporary, "visual-theme.dat");
+        new com.mario.lynkband.solar.ThemeArt.Store(file).write(oldOffer, artwork, artwork);
+        try {
+            WatchThemes themes = new WatchThemes(isolated);
+            assertEquals("coast", themes.scene());
+            themes.acceptOffer(new JSONObject().put("landscapeSync", new JSONObject().put("scene", "COAST")));
+            assertEquals("海岸灯塔", themes.title());
+            assertNotNull(themes.preview(false));
+            themes.acceptOffer(new JSONObject().put("landscapeSync", new JSONObject().put("scene", "RIDGE")));
+            assertTrue(themes.waitingForLegacyArt());
+            assertNull(themes.preview(false));
+            assertTrue(file.isFile());
+            themes = new WatchThemes(isolated);
+            assertNull(themes.preview(false));
+            themes.acceptOffer(new JSONObject().put("remoteTheme", oldOffer.put("scene", "coast")));
+            assertEquals("海岸灯塔", themes.title());
+            assertNotNull(themes.preview(true));
+            themes.acceptOffer(new JSONObject().put("remoteTheme", JSONObject.NULL));
+            assertNull(themes.preview(false));
+            assertFalse(file.exists());
+        } finally {
+            new com.mario.lynkband.solar.ThemeArt.Store(file).delete();
+            assertTrue(temporary.delete());
+        }
     }
 
     @Test public void decoderRejectsWrongDigestDimensionsFormatAndSize() throws Exception {
