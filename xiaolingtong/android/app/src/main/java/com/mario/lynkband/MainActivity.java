@@ -631,6 +631,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
         super.onRequestPermissionsResult(code, perms, results);
+        if (wearUpdates.velaPermission(code)) return;
         if (code == 73) {
             if (PairedDevice.allowed(this)) selectWatch();
             else toast("选择手表需要附近设备权限");
