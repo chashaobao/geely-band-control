@@ -392,9 +392,10 @@ public class RoundLayoutTest {
             for (int i = 0; i < 4; i++) state.actions.put(new JSONObject().put("slot", "s" + i)
                     .put("key", "k" + i).put("label", "按钮" + i).put("enabled", true));
             FutureTask<Void> test = new FutureTask<>(() -> {
+                int[] calls = new int[2];
                 face = new WatchFace(screenContext(false), new WatchFace.Controls() {
-                    public void refresh() {} public void prepare(JSONObject item) {} public void confirm() {}
-                    public void cancel() {} public void pair() {} public void reconnect() {}
+                    public void refresh() { calls[0]++; } public void prepare(JSONObject item) {} public void confirm() {}
+                    public void cancel() {} public void pair() {} public void reconnect() { calls[1]++; }
                 });
                 activity.setContentView(face);
                 face.show(state, true, true);
@@ -424,8 +425,16 @@ public class RoundLayoutTest {
                     }
                     scroll.scrollTo(0, scroll.getChildAt(0).getHeight());
                     Rect footer = new Rect();
-                    assertTrue(find(face, "刷新车况，更新时间 待更新").getLocalVisibleRect(footer));
+                    View refresh = find(face, "刷新车况，更新时间 待更新");
+                    assertTrue(refresh.getLocalVisibleRect(footer));
+                    assertTrue(refresh.isClickable());
+                    assertCaptionFits(refresh, "  刷新车况 · 待更新");
+                    assertTrue(refresh.performClick());
                 }
+                assertEquals(4, calls[0]);
+                face.show(state, false, true);
+                assertTrue(find(face, "刷新车况，更新时间 待更新").performClick());
+                assertEquals(1, calls[1]);
                 return null;
             });
             device.runOnMainSync(test);

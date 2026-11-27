@@ -582,9 +582,9 @@ public class WristApp extends Application {
         if (node.startsWith("band:") && BandPhoto.requested(request) && permitsWearable(node)) {
             VehiclePhoto.Image photo = null;
             try {
-                VehiclePhoto.Target target = Boolean.TRUE.equals(request.opt(BandPhoto.HD_CAPABILITY))
-                        ? VehiclePhoto.Target.BAND_HD : VehiclePhoto.Target.BAND;
-                photo = card.vehiclePhoto(target);
+                if (Boolean.TRUE.equals(request.opt(BandPhoto.HD_CAPABILITY)))
+                    photo = card.vehiclePhoto(VehiclePhoto.Target.BAND_HD);
+                if (photo == null) photo = card.vehiclePhoto(VehiclePhoto.Target.BAND);
             } catch (RuntimeException unavailable) {
                 android.util.Log.w("WristLynkHost", "Vehicle photo unavailable", unavailable);
             }

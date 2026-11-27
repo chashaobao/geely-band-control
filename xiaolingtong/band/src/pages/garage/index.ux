@@ -63,10 +63,6 @@
           <text class="tileName" style="{{ layout.captionStyle }}">{{ $item.right.controlName }}</text>
         </div>
       </list-item>
-      <list-item class="block receiptRow" type="receipt">
-        <text class="caption" style="{{ layout.captionStyle }}" @click="refresh">{{ time }}</text>
-        <text class="caption warm" show="{{ !!note }}" style="{{ layout.captionStyle }}">{{ note }}</text>
-      </list-item>
       <list-item class="block buttonRow" type="scene" if="{{ layout.supportsTheme }}">
         <text class="button" style="{{ layout.buttonStyle }}" @click="showScenes">{{ sceneLabel }}</text>
       </list-item>
@@ -76,8 +72,14 @@
       <list-item class="block buttonRow" type="settings" if="{{ canChooseLayout }}">
         <text class="button" style="{{ layout.buttonStyle }}" @click="showSettings">设置</text>
       </list-item>
-      <list-item class="block buttonRow" type="refresh">
-        <text class="button" style="{{ layout.buttonStyle }}" @click="refresh">刷新车况</text>
+      <list-item class="block receiptRow" type="receipt" if="{{ !!note && note !== '正在刷新车况' }}">
+        <text class="caption warm" style="{{ layout.captionStyle }}">{{ note }}</text>
+      </list-item>
+      <list-item class="block refreshRow" type="refresh" style="{{ layout.refreshRowStyle }}">
+        <div class="refreshButton" style="{{ layout.refreshButtonStyle }}" @click="refresh">
+          <text class="refreshTitle" style="{{ layout.captionStyle }}">{{ note === '正在刷新车况' ? '正在刷新' : '刷新车况' }}</text>
+          <text class="refreshTime" style="{{ layout.captionStyle }}">{{ time }}</text>
+        </div>
       </list-item>
     </list>
     <list class="feed" style="{{ layout.feedStyle }}" if="{{ mode === 'settings' }}">
@@ -166,6 +168,7 @@ function screenLayout(info) {
   const designScale = width > 0 && isFinite(width) ? 336 / width : 1
   const caption = Math.max(single ? 28 : 21, Math.ceil(16 * designScale))
   const buttonHeight = Math.max(single ? 84 : 58, Math.ceil(44 * designScale))
+  const refreshHeight = Math.max(buttonHeight, 2 * caption + 20)
   const tileHeight = single ? Math.max(78, buttonHeight, 2 * caption + 12) : Math.max(108, 48 + 3 * caption)
   const listTileHeight = single ? tileHeight : 82
   const feedWidth = pill ? 84 : rect ? 94 : 72
@@ -183,7 +186,9 @@ function screenLayout(info) {
     tileStyle:{width:'48%', height:tileHeight + 'px'},
     listRowStyle:{height:(listTileHeight + 12) + 'px'},
     listTileStyle:{width:(contentWidth - 4) + 'px', height:listTileHeight + 'px'},
-    buttonStyle:{height:buttonHeight + 'px', fontSize:Math.max(27, caption) + 'px'}
+    buttonStyle:{height:buttonHeight + 'px', fontSize:Math.max(27, caption) + 'px'},
+    refreshRowStyle:{height:(refreshHeight + 16) + 'px'},
+    refreshButtonStyle:{height:refreshHeight + 'px'}
   }
 }
 const maxPhotoChars = 32768
@@ -218,23 +223,23 @@ function deleteTheme(slot) {
     file.delete({uri:themeUri(slot, 'night')})
   } catch (error) { /* Both paths are reused on the next replacement. */ }
 }
-function writePng(file, uri, bytes, success, fail, stillWanted = () => true) {
-  const attempt = raw => {
+function writePng(file, uri, bytes, success, fail, stillWanted = () => true, firstRaw = false) {
+  const attempt = (raw, retry) => {
     if (!stillWanted()) { fail(); return }
     try {
       file.writeArrayBuffer({uri:uri, buffer:raw ? bytes.buffer : bytes, position:0, append:false,
         success:success, fail:(reason, code) => {
-          if (!raw && Number(code == null ? reason : code) === 202) attempt(true)
+          if (retry && Number(code == null ? reason : code) === 202) attempt(!raw, false)
           else fail()
         }})
     } catch (error) {
-      if (!raw && error && error.name === 'TypeError') attempt(true)
+      if (retry && error && error.name === 'TypeError') attempt(!raw, false)
       else fail()
     }
   }
   try {
     // Truncate a previous file before writing. Some older file modules accept only ArrayBuffer.
-    file.writeText({uri:uri, text:' ', append:false, success:() => attempt(false), fail:fail})
+    file.writeText({uri:uri, text:' ', append:false, success:() => attempt(firstRaw, true), fail:fail})
   } catch (error) { fail() }
 }
 function writeThemePng(uri, bytes, success, fail) {
@@ -371,7 +376,9 @@ export default {
     this.photoFile = null
     this.photoBurst = 0
     this.photoRetryAt = 0
+    this.photoHdFailed = false
     this.feedAtTop = true
+    this.feedY = 0
     this.feedBusyUntil = 0
     this.pullStart = null
     this.nextPullRefreshAt = 0
@@ -708,7 +715,12 @@ export default {
   },
   photoImageError() {
     if (!this.photoSrc) return
+    const hd = this.photoFile && this.photoFile.hd
     this.clearPhoto()
+    this.deferPhoto(hd)
+  },
+  deferPhoto(hd) {
+    if (hd) this.photoHdFailed = true
     this.photoRetryAt = Date.now() + photoRetryDelay
   },
   feedBusy() {
@@ -724,11 +736,11 @@ export default {
     if (!this.destroyed && this.photoFile && this.photoFile.ready) this.photoSrc = ''
     else this.clearPhoto()
   },
-  savePhoto(id, text) {
+  savePhoto(id, text, hd) {
     const slot = busyPhotoPaths[nextPhotoPath] ? 1 - nextPhotoPath : nextPhotoPath
     if (busyPhotoPaths[slot]) return
     const buffer = decodePng(text)
-    if (!buffer) return
+    if (!buffer) { this.deferPhoto(hd); return }
     let file
     try {
       file = require('@system.file')
@@ -737,7 +749,7 @@ export default {
       this.photoRetryAt = Date.now() + photoRetryDelay
       return
     }
-    const photo = {id:id, slot:slot, uri:photoPaths[slot], file:file, ready:false}
+    const photo = {id:id, slot:slot, uri:photoPaths[slot], file:file, ready:false, hd:hd}
     this.photoFile = photo
     busyPhotoPaths[slot] = photo
     nextPhotoPath = 1 - slot
@@ -745,7 +757,7 @@ export default {
     const defer = () => {
       if (!stillWanted()) return
       this.photoFile = null
-      this.photoRetryAt = Date.now() + photoRetryDelay
+      this.deferPhoto(hd)
     }
     // Keep the slot reserved if native I/O never responds. A late callback releases it.
     photo.timer = setTimeout(defer, photoWriteTimeout)
@@ -761,7 +773,7 @@ export default {
       defer()
       deletePhotoFile(photo)
     }
-    writePng(file, photo.uri, buffer, success, fail, stillWanted)
+    writePng(file, photo.uri, buffer, success, fail, stillWanted, !hd)
   },
   receivePhoto(request, data) {
     // Only an opted-in status reply is authoritative. An empty or missing id also covers old phones.
@@ -789,7 +801,7 @@ export default {
     const text = (transfer ? transfer.text : '') + chunk
     if (text.length === total) {
       this.photoTransfer = null
-      this.savePhoto(id, text)
+      this.savePhoto(id, text, request.bandPhotoHd === true)
       return false
     }
     this.photoTransfer = {id:id, total:total, text:text}
@@ -856,6 +868,7 @@ export default {
     this.sceneRetryAt = 0
     this.retries = 0
     this.feedAtTop = true
+    this.feedY = 0
     this.feedBusyUntil = 0
     this.pullStart = null
     this.open()
@@ -990,7 +1003,7 @@ export default {
     if (type === 'status' && !themeStatus && this.layout.supportsTheme && !this.requiresStatus && !this.operation &&
         !this.queuedChoice && !this.queuedRefresh && this.canRequestPhoto()) {
       request.bandPhoto = true
-      if (this.layout.photoHd) request.bandPhotoHd = true
+      if (this.layout.photoHd && !this.photoHdFailed) request.bandPhotoHd = true
       // A write in progress can acknowledge the image without requesting the same bytes again.
       request.carPhotoId = this.photoFile ? this.photoFile.id : ''
       request.photoTransferId = this.photoTransfer ? this.photoTransfer.id : ''
@@ -1162,11 +1175,13 @@ export default {
     if (!this.requiresStatus && this.pending && this.pending.bandPhoto) this.clearRequest()
   },
   feedScrolled(event) {
-    if (event && Number.isFinite(event.scrollY)) {
-      this.feedAtTop = Math.abs(event.scrollY) <= 3
-      if (!this.feedAtTop) this.pullStart = null
-    }
-    this.feedBusyUntil = Date.now() + scrollCooldown
+    if (!event || !Number.isFinite(event.scrollY)) return
+    const moved = event.scrollY !== this.feedY
+    this.feedY = event.scrollY
+    this.feedAtTop = Math.abs(this.feedY) <= 3
+    if (!this.feedAtTop) this.pullStart = null
+    if (event.scrollState === 1 || event.scrollState === 2 || (event.scrollState !== 0 && moved))
+      this.feedBusyUntil = Date.now() + scrollCooldown
   },
   feedTouchStarted(event) {
     this.feedBusyUntil = Date.now() + scrollCooldown
@@ -1208,6 +1223,7 @@ export default {
     this.dropChoice()
     this.mode = 'home'
     this.feedAtTop = true
+    this.feedY = 0
     this.pullStart = null
     this.note = ''
     this.updateRows()
@@ -1343,6 +1359,12 @@ export default {
 .headingRow { width:100%; height:62px; justify-content:center; }
 .conditionRow { width:100%; height:64px; }
 .receiptRow { width:100%; height:124px; justify-content:center; }
+.refreshRow { width:100%; justify-content:center; }
+.refreshButton { width:100%; flex-direction:column; justify-content:center; align-items:center;
+  border-radius:18px; background-color:#212a38; }
+.refreshTitle, .refreshTime { width:100%; text-align:center; lines:1; text-overflow:ellipsis; }
+.refreshTitle { color:#e9edf3; }
+.refreshTime { color:#a5afbe; }
 .questionRow { width:100%; height:240px; }
 .buttonRow { width:100%; height:124px; justify-content:center; }
 .block { flex-direction:column; align-items:center; padding:5px 0; }

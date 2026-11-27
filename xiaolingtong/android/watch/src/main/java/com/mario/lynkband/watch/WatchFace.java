@@ -316,17 +316,19 @@ final class WatchFace extends FrameLayout {
         int rows = actionTiles(gridTop, muted, list, rowHeight);
         String time = value("time", "待更新");
         LinearLayout refresh = row();
-        refresh.addView(new Symbol("refresh", muted), px(22), px(22));
-        TextView updated = text("  " + time, 20, muted, false);
+        int refreshInk = color(R.color.ink);
+        refresh.addView(new Symbol("refresh", refreshInk), px(22), px(22));
+        TextView updated = text("  刷新车况 · " + time, 21, refreshInk, true);
+        updated.setMaxWidth(px(254));
         refresh.addView(updated);
         activate(
                 refresh,
                 "刷新车况，更新时间 " + time,
-                online ? events::refresh : events::reconnect,
-                0x00000000,
-                28);
+                this::refreshDashboard,
+                color(R.color.control),
+                36);
         int footerY = gridTop + (rows == 0 ? 91 : 6 + rows * rowHeight);
-        put(refresh, 99, footerY, 282, 64);
+        put(refresh, 88, footerY, 304, 72);
         chip("设置", "", false, 128, footerY + 83, 224, 56, () -> go(Screen.PHONE));
         page.setMinimumHeight(px(footerY + 189));
     }
@@ -393,11 +395,15 @@ final class WatchFace extends FrameLayout {
         place(host, metric, x, y, 154, 39);
     }
 
+    private void refreshDashboard() {
+        if (online) events.refresh();
+        else events.reconnect();
+    }
+
     private void createScrollPage() {
-        homeScroll = scrollingHome ? new com.mario.lynkband.ui.PullRefreshScrollView(getContext(), () -> {
-            if (online) events.refresh();
-            else events.reconnect();
-        }) : new ScrollView(getContext());
+        homeScroll = scrollingHome
+                ? new com.mario.lynkband.ui.PullRefreshScrollView(getContext(), this::refreshDashboard)
+                : new ScrollView(getContext());
         homeScroll.setContentDescription(scrollingHome ? "车况与车控" : "操作与设置");
         homeScroll.setVerticalScrollBarEnabled(false);
         homeScroll.setVerticalFadingEdgeEnabled(true);

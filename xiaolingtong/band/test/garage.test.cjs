@@ -284,6 +284,35 @@ test('timed-out native photo writes do not replace the fallback or reuse a live 
   assert.equal(s.row().children[0].src, s.writes[1].uri)
 })
 
+test('repeated idle scroll events do not indefinitely postpone car photo chunks', () => {
+  const s = photoSession()
+  s.page.feedScrolled({scrollY:0, scrollState:0})
+  s.chunk('idle', 0, 713)
+  assert.equal(s.poll().photoOffset, 713)
+  s.page.feedScrolled({scrollY:0, scrollState:0})
+  s.chunk('idle', 713)
+  assert.equal(s.writes.length, 1)
+  s.writes[0].success()
+  assert.ok(s.row())
+})
+
+test('an unreadable HD cache retries the proven standard photo and legacy writer', () => {
+  const s = photoSession()
+  assert.equal(s.sent[0].bandPhotoHd, true)
+  s.chunk('hd'); s.writes[0].success()
+  s.row().children[0].error()
+  assert.equal(s.row(), undefined)
+  s.advance(10000)
+  const retry = s.poll()
+  assert.equal(retry.bandPhoto, true)
+  assert.equal(retry.bandPhotoHd, undefined)
+  assert.equal(retry.carPhotoId, '')
+  s.chunk('compatible')
+  assert.equal(Object.prototype.toString.call(s.writes[1].buffer), '[object ArrayBuffer]')
+  s.writes[1].success()
+  assert.ok(s.row())
+})
+
 test('partial photos yield to command follow-up and queued refresh, then resume at the saved offset', () => {
   const s = photoSession()
   const item = {...slot, category:'WINDOW', controlState:'open'}
@@ -545,9 +574,11 @@ for (const [shape, w, h, columns] of [
       assert.ok(parseFloat(tile.children[1].style.fontSize) * w / designWidth >= 16)
     }
     const refresh = feed.children.at(-1).children[0]
-    assert.equal(refresh.value, '刷新车况')
+    assert.equal(refresh.children[0].value, '刷新车况')
+    assert.equal(refresh.children[1].value, '等候卡片更新')
+    assert.equal(typeof refresh.click, 'function')
     assert.ok(parseFloat(refresh.style.height) * w / designWidth >= 44)
-    assert.ok(parseFloat(refresh.style.fontSize) * w / designWidth >= 16)
+    assert.ok(parseFloat(refresh.children[0].style.fontSize) * w / designWidth >= 16)
     tiles.at(-1).click()
     assert.equal(s.sent.at(-1).slot, 's4')
     s.reply({actions, token:'t', label:'关闭车窗'})
@@ -745,7 +776,7 @@ test('pill queues refresh during status and revalidates a queued control against
     const s = setup(device)
     s.reply({actions:[windowOpen]})
     s.timers.get(s.page.pollTimer).fn()
-    const time = s.feed().children.find(row => row.type === 'receipt').children[0]
+    const time = s.feed().children.find(row => row.type === 'refresh').children[0]
     time.click()
     time.click()
     s.page.prepare(windowOpen.slot)
@@ -771,13 +802,22 @@ test('manual refresh after a disconnect waits for a new snapshot before sending 
   assert.equal(s.sent.at(-1).type, 'refresh')
 })
 
-test('refresh is followed by a new status read', () => {
+test('tapping the bottom timestamp refreshes once and polls for the new time', () => {
   const s = setup()
-  s.reply(); s.page.refresh()
+  const footer = () => s.feed().children.at(-1).children[0]
+  s.reply()
+  assert.equal(footer().children[1].value, '14:30')
+  footer().click(); footer().click()
   assert.equal(s.sent.at(-1).type, 'refresh')
+  assert.equal(s.sent.filter(msg => msg.type === 'refresh').length, 1)
+  assert.equal(footer().children[0].value, '正在刷新')
+  assert.equal(footer().children[1].value, '14:30')
   s.reply({note:'等候领克更新'})
   Array.from(s.timers.values()).find(t => t.delay === 1600).fn()
   assert.equal(s.sent.at(-1).type, 'status')
+  s.reply({data:{vehicle:'测试车辆', time:'14:31'}})
+  assert.equal(footer().children[0].value, '刷新车况')
+  assert.equal(footer().children[1].value, '14:31')
 })
 test('official confirmation is presented on the phone', () => {
   const s = setup()

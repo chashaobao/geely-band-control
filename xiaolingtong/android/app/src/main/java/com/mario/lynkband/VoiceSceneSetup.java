@@ -6,9 +6,14 @@ import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.graphics.Typeface;
-import android.util.TypedValue;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.View;
+import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -39,8 +44,6 @@ final class VoiceSceneSetup {
             custom.add(canonical);
         }
         LinearLayout list = column();
-        add(list, "先试「领克测试」，再为常用动作各建一个米家手动场景。", 14, R.color.muted);
-        row(list, "领克测试", "仅检查通知", () -> details("领克测试", VoiceScenes.TEST, "执行后，手机伴侣会显示「已收到米家测试通知」。"));
         ControlCategory group = null;
         for (VoicePreset preset : VoicePreset.values()) {
             if (group != preset.group) { group = preset.group; header(list, group.title); }
@@ -104,16 +107,35 @@ final class VoiceSceneSetup {
     private void row(LinearLayout parent, String label, String status, Runnable onClick) {
         LinearLayout row = new LinearLayout(ui);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setMinimumHeight(dp(52));
-        TypedValue ripple = new TypedValue();
-        ui.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, ripple, true);
-        row.setBackgroundResource(ripple.resourceId);
-        TextView title = add(row, label, 17, R.color.ink);
-        title.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));
-        add(row, status, 13, R.color.muted);
-        row.setFocusable(true);
-        row.setContentDescription(label + "，" + status);
-        row.setOnClickListener(v -> onClick.run());
+        row.setPadding(0, dp(4), 0, dp(4));
+
+        Button action = new Button(ui);
+        action.setText(label);
+        action.setAllCaps(false);
+        action.setTextSize(16);
+        action.setTextColor(ui.getColor(R.color.link));
+        action.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+        action.setMinHeight(dp(48));
+        action.setMinWidth(0);
+        action.setMaxLines(2);
+        action.setEllipsize(TextUtils.TruncateAt.END);
+        action.setPadding(dp(14), dp(8), dp(14), dp(8));
+        action.setStateListAnimator(null);
+        GradientDrawable fill = new GradientDrawable();
+        fill.setColor(ui.getColor(R.color.control));
+        fill.setCornerRadius(dp(12));
+        int ripple = (ui.getColor(R.color.link) & 0x00ffffff) | 0x30000000;
+        action.setBackground(new RippleDrawable(ColorStateList.valueOf(ripple), fill, null));
+        action.setContentDescription("配置" + label + "，" + status);
+        action.setOnClickListener(view -> onClick.run());
+        LinearLayout.LayoutParams buttonLayout = new LinearLayout.LayoutParams(0, -2, 1);
+        buttonLayout.setMarginEnd(dp(14));
+        row.addView(action, buttonLayout);
+
+        TextView state = add(row, status, 13, R.color.muted);
+        state.setMaxWidth(dp(104));
+        state.setGravity(Gravity.END);
+        state.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         parent.addView(row);
     }
     private TextView add(LinearLayout parent, String label, int size, int color) {
