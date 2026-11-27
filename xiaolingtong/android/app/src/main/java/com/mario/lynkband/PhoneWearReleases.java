@@ -27,6 +27,7 @@ final class PhoneWearReleases {
     static final long MAX_WATCH_APK = com.mario.lynkband.transport.WatchUpdateWire.MAX_APK_BYTES;
     static final long MAX_RPK = 32L * 1024 * 1024;
     static final String WATCH_APK = "lynk-watch.apk";
+    static final String PHONE_APK = "lynk-companion-phone.apk";
     private static final String REPO = "/chashaobao/geely-band-control/releases";
     private static final String WEB = "https://github.com" + REPO;
     private static final URI API = URI.create("https://api.github.com/repos" + REPO + "?per_page=30");
@@ -47,6 +48,7 @@ final class PhoneWearReleases {
 
     record Asset(String name, long size, String digest) {
         boolean isWatch() { return WATCH_APK.equals(name); }
+        boolean isPhone() { return PHONE_APK.equals(name); }
         boolean isRpk() { return "lynk-band.rpk".equals(name) || PROFILE_RPK.matcher(name).matches(); }
     }
 
@@ -77,7 +79,7 @@ final class PhoneWearReleases {
             if (expected == null) throw new IOException("发布校验文件缺少此安装包的 SHA-256。");
         }
         if (expected == null) throw new IOException("此发布未提供安装包的 SHA-256，无法验证下载。");
-        long limit = asset.isWatch() ? MAX_WATCH_APK : MAX_RPK;
+        long limit = sizeLimit(asset.name());
         MessageDigest sha256 = sha256();
         long size = fetch(downloadUrl(release.tag(), asset.name()), output, limit, asset.size(),
                 true, 120_000, check, progress, sha256);
@@ -109,7 +111,7 @@ final class PhoneWearReleases {
                         ? digest.substring(7) : null;
                 assets.putIfAbsent(name, new Asset(name, size, sha));
             }
-            if (assets.values().stream().anyMatch(asset -> asset.isWatch() || asset.isRpk())) {
+            if (assets.values().stream().anyMatch(asset -> asset.isPhone() || asset.isWatch() || asset.isRpk())) {
                 releases.add(new Release(tag, new ArrayList<>(assets.values())));
             }
         }
@@ -137,16 +139,18 @@ final class PhoneWearReleases {
     }
 
     private static List<Release> sorted(List<Release> releases) {
-        releases.sort((a, b) -> {
-            String[] left = a.version().split("\\.");
-            String[] right = b.version().split("\\.");
-            for (int i = 0; i < 3; i++) {
-                int compared = Integer.compare(Integer.parseInt(right[i]), Integer.parseInt(left[i]));
-                if (compared != 0) return compared;
-            }
-            return 0;
-        });
+        releases.sort((a, b) -> compareVersions(b.version(), a.version()));
         return releases;
+    }
+
+    static int compareVersions(String first, String second) {
+        String[] left = first.split("\\.");
+        String[] right = second.split("\\.");
+        for (int i = 0; i < 3; i++) {
+            int compared = Integer.compare(Integer.parseInt(left[i]), Integer.parseInt(right[i]));
+            if (compared != 0) return compared;
+        }
+        return 0;
     }
 
     static String checksum(String document, String name) throws IOException {
@@ -168,7 +172,7 @@ final class PhoneWearReleases {
 
     private static boolean allowedAsset(String name) {
         Asset asset = new Asset(name, -1, null);
-        return asset.isWatch() || asset.isRpk() || SUMS.equals(name);
+        return asset.isPhone() || asset.isWatch() || asset.isRpk() || SUMS.equals(name);
     }
 
     private static long sizeLimit(String name) {

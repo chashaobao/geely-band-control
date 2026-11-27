@@ -155,6 +155,8 @@ public final class MainActivity extends Activity {
         locationButton = button("使用大致位置计算日出日落", v -> solar.locate());
         solarInfo = line("", 14, getColor(R.color.muted));
         solarInfo.setPadding(dp(4), dp(10), dp(4), 0);
+        section("应用", true);
+        button("检查手机应用更新", v -> wearUpdates.showPhone());
         TextView version = text(BuildConfig.VERSION_NAME, 13, getColor(R.color.muted));
         version.setGravity(Gravity.CENTER);
         version.setPadding(0, dp(16), 0, 0);

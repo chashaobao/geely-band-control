@@ -27,7 +27,7 @@ public class PhoneWearUpdatesTest {
     private static final String SHA = "a".repeat(64);
     @Rule public TemporaryFolder temp = new TemporaryFolder();
 
-    @Test public void releaseApiFiltersOtherProjectsAndSelectsWearableAssets() throws Exception {
+    @Test public void releaseApiFiltersOtherProjectsAndSelectsMatchingAssets() throws Exception {
         String watch = uploaded(TAG, "lynk-watch.apk", "https://github.com", 4000);
         String pill = uploaded(TAG, "lynk-band-pill-0.2.19.rpk", "https://github.com", 3500);
         String standard = uploaded(TAG, "lynk-band-standard-0.2.19.rpk", "https://github.com", 6500);
@@ -41,7 +41,8 @@ public class PhoneWearUpdatesTest {
         List<PhoneWearReleases.Release> releases = PhoneWearReleases.parseApi("[" + String.join(",", first, other, current, pre) + "]");
         assertEquals(2, releases.size());
         assertEquals(TAG, releases.get(0).tag());
-        assertEquals(3, releases.get(0).assets().size());
+        assertEquals(4, releases.get(0).assets().size());
+        assertTrue(releases.get(0).assets().get(3).isPhone());
         assertEquals(SHA, releases.get(0).assets().get(0).digest());
         assertEquals("lynk-band-standard-0.2.19.rpk", releases.get(0).assets().get(2).name());
     }
@@ -55,8 +56,19 @@ public class PhoneWearUpdatesTest {
         String assets = link(REPO, TAG, "lynk-band.rpk") + link(REPO, TAG, "SHA256SUMS.txt")
                 + link(REPO, "xiaolingtong-v0.3.34", "lynk-watch.apk") + link(REPO, TAG, "lynk-companion-phone.apk")
                 + link("/somebody/else/releases", TAG, "lynk-watch.apk");
-        assertEquals(2, PhoneWearReleases.parseWebAssets(TAG, assets).size());
+        assertEquals(3, PhoneWearReleases.parseWebAssets(TAG, assets).size());
+        assertTrue(PhoneWearReleases.parseWebAssets(TAG, assets).get(2).isPhone());
         assertEquals("lynk-band.rpk", PhoneWearReleases.parseWebAssets(TAG, assets).get(0).name());
+    }
+
+    @Test public void aPhoneOnlyReleaseCanBeCheckedAndVersionsSortNumerically() throws Exception {
+        String phoneOnly = release(TAG, false, uploaded(TAG, PhoneWearReleases.PHONE_APK, "https://github.com", 4000));
+        var versions = PhoneWearReleases.parseApi("[" + phoneOnly + "]");
+        assertEquals(1, versions.size());
+        assertTrue(versions.get(0).assets().get(0).isPhone());
+        assertTrue(PhoneWearReleases.compareVersions("0.3.9", "0.3.42") < 0);
+        assertEquals(0, PhoneWearReleases.compareVersions("0.3.42", "0.3.42"));
+        assertTrue(PhoneWearReleases.compareVersions("1.0.0", "0.3.42") > 0);
     }
 
     @Test public void cdnAllowlistRejectsOtherHostsSchemesAndPorts() {

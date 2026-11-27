@@ -42,6 +42,7 @@ final class PhoneWearUpdates {
     private static final String[] MI_FITNESS = {"com.xiaomi.wearable", "com.xiaomi.wearable.global", "com.mi.health"};
     private static final String CACHE_PREFIX = "wear-update-";
     private final Activity activity;
+    private final PhoneApkUpdate phoneApk;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private boolean resumed;
     private AlertDialog dialog;
@@ -52,6 +53,7 @@ final class PhoneWearUpdates {
 
     PhoneWearUpdates(Activity activity, Bundle saved) {
         this.activity = activity;
+        this.phoneApk = new PhoneApkUpdate(activity, saved);
         if (saved == null) return;
         String name = saved.getString("wearExportFile", "");
         if (name.matches("wear-update-[0-9]+\\.tmp")) {
@@ -70,6 +72,54 @@ final class PhoneWearUpdates {
                     if (which == 0) releases(watch);
                     else openPackage(watch);
                 });
+    }
+
+    void showPhone() {
+        if (!resumed || operation != null) return;
+        if (phoneApk.hasPending()) {
+            phoneApk.showInstall();
+            return;
+        }
+        run("手机应用更新", "正在检查手机应用更新…", op -> {
+            for (PhoneWearReleases.Release release : PhoneWearReleases.list(op::check)) {
+                List<PhoneWearReleases.Asset> assets = PhoneWearReleases.assets(release, op::check);
+                for (PhoneWearReleases.Asset asset : assets)
+                    if (asset.isPhone()) return new PhoneRelease(release, asset, assets);
+            }
+            return null;
+        }, offered -> {
+            if (offered == null) {
+                message("手机应用更新", "GitHub 暂无可用的手机 APK。");
+                return;
+            }
+            String version = offered.release().version();
+            if (PhoneWearReleases.compareVersions(version, BuildConfig.VERSION_NAME) < 0) {
+                message("手机应用更新", "当前版本 " + BuildConfig.VERSION_NAME + " 已高于最新发布的 " + version + "。");
+                return;
+            }
+            String action = version.equals(BuildConfig.VERSION_NAME) ? "下载并覆盖" : "下载更新";
+            display(new AlertDialog.Builder(activity).setTitle("手机应用更新")
+                    .setMessage("当前版本 " + BuildConfig.VERSION_NAME + "\nGitHub 版本 " + version)
+                    .setNegativeButton("取消", null).setPositiveButton(action, (dialog, button) -> downloadPhone(offered)));
+        });
+    }
+
+    private void downloadPhone(PhoneRelease offered) {
+        run("手机应用更新", "正在下载手机 APK…", op -> {
+            File file = phoneApk.createPackageFile();
+            try {
+                writePackage(file, (out, active) -> PhoneWearReleases.download(offered.release(), offered.asset(),
+                        offered.assets(), out, active::check,
+                        bytes -> active.progress("正在下载并校验手机 APK…", bytes, offered.asset().size())), op);
+                String version = offered.release().version();
+                phoneApk.verify(file, version);
+                op.check();
+                return new PhoneApkUpdate.Package(file, version);
+            } catch (IOException | RuntimeException error) {
+                file.delete();
+                throw error;
+            }
+        }, phoneApk::prepare);
     }
 
     private void openPackage(boolean watch) {
@@ -250,6 +300,7 @@ final class PhoneWearUpdates {
     }
 
     boolean activityResult(int request, int result, Intent data) {
+        if (phoneApk.activityResult(request, result)) return true;
         if (request != PICK_WATCH && request != PICK_RPK && request != SAVE_RPK) return false;
         Uri uri = result == Activity.RESULT_OK && data != null ? data.getData() : null;
         pendingResult = new PickerResult(request, uri != null && "content".equals(uri.getScheme()) ? uri : null);
@@ -325,6 +376,7 @@ final class PhoneWearUpdates {
     void resume() {
         resumed = true;
         handleResult();
+        phoneApk.resume();
     }
 
     void stop() {
@@ -334,6 +386,7 @@ final class PhoneWearUpdates {
     }
 
     void save(Bundle state) {
+        phoneApk.save(state);
         if (exportFile != null) {
             state.putString("wearExportFile", exportFile.getName());
             state.putString("wearExportVersion", exportVersion);
@@ -343,7 +396,10 @@ final class PhoneWearUpdates {
     void destroy() {
         stop();
         executor.shutdown();
-        if (activity.isFinishing()) clearExport();
+        if (activity.isFinishing()) {
+            clearExport();
+            phoneApk.discard();
+        }
     }
 
     private void clearExport() {
@@ -391,12 +447,16 @@ final class PhoneWearUpdates {
         }
     }
 
-    private <T> void run(String title, Work<T> work, Consumer<T> success) {
+    private <T> void run(String status, Work<T> work, Consumer<T> success) {
+        run("穿戴端更新", status, work, success);
+    }
+
+    private <T> void run(String title, String status, Work<T> work, Consumer<T> success) {
         if (!resumed || operation != null) return;
         Operation op = new Operation();
         operation = op;
-        AlertDialog progress = display(new AlertDialog.Builder(activity).setTitle("穿戴端更新")
-                .setMessage(title).setNegativeButton("取消", (d, w) -> cancel()).setOnCancelListener(d -> cancel()));
+        AlertDialog progress = display(new AlertDialog.Builder(activity).setTitle(title)
+                .setMessage(status).setNegativeButton("取消", (d, w) -> cancel()).setOnCancelListener(d -> cancel()));
         progress.setCanceledOnTouchOutside(false);
         android.view.Window window = progress.getWindow();
         if (window != null) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -406,6 +466,7 @@ final class PhoneWearUpdates {
                 activity.runOnUiThread(() -> {
                     if (complete(op)) success.accept(value);
                     else if (value instanceof Export export) export.file().delete();
+                    else if (value instanceof PhoneApkUpdate.Package apk) apk.file().delete();
                 });
             } catch (IOException | RuntimeException error) {
                 activity.runOnUiThread(() -> {
@@ -415,7 +476,7 @@ final class PhoneWearUpdates {
                         if (detail == null || !detail.matches("[\u3400-\u9fffA-Za-z0-9 .，。！？、：「」（）()…→+_-]{1,240}")) {
                             detail = "未能完成操作。请检查网络、安装包或保存位置后重试。";
                         }
-                        message("穿戴端更新未完成", detail);
+                        message(title + "未完成", detail);
                     }
                 });
             }
@@ -457,6 +518,8 @@ final class PhoneWearUpdates {
     }
 
     record RpkInfo(String version, int versionCode, String profile, String fileName) {}
+    private record PhoneRelease(PhoneWearReleases.Release release, PhoneWearReleases.Asset asset,
+                                List<PhoneWearReleases.Asset> assets) {}
     private record PickerResult(int request, Uri uri) {}
     private record Export(File file, String version, String name) {}
     private interface Work<T> { T run(Operation op) throws IOException; }
