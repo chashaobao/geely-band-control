@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "themes": [
+    {
+      "id": "ridge",
+      "title": "山脊营地",
+      "assets": {
+        "phone-day": "8f8b2d2223bdd99bfbaecdd8faf5c7f46b61796d8378274dd56a97b2c13c9f85",
+        "watch-day": "d13600ea6395f3a45bdaa4273ff7bad83410d319b2d35b7f82614fbb82936860",
+        "watch-night": "2a4eff74013953d91460d4da4677b1efc52a5e516f88227348963c771e7da6a4",
+        "vela-day": "138cb797e5c64604287661e177f22cefc5a2d1573f4fbd665063a8036dc71407",
+        "vela-night": "538d202d89de41382b8e631d34a82392f91dcd8fdb77eaceb16d594453d4fbb9"
+      }
+    },
+    {
+      "id": "city",
+      "title": "城市天际线",
+      "assets": {
+        "phone-day": "b1540f87f15662996da401ec76606996e345ce50079a2428c931e0ae8dfefd74",
+        "watch-day": "f09f7e51cef7315ac49867fac18430ea49ee92014f1fa0b5c70385b7b59fc980",
+        "watch-night": "e9df4073f769f63e61f8f32e2e635f8f90fa47cbef0de7d27c83b1feb4a60abc",
+        "vela-day": "4d637c9bd1099f232b2d47b07ab6ff322919f53e8acf6b5630313f84139956a4",
+        "vela-night": "51f8980db786e54e5e4d99175dcebe75cb98f142a432a1b89174425b434afe82"
+      }
+    },
+    {
+      "id": "coast",
+      "title": "海岸灯塔",
+      "assets": {
+        "phone-day": "1fe7741191e69a1849cbe81d5d83868c66869a18d2885a5be31e9c20637b3cf5",
+        "watch-day": "8c89ebb1289f656de4ce9d1bb6a372d370da0fd08993ad6feaa255da4137ba18",
+        "watch-night": "c1be6e3a2110bc9fa853fd3625a99e739271896243fd7931682e72f6e3fddeaa",
+        "vela-day": "8dfd983f95b143669eaef9682a873dc5f81c8e0e356a9d8cb1a87931ec05e6a2",
+        "vela-night": "69d47d84d25ecbba5cc60f3a0616c9040c709b7ca720ef69426814d098fab953"
+      }
+    },
+    {
+      "id": "alpine",
+      "title": "雪山映湖",
+      "assets": {
+        "phone-day": "c5bad6c8a3348a7be3aa14223402007a4291c301f95641b490af127d8c0004ba",
+        "watch-day": "6aa7bac5eb0cab59926039cf534b5bbd92705f38ea89b475680cb83a8f139eaa",
+        "watch-night": "5125c99b4e0dfd3fbdbde668d5e9499ac5c56081b5ea3b306357c3b1675053d9",
+        "vela-day": "ad883bcbafed7cae04310e68846ca65667ce34048f24a52524447c21daa6563b",
+        "vela-night": "b49b57ec522533638c53375dd1133756c5ee8014ec98c496a33c4f93f863ee99"
+      }
+    }
+  ]
+}
