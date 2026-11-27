@@ -76,7 +76,7 @@ Windows、JDK 17 或 21、Android SDK Platform 36、Node.js / npm、Git for Wind
 .\scripts\build.ps1
 ```
 
-构建脚本从小米官方样例下载指定版本的通信 SDK，校验哈希，以同一证书生成两个 release APK 和两种屏型的 release RPK，运行手机和 Watch 5 单测、Android lint 和已编译手环页面的协议测试。产物和 SHA-256 校验文件在 `artifacts/`，签名别名为 `mario`。首次构建请通过环境变量 `LYNK_SIGNING_PASSWORD` 提供密钥库密码。备份本机 `.local/mario/`，后续构建复用它。曾在本机构建旧版时会沿用原证书，以支持覆盖安装。依赖与授权说明见 [NOTICE](NOTICE) 和 [LICENSE](LICENSE)。
+构建脚本从小米官方样例下载指定版本的通信 SDK，校验哈希，以同一证书生成两个 release APK 和两种屏型的 release RPK，运行手机和 Watch 5 单测、Android lint 和已编译手环页面的协议测试。产物和 SHA-256 校验文件在 `artifacts/`，签名别名为 `mario`。下载用 APK 的文件名包含各自的版本号，固定文件名仍供旧版在线更新使用。首次构建请通过环境变量 `LYNK_SIGNING_PASSWORD` 提供密钥库密码。备份本机 `.local/mario/`，后续构建复用它。曾在本机构建旧版时会沿用原证书，以支持覆盖安装。依赖与授权说明见 [NOTICE](NOTICE) 和 [LICENSE](LICENSE)。
 
 ## 实现和验证边界
 
