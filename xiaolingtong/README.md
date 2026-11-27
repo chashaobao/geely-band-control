@@ -1,6 +1,6 @@
 # 小领通
 
-独立的 Android 手机伴侣，可搭配支持 APK 安装的 Android 手表或小米 Vela 穿戴设备。手机伴侣为 0.3.53，Watch 为 0.3.40，Vela 穿戴端为 0.2.32。车辆数据来自中国版领克 App 4.3.1 的官方中号卡片。手表和手环首页底部的「刷新车况」会显示上次更新时间，点整行即可刷新。
+独立的 Android 手机伴侣，可搭配支持 APK 安装的 Android 手表或小米 Vela 穿戴设备。手机伴侣为 0.3.54，Watch 为 0.3.40，Vela 穿戴端为 0.2.32。车辆数据来自中国版领克 App 4.3.1 的官方中号卡片。手表和手环首页底部的「刷新车况」会显示上次更新时间，点整行即可刷新。
 
 手机 APK 与 Vela RPK 的包名均为 `com.mario.lynkband.phone`。从旧包名切换时，先暂停旧手机伴侣的后台通信，首次打开新版后重新绑定卡片、选择手表并授权。在 Vela 手环上请安装配套 RPK。[小米设备通信说明](https://iot.mi.com/vela/quickapp/zh/features/network/interconnect.html)
 
@@ -26,7 +26,7 @@
 
 ## 更新手机应用
 
-在手机底部的「应用」点「检查手机应用更新」。手机 APK、Watch APK 和两种 Vela RPK 优先从 CNB 查询和下载，GitHub Releases 提供备用版本和文件。手机更新校验文件、签名和版本后，由系统确认安装。首次使用时按 Android 提示允许小领通安装更新。较早版本可从发布页下载安装过渡版。 [CNB](https://cnb.cool/sidabakesi/xiaolingtong) · [GitHub Releases](https://github.com/chashaobao/geely-band-control/releases?q=xiaolingtong)
+手机底部的「应用」可开启「在最近任务中隐藏」，之后可从桌面打开小领通。同一区域的「检查手机应用更新」优先从 CNB 查询和下载手机 APK、Watch APK 和两种 Vela RPK，GitHub Releases 提供备用版本和文件。手机更新校验文件、签名和版本后，由系统确认安装。首次使用时按 Android 提示允许小领通安装更新。较早版本可从发布页下载安装过渡版。 [CNB](https://cnb.cool/sidabakesi/xiaolingtong) · [GitHub Releases](https://github.com/chashaobao/geely-band-control/releases?q=xiaolingtong)
 
 发布时将四个签名安装包和 `SHA256SUMS.txt` 放入 CNB 的 `downloads/<发布标签>/`，并将同样的文件附到 GitHub 的同名 Release。CNB 的 `downloads/releases.json` 使用 `{"schema":1,"releases":[...]}`，每条发布记录包含 `tag` 和四个 `assets`。每个文件记录 `name`、字节数 `size` 和 `sha256`。安装包两边都可下载后再更新索引。
 

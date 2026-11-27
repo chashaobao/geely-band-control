@@ -12,6 +12,7 @@ import android.annotation.SuppressLint;
 import com.mario.lynkband.transport.PairedDevice;
 import com.mario.lynkband.transport.ControlCategory;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.appwidget.AppWidgetHostView;
 import android.content.ActivityNotFoundException;
@@ -68,6 +69,7 @@ public final class MainActivity extends Activity {
     private Button landscapeButton, timingButton, riseButton, setButton, locationButton;
     private static final int REQUEST_COMMUNICATION = 74;
     private static final int PICK_THEME_ZIP = 75;
+    private static final String HIDE_FROM_RECENTS = "hideFromRecents";
 
     @Override protected void attachBaseContext(Context base) {
         super.attachBaseContext(base);
@@ -175,6 +177,17 @@ public final class MainActivity extends Activity {
         solarInfo = line("", 14, getColor(R.color.muted));
         solarInfo.setPadding(dp(4), dp(10), dp(4), 0);
         section("应用", true);
+        SharedPreferences appSettings = getPreferences(MODE_PRIVATE);
+        Switch hideFromRecents = new Switch(this);
+        hideFromRecents.setText("在最近任务中隐藏");
+        hideFromRecents.setTextColor(getColor(R.color.ink));
+        hideFromRecents.setMinHeight(dp(52));
+        hideFromRecents.setChecked(appSettings.getBoolean(HIDE_FROM_RECENTS, false));
+        hideFromRecents.setOnCheckedChangeListener((button, hidden) -> {
+            appSettings.edit().putBoolean(HIDE_FROM_RECENTS, hidden).apply();
+            applyRecentTasksVisibility(hidden);
+        });
+        group.addView(hideFromRecents);
         button("检查手机应用更新", v -> wearUpdates.showPhone());
         TextView version = text(BuildConfig.VERSION_NAME, 13, getColor(R.color.muted));
         version.setGravity(Gravity.CENTER);
@@ -186,11 +199,24 @@ public final class MainActivity extends Activity {
 
     @Override protected void onStart() {
         super.onStart();
+        applyRecentTasksVisibility(getPreferences(MODE_PRIVATE).getBoolean(HIDE_FROM_RECENTS, false));
         themePrefs.registerOnSharedPreferenceChangeListener(landscapeListener);
         refreshThemeControls(); // Catch changes received while the screen was stopped.
         app.screen(true, this::render);
         solar.start();
     }
+
+    private void applyRecentTasksVisibility(boolean hidden) {
+        ActivityManager manager = getSystemService(ActivityManager.class);
+        for (ActivityManager.AppTask task : manager.getAppTasks()) {
+            try {
+                task.setExcludeFromRecents(hidden);
+            } catch (IllegalArgumentException taskRemoved) {
+                // Android may remove a task after returning the task list.
+            }
+        }
+    }
+
     @Override protected void onPostResume() {
         super.onPostResume();
         wearUpdates.resume();
