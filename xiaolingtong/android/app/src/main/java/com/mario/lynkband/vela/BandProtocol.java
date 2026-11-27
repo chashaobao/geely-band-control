@@ -28,9 +28,6 @@ import javax.crypto.spec.SecretKeySpec;
 /** Authenticated Vela V2 quick-app transfer, adapted from minstall (MIT). */
 final class BandProtocol implements AutoCloseable {
     static final String APP_PACKAGE = "com.mario.lynkband.phone";
-    private static final byte[] HELLO = {
-            (byte) 0xba, (byte) 0xdc, (byte) 0xfe, 0, (byte) 0xc0, 3, 0, 0, 1, 0, (byte) 0xef
-    };
     private static final byte[] START_SESSION = {
             1, 1, 3, 0, 1, 0, 0, 2, 2, 0, 0, (byte) 0xfc, 3, 2, 0, 32, 0, 4, 2, 0, 16, 39
     };
@@ -186,15 +183,36 @@ final class BandProtocol implements AutoCloseable {
     }
 
     void authenticate(byte[] key, int phoneApi, String phoneModel) throws Exception {
-        trace.event("auth.start");
-        wire.write(HELLO);
-        wire.write(BandWire.encode(BandWire.SESSION, 0, START_SESSION));
+        wire.write(SppGreeting.HELLO);
+        openSession(0);
+        authenticateSession(key, phoneApi, phoneModel);
+    }
+
+    static byte[] startRequest(int blePayload) {
+        byte[] request = START_SESSION.clone();
+        if (blePayload > 0) {
+            int slots = blePayload <= 200 ? 4 : 8;
+            int timeout = (int)(slots * 0.8 + 3) * 1000;
+            request[15] = (byte)slots;
+            request[request.length - 2] = (byte)timeout;
+            request[request.length - 1] = (byte)(timeout >> 8);
+        }
+        return request;
+    }
+
+    void openSession(int blePayload) throws Exception {
+        byte[] request = startRequest(blePayload);
+        wire.write(BandWire.encode(BandWire.SESSION, 0, request));
         byte[] start = await(15, "设备未响应 Vela V2 会话，请检查蓝牙连接或保存 RPK 后使用 AstroBox", frame ->
                 frame.type() == BandWire.SESSION && frame.payload().length > 0
                         && frame.payload()[0] == 2 ? frame.payload() : null);
-        window = transferWindow(start);
+        window = Math.min(transferWindow(start), request[15] & 255);
         trace.event("auth.session_reply", "window", window);
 
+    }
+
+    void authenticateSession(byte[] key, int phoneApi, String phoneModel) throws Exception {
+        trace.event("auth.start");
         byte[] phoneNonce = new byte[16];
         new SecureRandom().nextBytes(phoneNonce);
         send(BandWire.DATA, BandMessages.join(new byte[]{PROTOBUF, PLAIN}, BandMessages.phoneNonce(phoneNonce)));
@@ -530,7 +548,7 @@ final class BandProtocol implements AutoCloseable {
         return BandMessages.join(first, second);
     }
 
-    private static byte[] hmac(byte[] key, byte[] data) throws GeneralSecurityException {
+    static byte[] hmac(byte[] key, byte[] data) throws GeneralSecurityException {
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(key, "HmacSHA256"));
         return mac.doFinal(data);
@@ -543,8 +561,12 @@ final class BandProtocol implements AutoCloseable {
     }
 
     static byte[] encryptDeviceInfo(byte[] key, byte[] nonce, byte[] data) throws Exception {
+        return ccm(true, key, nonce, data);
+    }
+
+    static byte[] ccm(boolean encrypt, byte[] key, byte[] nonce, byte[] data) throws Exception {
         CCMModeCipher cipher = CCMBlockCipher.newInstance(AESEngine.newInstance());
-        cipher.init(true, new AEADParameters(new KeyParameter(key), 32, nonce));
+        cipher.init(encrypt, new AEADParameters(new KeyParameter(key), 32, nonce));
         byte[] output = new byte[cipher.getOutputSize(data.length)];
         int written = cipher.processBytes(data, 0, data.length, output, 0);
         written += cipher.doFinal(output, written);

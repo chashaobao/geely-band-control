@@ -368,7 +368,7 @@ final class PhoneWearUpdates {
     private void rpkActions() {
         if (exportFile == null) return;
         display(new AlertDialog.Builder(activity).setTitle("安装 Vela 应用")
-                .setMessage(exportName + "\n请核对标准屏或胶囊屏。蓝牙直装需要设备支持 Vela V2 经典蓝牙串口，并提供该设备的 AuthKey。")
+                .setMessage(exportName + "\n请核对标准屏或胶囊屏。蓝牙直装需要设备支持小米 SPP 或 BLE 安装，并提供该设备的 AuthKey。")
                 .setPositiveButton("蓝牙安装", (d, w) -> selectVela())
                 .setNeutralButton("保存 RPK", (d, w) -> {
                     if (!picker(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
@@ -383,13 +383,22 @@ final class PhoneWearUpdates {
         return true;
     }
 
+    private boolean askedVelaPermissions;
+
     private void selectVela() {
         if (exportFile == null) return;
-        if (!PairedDevice.allowed(activity) && android.os.Build.VERSION.SDK_INT >= 31) {
-            activity.requestPermissions(new String[]{android.Manifest.permission.BLUETOOTH_CONNECT}, VELA_PERMISSION);
-            return;
+        String[] permissions = android.os.Build.VERSION.SDK_INT >= 31
+                ? new String[]{android.Manifest.permission.BLUETOOTH_SCAN, android.Manifest.permission.BLUETOOTH_CONNECT}
+                : new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION};
+        for (String permission : permissions) {
+            if (!askedVelaPermissions && activity.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+                askedVelaPermissions = true;
+                activity.requestPermissions(permissions, VELA_PERMISSION);
+                return;
+            }
         }
-        PairedDevice.choose(activity, "选择要安装小领通的 Vela 设备", this::confirmVela);
+        closeDialog();
+        dialog = com.mario.lynkband.vela.VelaDevicePicker.show(activity, this::confirmVela);
     }
 
     @android.annotation.SuppressLint("MissingPermission")
@@ -401,10 +410,17 @@ final class PhoneWearUpdates {
         input.setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_NO);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         input.setHint("32 位十六进制 AuthKey");
+        android.widget.LinearLayout form = new android.widget.LinearLayout(activity);
+        form.setOrientation(android.widget.LinearLayout.VERTICAL);
+        android.widget.Spinner protocol = new android.widget.Spinner(activity);
+        protocol.setAdapter(new android.widget.ArrayAdapter<>(activity, android.R.layout.simple_spinner_dropdown_item,
+                VelaInstaller.Mode.values()));
+        form.addView(protocol);
+        form.addView(input);
         AlertDialog prompt = display(new AlertDialog.Builder(activity).setTitle("确认蓝牙安装")
                 .setMessage((device.getName() == null ? "Vela" : device.getName()) + " · " + device.getAddress()
                         + "\n" + exportName + "\n请输入这台设备的绑定密钥，仅用于本次连接。")
-                .setView(input).setNegativeButton("返回", (d, w) -> rpkActions()).setPositiveButton("安装", null));
+                .setView(form).setNegativeButton("返回", (d, w) -> rpkActions()).setPositiveButton("安装", null));
         prompt.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             byte[] key;
             try { key = VelaInstaller.key(input.getText().toString()); }
@@ -412,20 +428,22 @@ final class PhoneWearUpdates {
             input.getText().clear();
             File file = exportFile;
             String version = exportVersion;
-            exportFile = null;
+            VelaInstaller.Mode mode = (VelaInstaller.Mode) protocol.getSelectedItem();
             var current = ((WristApp) activity.getApplication()).currentVelaVersion();
             run("Vela 蓝牙安装", "正在连接所选 Vela 设备…", op -> {
                 try {
                     RpkInfo info = rpkInfo(file);
                     if (current != null) checkRpkTarget(info, current);
-                    return VelaInstaller.send(device, key, file, info.versionCode(), op.cancelled::get,
+                    return VelaInstaller.send(activity, device, mode, key, file, info.versionCode(), op.cancelled::get,
                             (stage, percent) -> op.progress(stage, Math.max(0, percent), 100));
                 } finally {
                     java.util.Arrays.fill(key, (byte) 0);
-                    file.delete();
                 }
-            }, confirmed -> message(confirmed ? "Vela 已确认安装" : "RPK 已发送",
-                    confirmed ? "设备已确认安装小领通 " + version + "。" : "设备尚未返回安装结果，请在穿戴设备上核对版本 " + version + "。"));
+            }, confirmed -> {
+                clearExport();
+                message(confirmed ? "Vela 已确认安装" : "RPK 已发送",
+                    confirmed ? "设备已确认安装小领通 " + version + "。" : "设备尚未返回安装结果，请在穿戴设备上核对版本 " + version + "。");
+            });
         });
     }
 

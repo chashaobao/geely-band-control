@@ -139,10 +139,19 @@ public class BandProtocolTest {
         return exchange(receiptCode, rejectOnePart, emptyConfirmation, IdleProbe.NONE);
     }
 
+    @Test public void installsOverBleWithoutClassicGreeting() throws Exception {
+        assertEquals(BandProtocol.Result.CONFIRMED, exchange(0, false, false, IdleProbe.NONE, true));
+    }
+
     private enum IdleProbe { NONE, REPLY, NO_REPLY }
 
     private static BandProtocol.Result exchange(int receiptCode, boolean rejectOnePart, boolean emptyConfirmation,
                                                 IdleProbe idleProbe) throws Exception {
+        return exchange(receiptCode, rejectOnePart, emptyConfirmation, idleProbe, false);
+    }
+
+    private static BandProtocol.Result exchange(int receiptCode, boolean rejectOnePart, boolean emptyConfirmation,
+                                                IdleProbe idleProbe, boolean ble) throws Exception {
         byte[] rpkFixture = new byte[2500];
         new Random(5).nextBytes(rpkFixture);
         ExecutorService band = Executors.newSingleThreadExecutor();
@@ -157,11 +166,14 @@ public class BandProtocolTest {
             Future<?> hardware = band.submit(() -> {
                 try (PipedOutputStream output = bandOut) {
                     emulateBand(new DataInputStream(bandIn), output, rpkFixture, receiptCode, rejectOnePart, emptyConfirmation,
-                            authenticated, idleAcknowledged, idleProbe);
+                            authenticated, idleAcknowledged, idleProbe, ble);
                 }
                 return null;
             });
-            protocol.authenticate(TEST_KEY, 36, "Test phone");
+            if (ble) {
+                protocol.openSession(244);
+                protocol.authenticateSession(TEST_KEY, 36, "Test phone");
+            } else protocol.authenticate(TEST_KEY, 36, "Test phone");
             authenticated.countDown();
             assertTrue(idleAcknowledged.await(2, TimeUnit.SECONDS));
             if (idleProbe != IdleProbe.NONE) {
@@ -183,14 +195,16 @@ public class BandProtocolTest {
 
     private static void emulateBand(DataInputStream input, PipedOutputStream output, byte[] rpk, int receiptCode,
                                     boolean rejectOnePart, boolean emptyConfirmation,
-                                    CountDownLatch authenticated, CountDownLatch idleAcknowledged, IdleProbe idleProbe)
+                                    CountDownLatch authenticated, CountDownLatch idleAcknowledged, IdleProbe idleProbe, boolean ble)
             throws Exception {
-        byte[] greeting = new byte[11];
-        input.readFully(greeting);
-        assertArrayEquals(hex("badcfe00c00300000100ef"), greeting);
+        if (!ble) {
+            byte[] greeting = new byte[11];
+            input.readFully(greeting);
+            assertArrayEquals(hex("badcfe00c00300000100ef"), greeting);
+        }
         BandWire.Frame start = BandWire.decode(input);
         assertEquals(BandWire.SESSION, start.type());
-        assertArrayEquals(hex("0101030001000002020000fc03020020000402001027"), start.payload());
+        assertArrayEquals(hex(ble ? "0101030001000002020000fc03020008000402002823" : "0101030001000002020000fc03020020000402001027"), start.payload());
         output.write(BandWire.encode(BandWire.SESSION, 0, rejectOnePart ? hex("020302000400") : new byte[]{2}));
 
         BandWire.Frame nonceFrame = nextData(input);
@@ -246,7 +260,7 @@ public class BandProtocolTest {
         reply(output, 5, hex(rejectOnePart ? "08161000c2010412021000" : "08161000c20106120410002860"), toPhone);
 
         ByteArrayOutputStream uploaded = new ByteArrayOutputStream();
-        int window = rejectOnePart ? 4 : 18;
+        int window = rejectOnePart ? 4 : (ble ? 8 : 18);
         int firstPart = 1;
         if (rejectOnePart) {
             BandWire.Frame[] batch = new BandWire.Frame[window];

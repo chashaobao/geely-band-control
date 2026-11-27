@@ -104,7 +104,11 @@ final class BandMessages {
     }
 
     static byte[] prepareApp(String packageName, int size) {
-        byte[] request = join(bytes(1, utf8(packageName)), number(2, INSTALL_VERSION_MARKER),
+        return prepareApp(packageName, size, INSTALL_VERSION_MARKER);
+    }
+
+    static byte[] prepareApp(String packageName, int size, int versionCode) {
+        byte[] request = join(bytes(1, utf8(packageName)), number(2, versionCode),
                 number(3, size));
         return join(number(1, APP), number(2, PREPARE_APP), bytes(APP_PAYLOAD, bytes(2, request)));
     }
@@ -151,7 +155,7 @@ final class BandMessages {
         return null;
     }
 
-    private record Fields(Map<Integer, Integer> numbers, Map<Integer, List<byte[]>> values) {
+    record Fields(Map<Integer, Integer> numbers, Map<Integer, List<byte[]>> values) {
         int number(int field) { return numbers.getOrDefault(field, -1); }
         List<byte[]> repeated(int field) { return values.getOrDefault(field, Collections.emptyList()); }
         byte[] bytes(int field) {
@@ -161,7 +165,7 @@ final class BandMessages {
         Fields message(int field) throws IOException { return parse(bytes(field)); }
     }
 
-    private static Fields parse(byte[] data) throws IOException {
+    static Fields parse(byte[] data) throws IOException {
         ByteBuffer input = ByteBuffer.wrap(data);
         Fields fields = new Fields(new HashMap<>(), new HashMap<>());
         while (input.hasRemaining()) {
