@@ -52,6 +52,12 @@ final class XiaomiLink {
         return status;
     }
 
+    String singleConnectedNode() {
+        if (!active || connected.size() != 1) return null;
+        String node = connected.iterator().next();
+        return listening.contains(node) ? node : null;
+    }
+
     boolean canReceive(String node) {
         return active && connected.contains(node) && listening.contains(node);
     }

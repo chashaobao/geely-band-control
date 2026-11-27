@@ -31,6 +31,7 @@ import java.util.List;
 
 public final class MainActivity extends Activity {
     private WristApp app;
+    private PhoneWearUpdates wearUpdates;
     private LinearLayout page, group, rows;
     private Button apkType, rpkType;
     private FrameLayout hostFrame;
@@ -68,6 +69,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         app = (WristApp) getApplication();
+        wearUpdates = new PhoneWearUpdates(this, saved);
         triedAutoBinding = saved != null && saved.getBoolean("triedAutoBinding");
         triedAutoCommunication = saved != null && saved.getBoolean("triedAutoCommunication");
         getWindow().setStatusBarColor(getColor(R.color.bg));
@@ -122,6 +124,7 @@ public final class MainActivity extends Activity {
                             android.net.Uri.fromParts("package", getPackageName(), null)))).show());
         }
         authorize = button("授权 Vela 手环通信", v -> app.link.authorize());
+        button("穿戴端更新", v -> wearUpdates.show(app.androidWear()));
         section("车控", true);
         line("对照官方卡片，点「编辑」选择按钮类型。", 14, getColor(R.color.muted));
         noSlots = line("", 14, getColor(R.color.muted));
@@ -169,6 +172,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onPostResume() {
         super.onPostResume();
+        wearUpdates.resume();
         if (!triedAutoBinding && app.card.view() == null && app.card.autoBind()) {
             triedAutoBinding = true;
             app.card.bind(this);
@@ -184,8 +188,10 @@ public final class MainActivity extends Activity {
         super.onSaveInstanceState(saved);
         saved.putBoolean("triedAutoBinding", triedAutoBinding);
         saved.putBoolean("triedAutoCommunication", triedAutoCommunication);
+        wearUpdates.save(saved);
     }
     @Override protected void onStop() {
+        wearUpdates.stop();
         themePrefs.unregisterOnSharedPreferenceChangeListener(landscapeListener);
         solar.stop();
         app.screen(false, null);
@@ -330,7 +336,13 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int code, int result, Intent data) {
         super.onActivityResult(code, result, data);
+        if (wearUpdates.activityResult(code, result, data)) return;
         if (code == LynkWidget.REQUEST) { toast(app.card.finish(result == RESULT_OK)); render(); }
+    }
+
+    @Override protected void onDestroy() {
+        wearUpdates.destroy();
+        super.onDestroy();
     }
 
     private void startCommunication() {
@@ -350,9 +362,9 @@ public final class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, 73);
             return;
         }
-        PairedDevice.choose(this, "选择已配对的小米 Watch 5", device -> {
+        PairedDevice.choose(this, "选择已配对的Watch", device -> {
             String name = device.getName();
-            app.selectWatch(device.getAddress(), name == null ? "Watch 5" : name);
+            app.selectWatch(device.getAddress(), name == null ? "Watch" : name);
         });
     }
 
@@ -393,7 +405,7 @@ public final class MainActivity extends Activity {
         styleType(apkType,apk);
         styleType(rpkType,!apk);
         watch.setVisibility(apk ? View.VISIBLE : View.GONE);
-        watch.setText(app.watchName().isEmpty() ? "选择 Watch 5" : "已配对 · " + app.watchName());
+        watch.setText(app.watchName().isEmpty() ? "选择 Watch" : "已配对 · " + app.watchName());
         boolean showBandAuth = !apk && app.usesBand() && app.link.canAuthorize();
         authorize.setVisibility(showBandAuth ? View.VISIBLE : View.GONE);
         last.setText(app.last);

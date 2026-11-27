@@ -26,6 +26,16 @@ public class WristApp extends Application {
     private String operationNode = "";
     private final Runnable operationExpiry = () -> { observeOperation(); changed(); };
     private final java.util.Set<String> bandThemeSubscribers = new java.util.HashSet<>();
+    record VelaVersion(String node, int code, String profile, long seenAt) {}
+    private VelaVersion reportedVela;
+
+    VelaVersion currentVelaVersion() {
+        if (!service || !usesBand() || reportedVela == null
+                || !reportedVela.node().equals(link.singleConnectedNode())
+                || SystemClock.elapsedRealtime() - reportedVela.seenAt() > 30_000L) return null;
+        return reportedVela;
+    }
+
     private String receiptNode = "";
     private String cardReceipt = "";
     private final android.util.LruCache<String, String> watchIcons = new android.util.LruCache<>(16);
@@ -53,6 +63,7 @@ public class WristApp extends Application {
         }
         link = new XiaomiLink(this, main, this::receive, node -> {
             bandThemeSubscribers.remove("band:" + node);
+            if (reportedVela != null && node.equals(reportedVela.node())) reportedVela = null;
             forgetDevice("band:" + node);
             changed();
         }, this::changed);
@@ -174,6 +185,7 @@ public class WristApp extends Application {
 
     String watchName() { return labels.getString("watchName", ""); }
     boolean hasWatch() { return !labels.getString("watchAddress", "").isEmpty(); }
+    String selectedWatchAddress() { return labels.getString("watchAddress", ""); }
     boolean androidWear() { return "apk".equals(labels.getString("wearType", "apk")); }
     boolean usesBand() { return !androidWear(); }
     void selectType(boolean apk) {
@@ -189,6 +201,7 @@ public class WristApp extends Application {
     }
 
     private void syncBand() {
+        if (!service || !usesBand()) reportedVela = null;
         if (service && usesBand()) link.start();
         else { bandThemeSubscribers.clear(); link.stop(); }
     }
@@ -196,7 +209,7 @@ public class WristApp extends Application {
     String connectionStatus() {
         if (!androidWear()) return link.status();
         if (!hasWatch()) return "请选择已配对的 Android 手表";
-        return service ? watch.status : "Watch 5 通信未启动";
+        return service ? watch.status : "Watch 通信未启动";
     }
 
     void selectWatch(String address, String name) {
@@ -375,6 +388,13 @@ public class WristApp extends Application {
                 out.put("themeNight", solar.night()).put("solarInfo", solar.info());
             }
             if (band && "status".equals(type)) {
+                String idOfBand = node.substring(5);
+                if (idOfBand.equals(link.singleConnectedNode())
+                        && request.opt("bandVersionCode") instanceof Integer code && code > 0) {
+                    String profile = request.optString("bandPackageProfile");
+                    if ("standard".equals(profile) || "pill".equals(profile))
+                        reportedVela = new VelaVersion(idOfBand, code, profile, SystemClock.elapsedRealtime());
+                }
                 if (solarStatus && Boolean.TRUE.equals(request.opt("bandThemePush"))) bandThemeSubscribers.add(node);
                 else bandThemeSubscribers.remove(node);
             }

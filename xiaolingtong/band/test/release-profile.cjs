@@ -23,7 +23,8 @@ for (const info of [null, {screenShape:'pill-shaped', screenWidth:192, screenHei
   const runtime = {
     $app_require$: name => ({
       '@app-module/system.interconnect': {instance: () => ({send: message => sent.push(message.data)})},
-      '@app-module/system.device': {getInfo({success}) { if (info) success(info) }}
+      '@app-module/system.device': {getInfo({success}) { if (info) success(info) }},
+      '@app-module/system.app': {getInfo: () => ({versionCode:26})}
     })[name],
     setTimeout() { return 1 }, clearTimeout() {}
   }
@@ -34,6 +35,8 @@ for (const info of [null, {screenShape:'pill-shaped', screenWidth:192, screenHei
   const page = Object.assign(component.default, component.default.private || component.default.data || {})
   page.onInit(); page.onReady(); page.onShow()
   assert.equal(page.layout.supportsTheme, profile === 'standard')
+  assert.equal(sent[0].bandVersionCode, 26)
+  assert.equal(sent[0].bandPackageProfile, profile)
   assert.equal(!!sent[0].bandPhoto, profile === 'standard')
   assert.equal(!!sent[0].bandTheme, profile === 'standard')
   if (profile === 'pill') assert.equal(page.layout.single, true)

@@ -28,6 +28,7 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final WatchState state = new WatchState();
     private PhoneLink link;
+    private WatchUpdate update;
     private WatchFace face;
     private SolarController solar;
     private JSONObject queuedChoice;
@@ -69,6 +70,7 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
                                 | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
                                 | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         link = new PhoneLink(main, this);
+        update = new WatchUpdate(this, main, link, saved, this::updateLinkChanged);
         face =
                 new WatchFace(
                         this,
@@ -99,6 +101,14 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
                                 start(false);
                             }
 
+                            @Override public void receiveUpdate() {
+                                if (state.controlPending()) {
+                                    Toast.makeText(WatchActivity.this, "请等车控完成后再更新", Toast.LENGTH_SHORT).show();
+                                    return;
+                                }
+                                update.receive();
+                            }
+
                             @Override public void landscapeSelected() {
                                 if (!state.busy() && !state.confirming()) send("status", null);
                             }
@@ -117,6 +127,7 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
     protected void onStart() {
         super.onStart();
         visible = true;
+        update.start();
         solar.start();
         failedConnections = 0;
         start(false);
@@ -134,6 +145,7 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
     @Override
     protected void onStop() {
         visible = false;
+        update.stop();
         solar.stop();
         face.clearTiles();
         main.removeCallbacks(reconnect);
@@ -144,6 +156,18 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
         link.close();
         state.offline("等待手机连接");
         super.onStop();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        update.save(state);
+    }
+
+    @Override
+    protected void onActivityResult(int request, int result, android.content.Intent data) {
+        super.onActivityResult(request, result, data);
+        update.activityResult(request, result);
     }
 
     @Override
@@ -169,8 +193,27 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
         schedule();
     }
 
+    private void updateLinkChanged() {
+        if (!visible) return;
+        if (update.holdsPhoneLink()) {
+            main.removeCallbacks(reconnect);
+            main.removeCallbacks(poll);
+            main.removeCallbacks(expire);
+            queuedChoice = null;
+            queuedRefresh = false;
+            state.cancel();
+            render();
+        } else if (link.ready()) {
+            schedule();
+        } else {
+            failedConnections = 0;
+            scheduleReconnect();
+        }
+    }
+
     @SuppressLint("MissingPermission")
     private void start(boolean choose) {
+        if (!visible || update.holdsPhoneLink()) return;
         choosing = choose;
         if (!PairedDevice.allowed(this)) {
             state.status = "连接手机需要附近设备权限";
@@ -237,6 +280,7 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
         queuedRefresh = false;
         String previousNote = state.note;
         state.offline(reason);
+        update.linkLost();
         if (visible) {
             if (!state.note.isEmpty() && !state.note.equals(previousNote))
                 Toast.makeText(this, state.note, Toast.LENGTH_LONG).show();
@@ -246,13 +290,16 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
     }
 
     private void scheduleReconnect() {
-        if (!visible || getPreferences(MODE_PRIVATE).getString("phone", "").isEmpty()) return;
+        if (!visible || update.holdsPhoneLink() || getPreferences(MODE_PRIVATE).getString("phone", "").isEmpty()) return;
         main.removeCallbacks(reconnect);
         long delay = failedConnections == 0 ? 0 : 1000L << (failedConnections - 1);
         Log.i("WristLynkLink", "Reconnecting in " + delay + " ms");
         failedConnections = Math.min(failedConnections + 1, 5);
         main.postDelayed(reconnect, delay);
     }
+
+    @Override
+    public void updateReceived(JSONObject response) { update.reply(response); }
 
     @Override
     public void received(JSONObject response, android.graphics.Bitmap photo) {
@@ -280,6 +327,10 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
         }
         if (!state.note.isEmpty() && !state.note.equals(previousNote))
             Toast.makeText(this, state.note, Toast.LENGTH_SHORT).show();
+        if (update.holdsPhoneLink()) {
+            update.linkIdle();
+            return;
+        }
         JSONObject choice = queuedChoice;
         queuedChoice = null;
         if (choice != null && face.controlsVisible()) {
@@ -305,11 +356,11 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
 
     private void schedule() {
         main.removeCallbacks(poll);
-        if (visible && link.ready() && !state.confirming()) main.postDelayed(poll, state.pollDelay(SystemClock.elapsedRealtime()));
+        if (visible && !update.holdsPhoneLink() && link.ready() && !state.confirming()) main.postDelayed(poll, state.pollDelay(SystemClock.elapsedRealtime()));
     }
 
     private void send(String type, JSONObject item) {
-        if (!visible || !link.ready()) return;
+        if (!visible || update.holdsPhoneLink() || !link.ready()) return;
         try {
             JSONObject request = state.request(type, item, SystemClock.elapsedRealtime());
             if (request == null) {

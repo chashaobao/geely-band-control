@@ -38,6 +38,7 @@ final class WatchFace extends FrameLayout {
 
         void reconnect();
 
+        default void receiveUpdate() {}
         default void landscapeSelected() {}
         default void solarSettingsChanged() {}
     }
@@ -600,6 +601,8 @@ final class WatchFace extends FrameLayout {
             actionButton("选择手机", "link", true, y, events::pair);
             y += 102;
         }
+        actionButton("接收手机更新", "", false, y, events::receiveUpdate);
+        y += 102;
         actionButton("选主题", "", false, y, () -> go(Screen.THEME));
         y += 102;
         if (online) {

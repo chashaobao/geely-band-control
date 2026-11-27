@@ -11,6 +11,9 @@ import com.mario.lynkband.transport.WatchWire;
 
 import java.io.BufferedInputStream;
 import java.io.Closeable;
+import java.nio.charset.StandardCharsets;
+import org.json.JSONObject;
+import org.json.JSONException;
 import java.io.IOException;
 import java.util.concurrent.FutureTask;
 import com.mario.lynkband.transport.WatchReplyWait;
@@ -34,8 +37,12 @@ final class WatchServer {
         if (address.isEmpty()) return;
         Session next = new Session(address);
         session = next;
-        status = "等待 Watch 5 连接";
+        status = "等待 Watch 连接";
         new Thread(next, "LynkWatchListener").start();
+    }
+    boolean listeningFor(String address) {
+        Session current = session;
+        return current != null && current.address.equals(address);
     }
     void stop() {
         Session old = session;
@@ -70,17 +77,17 @@ final class WatchServer {
                     } else {
                         try (BluetoothServerSocket listener = adapter.listenUsingRfcommWithServiceRecord("WristLynk", WatchWire.SERVICE)) {
                             synchronized (this) { if (session != this) return; server = listener; }
-                            update("等待 Watch 5 连接", false);
+                            update("等待 Watch 连接", false);
                             while (session == this) {
                                 try (BluetoothSocket socket = listener.accept()) {
                                     BluetoothDevice device = socket.getRemoteDevice();
                                     if (!address.equals(device.getAddress()) || device.getBondState() != BluetoothDevice.BOND_BONDED) continue;
                                     synchronized (this) { if (session != this) return; peer = socket; }
-                                    update("Watch 5 已连接", false);
+                                    update("Watch 已连接", false);
                                     try { serve(socket); } catch (Exception lost) {
                                         android.util.Log.i("WristLynkHost", "Watch session ended", lost);
                                     }
-                                    finally { peer = null; update("Watch 5 已断开", true); }
+                                    finally { peer = null; update("Watch 已断开", true); }
                                 }
                             }
                         }
@@ -104,6 +111,13 @@ final class WatchServer {
                     byte[] frame = WatchWire.read(input);
                     // Polls arrive every four seconds. A silent peer can't keep the phone awake indefinitely.
                     awake.acquire(30_000L);
+                    JSONObject request;
+                    try { request = new JSONObject(new String(frame, StandardCharsets.UTF_8)); }
+                    catch (JSONException invalid) { request = null; }
+                    if (request != null && WatchApkTransfer.TYPE.equals(request.optString("type"))) {
+                        WatchWire.writeReply(socket.getOutputStream(), WatchApkTransfer.reply(address, request).toString());
+                        continue;
+                    }
                     String progress = WatchReplyWait.progressFor(frame);
                     long queuedAt = android.os.SystemClock.elapsedRealtime();
                     FutureTask<String> result = new FutureTask<>(() -> {

@@ -237,6 +237,10 @@ export default {
     solarInfo:'', riseTime:'06:00', setTime:'18:00'
   },
   onInit() {
+    try {
+      const info = require('@system.app').getInfo()
+      if (info && Number.isInteger(info.versionCode) && info.versionCode > 0) this.installedVersionCode = info.versionCode
+    } catch (error) { /* Older firmware can still report vehicle status. */ }
     this.backdropReady = false
     this.userPickedSky = false
     this.theme = 'SKY'
@@ -667,6 +671,10 @@ export default {
     if (!this.visible || this.pending || !this.conn) return
     clearTimeout(this.pollTimer)
     const request = {v:1, id:Date.now().toString(36) + '_' + (++this.seq), type:type, selectedActions:true, supportsControlState:true}
+    if (type === 'status' && this.installedVersionCode && screenProfile !== 'auto') {
+      request.bandVersionCode = this.installedVersionCode
+      request.bandPackageProfile = screenProfile
+    }
     if (type === 'status' && this.layout.supportsTheme) {
       request.bandTheme = true
       request.bandThemePush = true

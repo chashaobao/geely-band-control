@@ -11,6 +11,7 @@ import android.os.Handler;
 import android.os.SystemClock;
 import com.mario.lynkband.transport.WatchReplyWait;
 import com.mario.lynkband.transport.WatchWire;
+import com.mario.lynkband.transport.WatchUpdateWire;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -18,7 +19,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class PhoneLink {
-    interface Listener { void connected(); void received(JSONObject message, Bitmap photo); void lost(String reason); }
+    interface Listener {
+        void connected();
+        void received(JSONObject message, Bitmap photo);
+        void updateReceived(JSONObject message);
+        void lost(String reason);
+    }
     private final Handler main;
     private final Listener listener;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -78,6 +84,25 @@ final class PhoneLink {
         });
     }
 
+    boolean idleForUpdate() { return ready && pendingId == null; }
+
+    boolean sendUpdate(JSONObject request) {
+        if (!idleForUpdate()) return false;
+        send(request);
+        return true;
+    }
+
+    void cancelUpdate() {
+        if (!WatchUpdateWire.TYPE.equals(pendingType)) return;
+        clearReply();
+    }
+
+    private void clearReply() {
+        main.removeCallbacks(timeout);
+        pendingId = null;
+        pendingType = "idle";
+    }
+
     private void armReplyTimeout() {
         main.removeCallbacks(timeout);
         main.postAtTime(timeout, Math.min(replyDeadline, SystemClock.uptimeMillis() + WatchReplyWait.SILENCE_MS));
@@ -87,17 +112,21 @@ final class PhoneLink {
         try {
             while (!Thread.currentThread().isInterrupted()) {
                 JSONObject response = new JSONObject(new String(WatchWire.readReply(stream), StandardCharsets.UTF_8));
-                Bitmap photo = WatchPhoto.decode(response.optJSONObject("data"));
+                boolean update = WatchUpdateWire.TYPE.equals(response.opt("type"));
+                Bitmap photo = update ? null : WatchPhoto.decode(response.optJSONObject("data"));
                 main.post(() -> {
-                    if (current != socket) return;
+                    if (current != socket || pendingId == null || !pendingId.equals(response.opt("id"))) return;
                     if (response.has("working")) {
                         if (WatchReplyWait.matches(response, pendingId)) armReplyTimeout();
                         return;
                     }
-                    main.removeCallbacks(timeout);
-                    pendingId = null;
-                    pendingType = "idle";
-                    listener.received(response, photo);
+                    if (update != WatchUpdateWire.TYPE.equals(pendingType)) {
+                        fail("手机更新协议不兼容，请更新手机伴侣");
+                        return;
+                    }
+                    clearReply();
+                    if (update) listener.updateReceived(response);
+                    else listener.received(response, photo);
                 });
             }
         } catch (JSONException invalid) {
@@ -114,9 +143,9 @@ final class PhoneLink {
     private void fail(String message) { close(); listener.lost(message); }
     boolean ready() { return ready; }
     void close() {
-        main.removeCallbacks(timeout);
+        clearReply();
         BluetoothSocket previous = socket;
-        socket = null; ready = false; pendingId = null;
+        socket = null; ready = false;
         if (previous != null) try { previous.close(); } catch (IOException ignored) {}
     }
     void destroy() { close(); worker.shutdownNow(); reader.shutdownNow(); }
