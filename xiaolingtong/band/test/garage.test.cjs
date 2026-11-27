@@ -67,7 +67,7 @@ function setup(device = {getInfo: ({success}) => success(square)}, offline = fal
     connection.onmessage({data: JSON.stringify({v:1, id:sent.at(-1).id, actions:[slot],
       data:{vehicle:'测试车辆', range:'320', battery:'52%', fuel:'17L', time:'14:30'}, ...payload})})
   }
-  return {page, sent, reply, connection, timers, visibleRows: () => page.layout.single ? page.singleRows : page.pairedRows, feed: () => page.template(page).children.find(child => child.tag === 'list'), backdrop: () => page.template(page).children.find(child => child.classes.includes('themeBackdrop')), advance(ms) { now += ms }}
+  return {page, sent, reply, connection, timers, visibleRows: () => page.layout.single ? page.singleRows : page.pairedRows, feed: () => page.template(page).children.find(child => child.tag === 'list'), backdrop: () => page.template(page).children.find(child => child.classes.includes('themeBackdrop')), motion: () => page.template(page).children.find(child => child.classes.includes('themeMotion')), advance(ms) { now += ms }}
 }
 
 // A real PNG exercises byte-for-byte transport, including the native file module's input type.
@@ -1080,20 +1080,36 @@ for (const [model, width, height, shape] of [
     const fallback = () => s.feed().children.find(row => row.type === 'defaultCarPhoto')
     if (pill) {
       assert.equal(s.backdrop(), undefined)
+      assert.equal(s.motion(), undefined)
       assert.equal(fallback(), undefined)
       assert.equal(s.page.layout.single, true)
       return
     }
     assert.equal(s.backdrop().src, '/common/sky/day.png')
     assert.deepEqual([s.backdrop().style.width,s.backdrop().style.height], ['336px', Math.round(designWidth*height/width)+'px'])
-    assert.ok(s.backdrop().classes.includes('themeMoving'))
+    assert.equal(s.motion().src, '/common/motion/sky-day.png')
+    assert.ok(s.motion().classes.includes('fx-sky'))
     assert.equal(fallback().children[0].src, '/common/default-vehicle.png')
     assert.equal(fallback().style.height, width < 280 ? '104px' : '128px')
     if (width < 280) assert.equal(s.page.layout.single, true)
     s.page.onHide()
-    assert.ok(!s.backdrop().classes.includes('themeMoving'))
+    assert.equal(s.motion(), undefined)
   })
 }
+
+test('every cached theme selects its own animation rule and overlay artwork', () => {
+  const distinct = new Set()
+  for (const scene of ['ridge', 'city', 'coast', 'alpine', 'bamboo', 'prism', 'circuit', 'paw', 'flux']) {
+    const saved = JSON.stringify({key:'a'.repeat(64), title:'主题', scene, dayCrc:1, nightCrc:2, slot:0})
+    const s = setup(undefined, false, 12, {get({key, success}) { success(key === 'garageThemeArt' ? saved : undefined) }, set() {}})
+    assert.equal(s.motion().src, '/common/motion/' + scene + '.png')
+    assert.ok(s.motion().classes.includes('fx-' + scene))
+    const animation = compiledRule(s.page, 'fx-' + scene).animationName
+    assert.ok(animation)
+    distinct.add(animation)
+  }
+  assert.equal(distinct.size, 9)
+})
 
 test('an old companion keeps matching cached artwork visible and falls back if it selects a different preset', () => {
   const saved = JSON.stringify({key:'a'.repeat(64), title:'海岸灯塔', scene:'coast', dayCrc:1, nightCrc:2, slot:0})

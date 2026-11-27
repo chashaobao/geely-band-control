@@ -9,6 +9,9 @@ const script = name => '(' + readFileSync(path.join(root, name), 'utf8').trim().
 {
   const sky = path.join(root, 'common/sky')
   assert.deepEqual(existsSync(sky) ? readdirSync(sky).sort() : [], profile === 'standard' ? ['day.png', 'night.png'] : [])
+  const motion = path.join(root, 'common/motion')
+  assert.deepEqual(existsSync(motion) ? readdirSync(motion).sort() : [], profile === 'standard'
+    ? ['alpine.png', 'bamboo.png', 'circuit.png', 'city.png', 'coast.png', 'flux.png', 'paw.png', 'prism.png', 'ridge.png', 'sky-day.png', 'sky-night.png'] : [])
   assert.equal(existsSync(path.join(root, 'common/default-vehicle.png')), profile === 'standard')
   // Check assets in the release itself. A valid source-tree path alone does not put it in the RPK.
   for (const group of ['', 'day/', 'open/']) {
@@ -38,6 +41,7 @@ for (const info of [null, {screenShape:'pill-shaped', screenWidth:192, screenHei
   const page = Object.assign(component.default, component.default.private || component.default.data || {})
   page.onInit(); page.onReady(); page.onShow()
   assert.equal(page.layout.supportsTheme, profile === 'standard')
+  assert.equal(page.motionImage.startsWith('/common/motion/'), profile === 'standard')
   assert.equal(sent[0].bandVersionCode, 26)
   assert.equal(sent[0].bandPackageProfile, profile)
   assert.equal(!!sent[0].bandPhoto, profile === 'standard')

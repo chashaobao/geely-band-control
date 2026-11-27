@@ -24,6 +24,9 @@ try {
             $asset = Join-Path $stage "src\common\$name"
             Remove-Item -LiteralPath $asset
         }
+        $motion = Join-Path $stage 'src\common\motion'
+        Get-ChildItem -LiteralPath $motion -File | ForEach-Object { Remove-Item -LiteralPath $_.FullName }
+        Remove-Item -LiteralPath $motion
     }
     [IO.File]::WriteAllText($manifest, ($config | ConvertTo-Json -Depth 10))
     $modules = New-Item -ItemType Junction -Path (Join-Path $stage 'node_modules') -Target (Join-Path $band 'node_modules')

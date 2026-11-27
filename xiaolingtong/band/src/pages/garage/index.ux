@@ -1,8 +1,11 @@
 <template>
   <div class="page">
-    <image class="{{ motionVisible && mode === 'home' ? 'themeBackdrop themeMoving' : 'themeBackdrop' }}"
+    <image class="themeBackdrop"
       if="{{ layout.supportsTheme && (remoteBackdrop || backdrop.backgroundImage) }}" style="{{ layout.backdropStyle }}"
       src="{{ remoteBackdrop || backdrop.backgroundImage }}" alt="blank" @error="themeImageError"></image>
+    <image class="{{ 'themeMotion fx-' + motionScene }}"
+      if="{{ motionVisible && mode === 'home' && layout.supportsTheme && motionImage }}"
+      style="{{ layout.backdropStyle }}" src="{{ motionImage }}" alt="blank"></image>
     <list class="feed" style="{{ layout.feedStyle }}" if="{{ mode === 'home' }}">
       <list-item type="vehicle" class="block headingRow">
         <text class="title">{{ vehicle }}</text>
@@ -124,6 +127,7 @@ import {screenProfile} from '../../common/screen-profile'
 const colors = {tile:'#192b3e', on:'#59cf91', loading:'#ffcc46', unknown:'#a2abb6'}
 const scenes = ['SKY','RIDGE','CITY','COAST','ALPINE']
 const sceneNames = {SKY:'蓝天与星空', RIDGE:'山脊营地', CITY:'城市天际线', COAST:'海岸灯塔', ALPINE:'雪山映湖'}
+const motionScenes = ['ridge', 'city', 'coast', 'alpine', 'bamboo', 'prism', 'circuit', 'paw', 'flux']
 function sceneRevision(value) { return Number.isInteger(value) && value >= 0 && value <= 253402300799999 }
 const solarModes = {follow:'跟随手机', manual:'用户设定'}
 function minuteLabel(value) {
@@ -278,7 +282,8 @@ export default {
     mode: 'home', vehicle: '小领通', status: '正在连接手机', range: '—', unit: 'km',
     condition: '', battery: '—', fuel: '', time: '等候卡片更新', note: '', photoSrc: '',
     actions: [], singleRows: [], pairedRows: [], layout: screenLayout({}), question: '', confirmTile: controlTile({}),
-    backdrop:{}, motionVisible:false, remoteBackdrop:'', sceneLabel:'主题 · 蓝天与星空', skyLabel:'昼夜 · 跟随手机', skyMode:'follow',
+    backdrop:{}, motionVisible:false, motionScene:'sky', motionImage:'', remoteBackdrop:'',
+    sceneLabel:'主题 · 蓝天与星空', skyLabel:'昼夜 · 跟随手机', skyMode:'follow',
     solarInfo:'', riseTime:'06:00', setTime:'18:00'
   },
   onInit() {
@@ -396,6 +401,7 @@ export default {
     if (!this.layout.supportsTheme) {
       if (this.backdrop.backgroundImage) this.backdrop = {}
       if (this.remoteBackdrop) this.remoteBackdrop = ''
+      if (this.motionImage) this.motionImage = ''
       return
     }
     this.riseTime = minuteLabel(this.riseMinute)
@@ -420,6 +426,12 @@ export default {
       (saved.scene ? saved.scene.toUpperCase() === legacy : saved.title === sceneNames[legacy]))) ? saved : null
     const remote = this.backdropReady && active ? themeUri(active.slot, part) : ''
     if (this.remoteBackdrop !== remote) this.remoteBackdrop = remote
+    const scene = active && typeof active.scene === 'string' ? active.scene.toLowerCase() : ''
+    const motion = motionScenes.indexOf(scene) >= 0 ? scene : 'sky'
+    const motionFile = motion === 'sky' ? 'sky-' + part : motion
+    const motionImage = this.backdropReady ? '/common/motion/' + motionFile + '.png' : ''
+    if (this.motionScene !== motion) this.motionScene = motion
+    if (this.motionImage !== motionImage) this.motionImage = motionImage
     this.sceneLabel = '主题 · ' + (active ? active.title : sceneNames.SKY)
     this.skyLabel = '昼夜 · ' + solarModes[this.skyMode]
   },
@@ -1105,11 +1117,77 @@ export default {
 .page { width:100%; height:100%; background-color:#0a0d14; justify-content:center; align-items:center; overflow:hidden; }
 
 .themeBackdrop { position:absolute; left:0px; top:0px; object-fit:cover; }
-.themeMoving { animation-name:landscapeDrift; animation-duration:9000ms; animation-iteration-count:infinite; animation-timing-function:ease-in-out; }
-@keyframes landscapeDrift {
-  0% { transform:scale(1.01); }
-  50% { transform:scale(1.08); }
-  100% { transform:scale(1.01); }
+.themeMotion { position:absolute; left:0px; top:0px; object-fit:cover; animation-iteration-count:infinite; animation-timing-function:ease-in-out; }
+.fx-sky { animation-name:skyGlow; animation-duration:7800ms; }
+.fx-ridge { animation-name:embersRise; animation-duration:5200ms; }
+.fx-city { animation-name:cityLights; animation-duration:4800ms; }
+.fx-coast { transform:rotate(0deg); transform-origin:80% 44%; animation-name:lighthouseSweep; animation-duration:7200ms; }
+.fx-alpine { animation-name:snowFall; animation-duration:9800ms; animation-timing-function:linear; }
+.fx-bamboo { animation-name:leavesSway; animation-duration:8400ms; }
+.fx-prism { animation-name:prismScan; animation-duration:6400ms; animation-timing-function:linear; }
+.fx-circuit { animation-name:currentFlow; animation-duration:5000ms; animation-timing-function:linear; }
+.fx-paw { animation-name:pawSteps; animation-duration:6800ms; }
+.fx-flux { animation-name:glassRipple; animation-duration:8100ms; }
+@keyframes skyGlow {
+  0% { opacity:0.24; }
+  50% { opacity:0.78; }
+  100% { opacity:0.24; }
+}
+@keyframes embersRise {
+  0% { opacity:0; transform:translateY(38px); }
+  25% { opacity:0.82; transform:translateY(12px); }
+  70% { opacity:0.58; transform:translateY(-31px); }
+  100% { opacity:0; transform:translateY(-54px); }
+}
+@keyframes cityLights {
+  0% { opacity:0.16; }
+  23% { opacity:0.92; }
+  51% { opacity:0.92; }
+  78% { opacity:0.35; }
+  100% { opacity:0.16; }
+}
+@keyframes lighthouseSweep {
+  0% { opacity:0.28; transform:rotate(-9deg); }
+  50% { opacity:0.88; transform:rotate(12deg); }
+  100% { opacity:0.28; transform:rotate(-9deg); }
+}
+@keyframes snowFall {
+  0% { opacity:0; transform:translate(-16px, -38px); }
+  22% { opacity:0.84; transform:translate(-9px, -17px); }
+  76% { opacity:0.84; transform:translate(13px, 32px); }
+  100% { opacity:0; transform:translate(25px, 55px); }
+}
+@keyframes leavesSway {
+  0% { opacity:0; transform:translate(-25px, -26px); }
+  23% { opacity:0.88; transform:translate(11px, -12px); }
+  53% { opacity:0.78; transform:translate(-12px, 11px); }
+  81% { opacity:0.71; transform:translate(21px, 26px); }
+  100% { opacity:0; transform:translate(9px, 48px); }
+}
+@keyframes prismScan {
+  0% { opacity:0; transform:translateX(-130px); }
+  25% { opacity:0.72; transform:translateX(-58px); }
+  72% { opacity:0.80; transform:translateX(64px); }
+  100% { opacity:0; transform:translateX(130px); }
+}
+@keyframes currentFlow {
+  0% { opacity:0; transform:translateX(-78px); }
+  21% { opacity:0.90; transform:translateX(-46px); }
+  44% { opacity:0.46; transform:translateX(-5px); }
+  76% { opacity:0.90; transform:translateX(44px); }
+  100% { opacity:0; transform:translateX(78px); }
+}
+@keyframes pawSteps {
+  0% { opacity:0; transform:scale(0.92); }
+  21% { opacity:0.88; transform:scale(1.04); }
+  40% { opacity:0.63; transform:scale(1.04); }
+  58% { opacity:0.83; transform:scale(1.08); }
+  100% { opacity:0; transform:scale(1.11); }
+}
+@keyframes glassRipple {
+  0% { opacity:0.35; transform:scaleY(0.88); }
+  50% { opacity:0.78; transform:scaleY(1.18); }
+  100% { opacity:0.35; transform:scaleY(0.88); }
 }
 .feed { width:72%; height:66%; flex-direction:column; }
 .headingRow { width:100%; height:62px; justify-content:center; }
