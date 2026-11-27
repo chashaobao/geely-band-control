@@ -60,6 +60,54 @@
         "vela-day": "8db753aab00b5c7b3ec3b0ba228e0459f4eeeb0c7d461ebcd8ace19952a828ab",
         "vela-night": "d8e89b103c080e17a23408e0838f0e4cf74dbb75bd87b0cb1ad2a6a6863e2e82"
       }
+    },
+    {
+      "id": "prism",
+      "title": "光栅棱镜",
+      "version": 1,
+      "assets": {
+        "phone-day": "86b80de6fb56a4b4a846092347b02c1d9f46dbd2fee265b0b73472f03691e6a8",
+        "watch-day": "f60040c1867b70bb9fa65a443054709e138930632dc199534ff672892916f1b8",
+        "watch-night": "c009d783a62831f828277e95fdbe38def0d87314117f8fd5f84e01dbd9322e0a",
+        "vela-day": "3d10995086488afa11105053ffca3cee50bc62902cf655ac0751586c857c7e4f",
+        "vela-night": "f245913bc68ac46102aacfb34e622da9503b8f5414a4a39becab92d8b9c6fe8c"
+      }
+    },
+    {
+      "id": "circuit",
+      "title": "脉冲电路",
+      "version": 1,
+      "assets": {
+        "phone-day": "6e9f235e2915b5aecd6f76e6bd478926b8532b9793b940c0ae52e91fb33e88f5",
+        "watch-day": "31cbc91c2f22168e60389ee7e7aff45f166c33eb563b6bb39f8972b644229689",
+        "watch-night": "14754a6946db8327bef626e5900b8070010b2f5b5b195cd5a1940cc62cd0ee67",
+        "vela-day": "71e369f18dec50bc179f5a37c5fe53e6360c197f5a6a500020f28278ee45de03",
+        "vela-night": "fd35474e3574043b0a8affe0c5aa9c42ca96e8a1fd5642fc38c854b5cc4702bb"
+      }
+    },
+    {
+      "id": "paw",
+      "title": "布丁的午后",
+      "version": 1,
+      "assets": {
+        "phone-day": "ac2ed3b6e1c43fe31691cb8fc816f120999f4d92d3f848eb7baff9347850a9a4",
+        "watch-day": "060e9940f153fb8329d6cdec66f97017c89573acf0f9813513348c4006e0515d",
+        "watch-night": "e9d6a902f85f21b9eb8a09d504165e32ef8693b7464130080cfdfc6c1b5392c2",
+        "vela-day": "12c40fb44c789e9e444146d27a7fbe44534dfdc529e22ff25023aa682762de34",
+        "vela-night": "6dcd4e1749e8bc61e606ba2168c31729fac073876915b6d6867569ef841dfe0d"
+      }
+    },
+    {
+      "id": "flux",
+      "title": "流体折光",
+      "version": 1,
+      "assets": {
+        "phone-day": "264ebdd23280c1132a032e77a541f3572d121143c76aedf51943c90655f0da07",
+        "watch-day": "89d6234129e4df2f21ee0135de2ef44f3c44878715be3a7e95cb1b638b9a5795",
+        "watch-night": "a9faaf91d7457767ae4b3f6ec6ee71cfdb33cdf686cf220a030994990f1123ae",
+        "vela-day": "f0638fdc763dca3757af7208d54254a35090986ab0346d557a933077c0a53e27",
+        "vela-night": "883ff8866a14b0958cc7b2a3ce77c7f61798cbfd24e48125e4a2303abab1ff2b"
+      }
     }
   ]
 }
