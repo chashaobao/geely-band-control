@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -147,6 +148,41 @@ public class LocalThemePackTest {
         ThemeLibrary.SavedTheme restored = library.savedCatalog().get(0);
         assertTrue(restored.downloaded());
         assertEquals(1, library.savedTheme(restored).entry.version());
+    }
+
+    @Test public void onlineChoicesHideCurrentAndOlderVersionsAndShowActualUpdates() throws Exception {
+        ThemeLibrary.Pack first = read(packageFiles("新主题"));
+        ThemeLibrary.Pack changed = read(packageFiles("新版名称"));
+        ThemeLibrary.Pack newer = read(withVersion(packageFiles("新主题"), 2));
+        ThemeLibrary library = new ThemeLibrary(localContext());
+        assertEquals(List.of(new ThemeLibrary.OnlineTheme(first.entry, false)),
+                library.availableOnline(List.of(first.entry)));
+
+        library.cacheDownload(first);
+        assertTrue(library.availableOnline(List.of(first.entry)).isEmpty());
+        assertEquals(List.of(new ThemeLibrary.OnlineTheme(newer.entry, true)),
+                library.availableOnline(List.of(newer.entry)));
+        assertEquals(List.of(new ThemeLibrary.OnlineTheme(changed.entry, true)),
+                library.availableOnline(List.of(changed.entry)));
+
+        library.saveLocal(newer);
+        assertTrue(library.availableOnline(List.of(first.entry, newer.entry)).isEmpty());
+    }
+
+    @Test public void deletingAnActiveThemeClearsItsCopiesAndMakesItDownloadableAgain() throws Exception {
+        ThemeLibrary.Pack first = read(packageFiles("已下载主题"));
+        ThemeLibrary library = new ThemeLibrary(localContext());
+        library.cacheDownload(first);
+        library.saveLocal(first);
+        library.select(first);
+        assertEquals(1, library.savedCatalog().size());
+        library.deleteSaved(library.savedCatalog().get(0));
+
+        library = new ThemeLibrary(localContext());
+        assertNull(library.selected());
+        assertTrue(library.savedCatalog().isEmpty());
+        assertEquals(List.of(new ThemeLibrary.OnlineTheme(first.entry, false)),
+                library.availableOnline(List.of(first.entry)));
     }
 
     @Test public void rejectsInvalidThemeVersion() throws Exception {

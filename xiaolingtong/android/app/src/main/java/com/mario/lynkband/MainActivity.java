@@ -309,22 +309,34 @@ public final class MainActivity extends Activity {
 
     private void chooseLandscape() {
         if (themeProgress != null) return;
-        List<ThemeLibrary.SavedTheme> entries = app.themes.savedCatalog();
-        List<String> titles = new ArrayList<>();
-        titles.add(PhoneLandscape.SKY.title);
-        int checked = app.themes.selected() == null ? 0 : -1;
-        for (ThemeLibrary.SavedTheme choice : entries) {
-            if (app.themes.isSelected(choice.entry())) checked = titles.size();
-            titles.add(choice.label());
-        }
+        List<ThemeLibrary.SavedTheme> entries = new ArrayList<>();
+        entries.add(null);
+        entries.addAll(app.themes.savedCatalog());
+        ArrayAdapter<ThemeLibrary.SavedTheme> adapter = new ArrayAdapter<>(this, 0, entries) {
+            @Override public View getView(int position, View recycled, ViewGroup parent) {
+                ThemeListRow row = recycled instanceof ThemeListRow available ? available : new ThemeListRow();
+                ThemeLibrary.SavedTheme choice = getItem(position);
+                if (choice == null) {
+                    row.bind(PhoneLandscape.SKY.title, "", app.themes.selected() == null ? "使用中" : "", null);
+                } else {
+                    ThemeLibrary.Entry entry = choice.entry();
+                    row.bind(entry.title(), entry.versionLabel(), app.themes.isSelected(entry) ? "使用中" : "",
+                            () -> confirmThemeDeletion(choice, () -> {
+                                entries.subList(1, entries.size()).clear();
+                                entries.addAll(app.themes.savedCatalog());
+                                notifyDataSetChanged();
+                            }));
+                }
+                return row;
+            }
+        };
         new AlertDialog.Builder(this).setTitle("选择主题")
-                .setSingleChoiceItems(titles.toArray(new String[0]), checked, (dialog, which) -> {
-                    dialog.dismiss();
-                    if (which == 0) {
+                .setAdapter(adapter, (dialog, which) -> {
+                    ThemeLibrary.SavedTheme choice = entries.get(which);
+                    if (choice == null) {
                         applyTheme(null);
                         return;
                     }
-                    ThemeLibrary.SavedTheme choice = entries.get(which - 1);
                     if (!app.themes.isSelected(choice.entry())) {
                         loadTheme("正在读取主题", () -> app.themes.savedTheme(choice), pack -> {
                             if (pack != null) applyTheme(pack);
@@ -336,36 +348,48 @@ public final class MainActivity extends Activity {
                 .setNegativeButton("取消", null).show();
     }
 
+    private void confirmThemeDeletion(ThemeLibrary.SavedTheme choice, Runnable refresh) {
+        String message = "删除本地保存的「" + choice.entry().title() + "」？";
+        if (app.themes.isSelected(choice.entry())) message += "\n删除后将切回默认主题。";
+        new AlertDialog.Builder(this).setTitle("删除主题").setMessage(message)
+                .setNegativeButton("取消", null).setPositiveButton("删除", (dialog, which) -> {
+                    boolean wasSelected = app.themes.isSelected(choice.entry());
+                    try {
+                        app.themes.deleteSaved(choice);
+                    } catch (IOException | JSONException failure) {
+                        toast("无法删除主题，请重试");
+                    }
+                    if (wasSelected && app.themes.selected() == null) {
+                        app.selectPhoneLandscape(PhoneLandscape.SKY);
+                        refreshThemeControls();
+                    }
+                    refresh.run();
+                }).show();
+    }
+
     private void browseOnlineThemes() {
-        loadTheme("正在获取在线主题", ThemeLibrary::catalog, catalog -> {
-            if (catalog == null || catalog.isEmpty()) {
-                toast(catalog == null ? "暂时无法访问在线主题" : "暂无可下载主题");
+        loadTheme("正在获取在线主题", () -> app.themes.availableOnline(ThemeLibrary.catalog()), choices -> {
+            if (choices == null || choices.isEmpty()) {
+                toast(choices == null ? "暂时无法访问在线主题" : "暂无可下载或更新的主题");
                 return;
             }
-            String[] titles = new String[catalog.size()];
-            ThemeLibrary.Entry[] saved = new ThemeLibrary.Entry[catalog.size()];
-            int checked = -1;
-            for (int i = 0; i < titles.length; i++) {
-                ThemeLibrary.Entry entry = catalog.get(i);
-                saved[i] = app.themes.downloadedEntry(entry.id());
-                titles[i] = onlineThemeLabel(entry, saved[i]);
-                if (app.themes.isSelected(entry)) checked = i;
-            }
+            ArrayAdapter<ThemeLibrary.OnlineTheme> adapter = new ArrayAdapter<>(this, 0, choices) {
+                @Override public View getView(int position, View recycled, ViewGroup parent) {
+                    ThemeListRow row = recycled instanceof ThemeListRow available ? available : new ThemeListRow();
+                    ThemeLibrary.OnlineTheme choice = choices.get(position);
+                    row.bind(choice.entry().title(), choice.entry().versionLabel(), choice.update() ? "更新" : "", null);
+                    return row;
+                }
+            };
             new AlertDialog.Builder(this).setTitle("在线主题")
-                    .setSingleChoiceItems(titles, checked, (dialog, which) -> {
-                        dialog.dismiss();
-                        ThemeLibrary.Entry entry = catalog.get(which);
-                        ThemeLibrary.Entry previous = saved[which];
-                        if (app.themes.isSelected(entry) && entry.matches(previous)) return;
+                    .setAdapter(adapter, (dialog, which) -> {
+                        ThemeLibrary.OnlineTheme choice = choices.get(which);
+                        ThemeLibrary.Entry entry = choice.entry();
                         loadTheme("正在获取" + entry.title(), () -> app.themes.onlineTheme(entry), pack -> {
                             if (pack == null) {
                                 toast("主题下载、校验或保存失败，继续使用当前主题");
                             } else if (applyTheme(pack)) {
-                                String action = "已下载";
-                                if (previous != null) {
-                                    if (entry.matches(previous)) action = "已应用";
-                                    else action = entry.version() < previous.version() ? "已切换" : "已更新";
-                                }
+                                String action = choice.update() ? "已更新" : "已下载";
                                 toast(action + " · " + pack.entry.title() + " " + pack.entry.versionLabel());
                             }
                         });
@@ -373,13 +397,56 @@ public final class MainActivity extends Activity {
         });
     }
 
-    private static String onlineThemeLabel(ThemeLibrary.Entry entry, ThemeLibrary.Entry previous) {
-        String title = entry.title() + " · ";
-        if (previous == null) return title + "下载 " + entry.versionLabel();
-        if (entry.matches(previous)) return title + "已下载 " + entry.versionLabel();
-        if (entry.version() == previous.version()) return title + "更新 " + entry.versionLabel() + "（资源有变化）";
-        String action = entry.version() < previous.version() ? "切换 " : "更新 ";
-        return title + action + previous.versionLabel() + " → " + entry.versionLabel();
+    private final class ThemeListRow extends LinearLayout {
+        private final TextView title;
+        private final TextView status;
+        private final TextView version;
+        private final Button delete;
+
+        ThemeListRow() {
+            super(MainActivity.this);
+            setGravity(Gravity.CENTER_VERTICAL);
+            setMinimumHeight(dp(56));
+            setPaddingRelative(dp(24), dp(8), dp(24), dp(8));
+            title = text("", 16, getColor(R.color.ink));
+            addView(title, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1));
+            status = addTag(R.color.link, R.color.tile);
+            version = addTag(R.color.ink, R.color.control);
+            delete = new Button(MainActivity.this, null, android.R.attr.borderlessButtonStyle);
+            delete.setText("删除");
+            delete.setTextSize(13);
+            delete.setTextColor(getColor(R.color.muted));
+            delete.setPadding(0, 0, 0, 0);
+            delete.setFocusable(false);
+            LayoutParams size = new LayoutParams(dp(48), dp(48));
+            size.setMarginStart(dp(4));
+            addView(delete, size);
+        }
+
+        private TextView addTag(int foreground, int fill) {
+            TextView tag = text("", 12, getColor(foreground));
+            tag.setSingleLine(true);
+            tag.setPaddingRelative(dp(8), dp(4), dp(8), dp(4));
+            GradientDrawable background = new GradientDrawable();
+            background.setColor(getColor(fill));
+            background.setCornerRadius(dp(12));
+            tag.setBackground(background);
+            LayoutParams size = new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT);
+            size.setMarginStart(dp(6));
+            addView(tag, size);
+            return tag;
+        }
+
+        void bind(String name, String revision, String label, Runnable remove) {
+            title.setText(name);
+            status.setText(label);
+            status.setVisibility(label.isEmpty() ? GONE : VISIBLE);
+            version.setText(revision);
+            version.setVisibility(revision.isEmpty() ? GONE : VISIBLE);
+            delete.setVisibility(remove == null ? GONE : VISIBLE);
+            delete.setOnClickListener(remove == null ? null : view -> remove.run());
+            delete.setContentDescription(remove == null ? null : "删除" + name);
+        }
     }
 
     private void pickThemeZip() {

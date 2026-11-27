@@ -75,14 +75,12 @@ final class ThemeLibrary {
     }
 
     record SavedTheme(Entry entry, boolean downloaded) {
-        String label() {
-            return entry.title() + " · " + entry.versionLabel() + (downloaded ? " · 已下载" : "");
-        }
-
         String readFailure() {
             return downloaded ? "缓存读取失败，请打开在线主题重新下载" : "本地主题读取失败，请重新导入原主题包";
         }
     }
+
+    record OnlineTheme(Entry entry, boolean update) {}
 
     static final class Pack {
         final Entry entry;
@@ -110,6 +108,7 @@ final class ThemeLibrary {
         }
     }
 
+    private final File activeFile;
     private final ThemeArt.Store store;
     private final File localDirectory;
     private final File downloadDirectory;
@@ -118,7 +117,8 @@ final class ThemeLibrary {
     private boolean previewNight;
 
     ThemeLibrary(Context context) {
-        store = new ThemeArt.Store(new File(context.getFilesDir(), "visual-theme.dat"));
+        activeFile = new File(context.getFilesDir(), "visual-theme.dat");
+        store = new ThemeArt.Store(activeFile);
         localDirectory = new File(context.getFilesDir(), "local-themes");
         downloadDirectory = new File(context.getFilesDir(), "downloaded-themes");
         try {
@@ -184,11 +184,53 @@ final class ThemeLibrary {
         return storedEntry(downloadDirectory, id);
     }
 
+    synchronized List<OnlineTheme> availableOnline(List<Entry> catalog) {
+        List<OnlineTheme> choices = new ArrayList<>();
+        for (Entry entry : catalog) {
+            Entry downloaded = validSavedEntry(downloadDirectory, entry.id());
+            Entry imported = validSavedEntry(localDirectory, entry.id());
+            if (isCurrentOrNewer(downloaded, entry) || isCurrentOrNewer(imported, entry)) continue;
+            choices.add(new OnlineTheme(entry, downloaded != null || imported != null));
+        }
+        return choices;
+    }
+
+    private static Entry validSavedEntry(File directory, String id) {
+        try {
+            Entry entry = readStored(storeIn(directory, id)).entry;
+            return id.equals(entry.id()) ? entry : null;
+        } catch (IOException | JSONException missing) {
+            return null;
+        }
+    }
+
+    private static boolean isCurrentOrNewer(Entry local, Entry online) {
+        return local != null && (local.version() > online.version() || online.matches(local));
+    }
+
     synchronized Pack savedTheme(SavedTheme choice) throws IOException, JSONException {
         File directory = choice.downloaded() ? downloadDirectory : localDirectory;
         Pack pack = readStored(storeIn(directory, choice.entry().id()));
         if (!choice.entry().id().equals(pack.entry.id())) throw new IOException("Wrong saved theme ID");
         return pack;
+    }
+
+    synchronized void deleteSaved(SavedTheme choice) throws IOException, JSONException {
+        Entry entry = choice.entry();
+        File directory = choice.downloaded() ? downloadDirectory : localDirectory;
+        File other = choice.downloaded() ? localDirectory : downloadDirectory;
+        if (!entry.matches(storedEntry(directory, entry.id())))
+            throw new IOException("Saved theme changed");
+        if (isSelected(entry)) select(null);
+        // Both stores can contain the exact same theme, which is shown as a single row.
+        if (entry.matches(storedEntry(other, entry.id())))
+            deleteStore(new File(other, entry.id() + ".dat"));
+        deleteStore(new File(directory, entry.id() + ".dat"));
+    }
+
+    private static void deleteStore(File file) throws IOException {
+        new ThemeArt.Store(file).delete();
+        if (file.exists()) throw new IOException("Cannot delete saved theme");
     }
 
     synchronized void saveLocal(Pack pack) throws IOException, JSONException {
@@ -246,7 +288,7 @@ final class ThemeLibrary {
     boolean isSelected(Entry entry) { return entry.matches(selected()); }
 
     void select(Pack next) throws IOException, JSONException {
-        if (next == null) store.delete();
+        if (next == null) deleteStore(activeFile);
         else store.write(next.entry.json(), next.images);
         active = next;
         preview = null;
