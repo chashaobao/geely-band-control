@@ -67,22 +67,23 @@ function setup(device = {getInfo: ({success}) => success(square)}, offline = fal
     connection.onmessage({data: JSON.stringify({v:1, id:sent.at(-1).id, actions:[slot],
       data:{vehicle:'测试车辆', range:'320', battery:'52%', fuel:'17L', time:'14:30'}, ...payload})})
   }
-  return {page, sent, reply, connection, timers, visibleRows: () => page.layout.single ? page.singleRows : page.pairedRows, feed: () => page.template(page).children.find(child => child.tag === 'list'), backdrop: () => page.template(page).children.find(child => child.classes.includes('themeBackdrop')), motion: () => page.template(page).children.find(child => child.classes.includes('themeMotion')), advance(ms) { now += ms }}
+  return {page, sent, reply, connection, timers, visibleRows: () => page.layout.single || page.controlList ? page.singleRows : page.pairedRows, feed: () => page.template(page).children.find(child => child.tag === 'list'), backdrop: () => page.template(page).children.find(child => child.classes.includes('themeBackdrop')), motion: () => page.template(page).children.find(child => child.classes.includes('themeMotion')), advance(ms) { now += ms }}
 }
 
 // A real PNG exercises byte-for-byte transport, including the native file module's input type.
 const png = readFileSync(path.resolve(__dirname, '../src/common/metrics/battery.png'))
 const encoded = png.toString('base64')
-function photoSession(device) {
+function photoSession(device, writeArrayBuffer = () => {}) {
   const writes = [], truncated = [], deleted = []
   const s = setup(device, false, 12, undefined, {
     writeText({uri, text, append, success}) { assert.equal(text, ' '); assert.equal(append, false); truncated.push(uri); success() },
-    writeArrayBuffer(options) { writes.push(options) },
+    writeArrayBuffer(options) { writes.push(options); writeArrayBuffer(options) },
     delete(options) { deleted.push(options.uri); options.complete() }
   })
   const {reply} = s
   const replyPhoto = (payload = {}) => reply({actions:[], ...payload})
-  return Object.assign(s, {writes, truncated, deleted, reply:replyPhoto, row: () => s.feed().children.find(row => row.type === 'carPhoto'),
+  return Object.assign(s, {writes, truncated, deleted, reply:replyPhoto,
+    row: () => s.feed().children.find(row => row.type === 'carPhoto' && !row.children[0].src.startsWith('/common/')),
     poll() {
       const timer = s.timers.get(s.page.pollTimer)
       assert.ok(timer)
@@ -96,12 +97,13 @@ function photoSession(device) {
 }
 
 function assertNoPhotoFields(request) {
-  for (const key of ['bandPhoto','carPhotoId','photoOffset','photoTransferId']) assert.equal(key in request, false, key)
+  for (const key of ['bandPhoto','bandPhotoHd','carPhotoId','photoOffset','photoTransferId']) assert.equal(key in request, false, key)
 }
 
 test('standard home assembles a PNG, reuses its cached URI and unmounts stale photos', () => {
   const s = photoSession()
   assert.equal(s.sent[0].bandPhoto, true)
+  assert.equal(s.sent[0].bandPhotoHd, true)
   assert.equal(s.sent[0].carPhotoId, '')
   assert.equal(s.sent[0].photoTransferId, '')
   assert.equal(s.sent[0].photoOffset, 0)
@@ -117,7 +119,7 @@ test('standard home assembles a PNG, reuses its cached URI and unmounts stale ph
   assert.equal(s.writes.length, 1)
   const write = s.writes[0]
   assert.deepEqual(s.truncated, [write.uri])
-  assert.equal(Object.prototype.toString.call(write.buffer), '[object ArrayBuffer]')
+  assert.equal(Object.prototype.toString.call(write.buffer), '[object Uint8Array]')
   assert.deepEqual(Buffer.from(write.buffer), png)
   write.success()
   assert.match(s.row().children[0].src, /^internal:\/\/cache\/garage-car-[01]\.png$/)
@@ -138,15 +140,15 @@ test('standard home assembles a PNG, reuses its cached URI and unmounts stale ph
   assert.equal(s.timers.get(s.page.pollTimer).delay, 5000)
 })
 
-test('photo writer retries a type error once with the documented byte view and hides on I/O failure', () => {
-  for (const code of [202, 300]) {
+test('photo writer retries the legacy buffer once on a type mismatch and falls back on I/O failure', () => {
+  for (const code of [202, '202', 300]) {
     const s = photoSession()
     s.chunk('native')
     s.writes[0].fail('native failure', code)
     assert.equal(s.row(), undefined)
-    if (code === 202) {
+    if (Number(code) === 202) {
       assert.equal(s.writes.length, 2)
-      assert.equal(Object.prototype.toString.call(s.writes[1].buffer), '[object Uint8Array]')
+      assert.equal(Object.prototype.toString.call(s.writes[1].buffer), '[object ArrayBuffer]')
       assert.deepEqual(Buffer.from(s.writes[1].buffer), png)
       s.writes[1].success()
       assert.equal(s.row().children[0].src, s.writes[0].uri)
@@ -155,6 +157,19 @@ test('photo writer retries a type error once with the documented byte view and h
       assert.deepEqual(s.deleted, [s.writes[0].uri])
     }
   }
+  const legacy = photoSession(undefined, options => {
+    if (ArrayBuffer.isView(options.buffer)) throw new TypeError('legacy buffer only')
+    options.success()
+  })
+  legacy.chunk('legacy')
+  assert.equal(legacy.writes.length, 2)
+  assert.ok(legacy.row())
+})
+
+test('small standard screens use the legacy photo budget', () => {
+  const s = photoSession({getInfo:({success}) => success({screenShape:'rect', screenWidth:176, screenHeight:220})})
+  assert.equal(s.sent[0].bandPhoto, true)
+  assert.equal(s.sent[0].bandPhotoHd, undefined)
 })
 
 test('pill and undetected layouts ignore even unsolicited valid photos', () => {
@@ -167,7 +182,46 @@ test('pill and undetected layouts ignore even unsolicited valid photos', () => {
   }
 })
 
-test('controls and refresh preempt in-flight photo statuses and ignore their late replies', () => {
+test('grid centers its odd last tile and settings switch to a persisted full-width list', () => {
+  const actions = [slot, {...slot, slot:'trunk', label:'后备箱'}, {...slot, slot:'find', label:'寻车'}]
+  let saved
+  const store = {
+    get({key, success}) { success(key === 'garageControlLayout' ? saved : undefined) },
+    set({key, value}) { if (key === 'garageControlLayout') saved = value }
+  }
+  const s = setup(undefined, false, 12, store)
+  const row = (session, type) => session.feed().children.find(item => item.type === type)
+  s.reply({actions:[slot]})
+  assert.equal(row(s, 'settings'), undefined)
+  s.page.refresh(); s.reply({actions})
+  const pairs = s.feed().children.filter(item => item.type === 'actionpair')
+  assert.equal(pairs.length, 2)
+  assert.equal(pairs[0].children.length, 2)
+  assert.equal(pairs[0].classes.includes('centeredSlotRow'), false)
+  assert.equal(pairs[1].children.length, 1)
+  assert.equal(pairs[1].classes.includes('centeredSlotRow'), true)
+  row(s, 'settings').children[0].click()
+  assert.equal(row(s, 'controlGrid').children[0].value, '网格 · 已选')
+  row(s, 'controlList').children[0].click()
+  assert.equal(row(s, 'controlList').children[0].value, '列表 · 已选')
+  assert.equal(saved, 'list')
+  row(s, 'back').children[0].click()
+  const singles = s.feed().children.filter(item => item.type === 'actionSingle')
+  assert.equal(singles.length, 3)
+  assert.equal(singles[0].children[0].style.width, '311px')
+  const reopened = setup(undefined, false, 12, store)
+  reopened.reply({actions})
+  assert.equal(reopened.page.singleRows.length, 3)
+  row(reopened, 'settings').children[0].click()
+  row(reopened, 'controlGrid').children[0].click()
+  assert.equal(saved, 'grid')
+  const small = setup({getInfo:({success}) => success({screenShape:'rect', screenWidth:176, screenHeight:220})}, false, 12, store)
+  small.reply({actions})
+  assert.equal(row(small, 'settings'), undefined)
+  assert.equal(small.page.singleRows.length, 3)
+})
+
+test('refresh waits for the in-flight request, and controls ignore preempted photo replies', () => {
   const s = photoSession()
   s.chunk('a', 0, 100, {}, [slot])
   const stale = s.poll()
@@ -182,10 +236,52 @@ test('controls and refresh preempt in-flight photo statuses and ignore their lat
   s.advance(600); s.page.confirm()
   assert.equal(s.sent.at(-1).type, 'execute')
   assertNoPhotoFields(s.sent.at(-1)); s.reply()
-  assert.equal(s.poll().photoOffset, 100)
-  s.page.refresh()
+  const outstanding = s.poll()
+  assert.equal(outstanding.photoOffset, 100)
+  s.page.refresh(); s.page.refresh()
+  assert.equal(s.sent.at(-1), outstanding)
+  s.chunk('a', 100, encoded.length)
   assert.equal(s.sent.at(-1).type, 'refresh')
   assertNoPhotoFields(s.sent.at(-1))
+  assert.equal(s.sent.filter(request => request.type === 'refresh').length, 1)
+  assert.equal(s.writes.length, 0)
+})
+
+test('pull-to-refresh starts only at the top and defers photo writes during a drag', () => {
+  const s = photoSession()
+  const down = {touches:[{identifier:3, clientX:48, clientY:24}]}
+  const up = {changedTouches:[{identifier:3, clientX:51, clientY:84}]}
+  const carRow = () => s.feed().children.find(row => row.type === 'carPhoto')
+  s.page.feedScrolled({scrollY:42}); s.page.feedTouchStarted(down); s.page.feedTouchEnded(up)
+  assert.equal(s.page.queuedRefresh, false)
+  s.page.feedScrolled({scrollY:0}); s.page.feedTouchStarted(down); s.page.feedTouchEnded(up)
+  assert.equal(s.page.queuedRefresh, true)
+  assert.equal(s.sent.length, 1)
+  s.chunk('drag')
+  assert.equal(s.writes.length, 0)
+  assert.equal(s.sent.at(-1).type, 'refresh')
+  assert.equal(carRow().children[0].src, '/common/default-vehicle.png')
+  s.reply({data:{vehicle:'测试车辆'}})
+  assert.equal(s.page.note, '')
+  s.poll(); s.chunk('drag'); s.writes[0].success()
+  assert.match(carRow().children[0].src, /^internal:\/\/cache\//)
+  carRow().children[0].error()
+  assert.equal(carRow().children[0].src, '/common/default-vehicle.png')
+  assertNoPhotoFields(s.poll())
+})
+
+test('timed-out native photo writes do not replace the fallback or reuse a live path', () => {
+  const s = photoSession()
+  s.chunk('slow')
+  const timer = s.timers.get(s.page.photoFile.timer)
+  s.advance(timer.delay); timer.fn()
+  assert.equal(s.row(), undefined)
+  assertNoPhotoFields(s.poll())
+  s.reply({data:{vehicle:'测试车辆'}})
+  s.poll(); s.chunk('retry')
+  assert.notEqual(s.writes[0].uri, s.writes[1].uri)
+  s.writes[0].success(); s.writes[1].success()
+  assert.equal(s.row().children[0].src, s.writes[1].uri)
 })
 
 test('partial photos yield to command follow-up and queued refresh, then resume at the saved offset', () => {
@@ -811,6 +907,28 @@ test('stale and absent replies cannot reset a picked scene or flood a legacy pho
   }
 })
 
+test('changing between external themes on a running watch refetches the offer without a restart', () => {
+  const s = setup()
+  const offer = {key:'b'.repeat(64), title:'光栅棱镜', scene:'prism', dayCrc:123, nightCrc:456}
+  const push = () => s.connection.onmessage({data:{v:1, type:'bandThemeChanged', theme:'SKY', bandThemeRevision:20}})
+  s.reply({theme:'SKY', bandThemeRevision:20, remoteTheme:null})
+
+  s.page.open()
+  const pending = s.page.pending
+  push(); push()
+  assert.equal(s.page.pending, pending)
+  const sent = s.sent.length
+  s.reply({theme:'SKY', bandThemeRevision:20, remoteTheme:null})
+  assert.equal(s.sent.length, sent + 1)
+  assert.equal(s.sent.at(-1).type, 'status')
+  s.reply({theme:'SKY', bandThemeRevision:20, remoteTheme:offer})
+  const next = s.timers.get(s.page.pollTimer)
+  assert.ok(next.delay < 500)
+  s.advance(next.delay); next.fn()
+  assert.equal(s.sent.at(-1).type, 'themeAsset')
+  assert.equal(s.sent.at(-1).key, offer.key)
+})
+
 test('phone theme pushes redraw immediately and preserve in-flight status and confirmation', () => {
   const store = sceneStorage(), s = setup(undefined, false, 12, store)
   assert.equal(s.sent[0].bandThemePush, true)
@@ -824,6 +942,8 @@ test('phone theme pushes redraw immediately and preserve in-flight status and co
   assert.equal(image(), '/common/sky/night.png')
   for (const r of [6,7,-1,1.2,'8',null,undefined,1e15]) push('SKY', r)
   assert.equal(s.page.theme, 'COAST')
+  assert.equal(s.page.pending.type, 'status')
+  s.reply({theme:'COAST', bandThemeRevision:7, themeNight:true, solarInfo:'手机日落'})
   s.page.prepare(slot.slot)
   const prepare = s.page.pending, timer = s.page.requestTimer
   push('ALPINE', 8)
@@ -838,6 +958,23 @@ test('phone theme pushes redraw immediately and preserve in-flight status and co
   assert.equal(s.page.theme, 'RIDGE')
   s.page.onDestroy()
   assert.equal(setup(undefined, true, 12, store).page.theme, 'RIDGE')
+})
+
+test('a missing cache-restore callback does not block the next theme transfer', () => {
+  let restore
+  const store = {get({key, success}) { if (key === 'garageThemeArt') restore = success; else success() }}
+  const s = setup(undefined, false, 12, store)
+  assert.equal(s.page.themeRestoring, true)
+  const offer = {key:'b'.repeat(64), title:'光栅棱镜', scene:'prism', dayCrc:123, nightCrc:456}
+  s.reply({remoteTheme:offer})
+  const timeout = [...s.timers.values()].find(t => t.delay === 2500)
+  s.advance(timeout.delay); timeout.fn()
+  assert.equal(s.page.themeRestoring, false)
+  restore(JSON.stringify({...offer, key:'a'.repeat(64), slot:0}))
+  assert.equal(s.page.themeActive, null)
+  s.timers.get(s.page.pollTimer).fn()
+  assert.equal(s.sent.at(-1).type, 'themeAsset')
+  assert.equal(s.sent.at(-1).key, offer.key)
 })
 
 test('a later tap survives the first echo; a newer phone edit wins a revision conflict', () => {
@@ -921,7 +1058,11 @@ for (const [width, height, shape, themed] of [
   test(`appearance follows the screen shape after late detection on ${width}x${height} ${shape}`, () => {
     let detected, reads = 0
     const s = setup({getInfo: ({success}) => { detected = success }}, false, 12,
-      {get({success}) { reads++; success(JSON.stringify({mode:'manual', rise:780, set:1080})) }})
+      {get({key, success}) {
+        if (key === 'garageControlLayout') return success(undefined)
+        reads++
+        success(JSON.stringify({mode:'manual', rise:780, set:1080}))
+      }})
     const themeRow = () => s.feed().children.some(row => row.type === 'theme')
     const image = () => s.backdrop()?.src
     assert.equal(themeRow(), false)
@@ -997,9 +1138,10 @@ for (const [layout, device] of [['square', undefined], ['standard single', {getI
 
 test('standard screen stores only a complete verified theme, restores it offline and clears it on request', () => {
   const {crc32} = require('node:zlib')
-  const images = Object.fromEntries(['day','night'].map(part => [
-    part, readFileSync(path.resolve(__dirname, '../../themes/city/vela-' + part + '.png'))
+  const loadImages = name => Object.fromEntries(['day','night'].map(part => [
+    part, readFileSync(path.resolve(__dirname, '../../themes', name, 'vela-' + part + '.png'))
   ]))
+  const images = loadImages('city')
   const offer = {key:'a'.repeat(64), title:'城市天际线', dayCrc:crc32(images.day), nightCrc:crc32(images.night)}
   const files = new Map(), saved = new Map()
   const store = {
@@ -1016,7 +1158,7 @@ test('standard screen stores only a complete verified theme, restores it offline
   s.reply({remoteTheme:offer, themeNight:false})
   assert.equal(s.page.remoteBackdrop, '')
 
-  function transfer(target, count, night) {
+  function transfer(target, count, night, artwork = images) {
     let chunks = 0
     for (let polls = 0; chunks < count && polls < count * 2; polls++) {
       const timer = s.timers.get(s.page.pollTimer)
@@ -1029,7 +1171,7 @@ test('standard screen stores only a complete verified theme, restores it offline
       }
       assert.equal(request.type, 'themeAsset')
       assert.equal(request.key, target.key)
-      const image = images[request.part]
+      const image = artwork[request.part]
       const end = Math.min(image.length, request.offset + 1536)
       chunks++
       s.reply({type:'themeAsset', key:target.key, part:request.part, offset:request.offset,
@@ -1045,17 +1187,27 @@ test('standard screen stores only a complete verified theme, restores it offline
   assert.deepEqual(files.get(s.page.remoteBackdrop), images.day)
   assert.equal(s.backdrop().src, s.page.remoteBackdrop)
 
+  const circuit = loadImages('circuit')
+  const next = {key:'c'.repeat(64), title:'脉冲电路', scene:'circuit', dayCrc:crc32(circuit.day), nightCrc:crc32(circuit.night)}
+  s.connection.onmessage({data:{v:1, type:'bandThemeChanged', theme:'SKY', bandThemeRevision:8}})
+  assert.equal(s.page.pending.type, 'status')
+  s.reply({theme:'SKY', bandThemeRevision:8, remoteTheme:next, themeNight:false})
+  assert.equal(s.page.sceneLabel, '主题 · 城市天际线')
+  transfer(next, Math.ceil(circuit.day.length / 1536) + Math.ceil(circuit.night.length / 1536), false, circuit)
+  assert.equal(s.page.sceneLabel, '主题 · 脉冲电路')
+  assert.deepEqual(files.get(s.page.remoteBackdrop), circuit.day)
+
   s.page.open()
   const bad = {...offer, key:'b'.repeat(64), dayCrc:0}
   s.reply({remoteTheme:bad, themeNight:true})
   const oldNight = s.page.remoteBackdrop
-  assert.deepEqual(files.get(oldNight), images.night)
+  assert.deepEqual(files.get(oldNight), circuit.night)
   transfer(bad, dayChunks, true)
   assert.equal(s.page.remoteBackdrop, oldNight)
   assert.equal(files.size, 2)
 
   const restarted = setup(undefined, false, 12, store, file)
-  assert.equal(restarted.page.sceneLabel, '主题 · 城市天际线')
+  assert.equal(restarted.page.sceneLabel, '主题 · 脉冲电路')
   restarted.reply({remoteTheme:null})
   assert.equal(restarted.page.remoteBackdrop, '')
   assert.equal(restarted.page.sceneLabel, '主题 · 蓝天与星空')
@@ -1077,7 +1229,7 @@ for (const [model, width, height, shape] of [
     const pill = shape === 'pill-shaped'
     assert.equal(s.page.layout.supportsTheme, !pill)
     s.reply()
-    const fallback = () => s.feed().children.find(row => row.type === 'defaultCarPhoto')
+    const fallback = () => s.feed().children.find(row => row.type === 'carPhoto')
     if (pill) {
       assert.equal(s.backdrop(), undefined)
       assert.equal(s.motion(), undefined)

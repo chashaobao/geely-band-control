@@ -4,6 +4,8 @@ import com.mario.lynkband.solar.ThemeArt;
 import com.mario.lynkband.solar.ThemeSync;
 import com.mario.lynkband.transport.ControlCategory;
 import com.mario.lynkband.transport.WatchIconCodec;
+import com.mario.lynkband.transport.WatchPhotoWire;
+import com.mario.lynkband.transport.WatchWire;
 
 import android.app.Application;
 import android.content.SharedPreferences;
@@ -580,23 +582,37 @@ public class WristApp extends Application {
         if (node.startsWith("band:") && BandPhoto.requested(request) && permitsWearable(node)) {
             VehiclePhoto.Image photo = null;
             try {
-                photo = card.vehiclePhoto(VehiclePhoto.Target.BAND);
+                VehiclePhoto.Target target = Boolean.TRUE.equals(request.opt(BandPhoto.HD_CAPABILITY))
+                        ? VehiclePhoto.Target.BAND_HD : VehiclePhoto.Target.BAND;
+                photo = card.vehiclePhoto(target);
             } catch (RuntimeException unavailable) {
                 android.util.Log.w("WristLynkHost", "Vehicle photo unavailable", unavailable);
             }
             BandPhoto.append(out, request, photo);
         } else if (node.startsWith("watch:") && permitsWearable(node) && request.opt("carPhotoId") instanceof String knownId) {
             try {
-                VehiclePhoto.Image photo = card.vehiclePhoto(VehiclePhoto.Target.WATCH);
-                if (photo != null) {
-                    data.put("carPhotoId", photo.id());
-                    if (!photo.id().equals(knownId)) data.put("carPhoto", photo.base64());
+                boolean hd = Boolean.TRUE.equals(request.opt(WatchPhotoWire.HD_CAPABILITY));
+                if (!hd || !appendWatchPhoto(out, data, knownId, VehiclePhoto.Target.WATCH_HD)) {
+                    appendWatchPhoto(out, data, knownId, VehiclePhoto.Target.WATCH);
                 }
             } catch (RuntimeException unavailable) {
                 android.util.Log.w("WristLynkHost", "Vehicle photo unavailable", unavailable);
             }
         }
         return out.toString();
+    }
+
+    private boolean appendWatchPhoto(JSONObject out, JSONObject data, String knownId, VehiclePhoto.Target target)
+            throws JSONException {
+        VehiclePhoto.Image photo = card.vehiclePhoto(target);
+        if (photo == null) return false;
+        data.put("carPhotoId", photo.id());
+        if (photo.id().equals(knownId)) return true;
+        data.put("carPhoto", photo.base64());
+        if (out.toString().getBytes(StandardCharsets.UTF_8).length <= WatchWire.REPLY_LIMIT) return true;
+        data.remove("carPhoto");
+        data.remove("carPhotoId");
+        return false;
     }
 
     private void handleAction(String node, String type, JSONObject request, JSONObject out) throws JSONException {

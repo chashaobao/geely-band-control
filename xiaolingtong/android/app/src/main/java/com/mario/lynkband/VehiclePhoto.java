@@ -2,12 +2,15 @@ package com.mario.lynkband;
 
 import android.content.res.Resources;
 import android.graphics.Bitmap;
+import android.graphics.Rect;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.util.Base64;
 import android.view.View;
 import android.widget.ImageView;
+
+import com.mario.lynkband.transport.WatchPhotoWire;
 
 import java.io.ByteArrayOutputStream;
 import java.lang.ref.WeakReference;
@@ -18,7 +21,23 @@ import java.security.NoSuchAlgorithmException;
 final class VehiclePhoto {
     record Image(String id, String base64) {}
 
-    enum Target { WATCH, BAND }
+    enum Target {
+        WATCH(256, 128, 8192, false, false),
+        BAND(160, 80, BandPhoto.MAX_CHARS / 4 * 3, true, false),
+        WATCH_HD(WatchPhotoWire.HD_WIDTH, WatchPhotoWire.HD_HEIGHT, WatchPhotoWire.HD_BYTES, false, true),
+        BAND_HD(288, 144, BandPhoto.HD_MAX_CHARS / 4 * 3, true, true);
+
+        final int width, height, budget;
+        final boolean png, hd;
+
+        Target(int width, int height, int budget, boolean png, boolean hd) {
+            this.width = width;
+            this.height = height;
+            this.budget = budget;
+            this.png = png;
+            this.hd = hd;
+        }
+    }
 
     private final Target target;
     private WeakReference<Bitmap> previous = new WeakReference<>(null);
@@ -44,7 +63,7 @@ final class VehiclePhoto {
         String vehicle = binding + "/" + name;
         if (previous.get() == source && generation == source.getGenerationId()) {
             // A partial RemoteViews update may change the vehicle before replacing its bitmap.
-            return target == Target.WATCH || vehicle.equals(previousVehicle) ? cached : null;
+            return !target.png || vehicle.equals(previousVehicle) ? cached : null;
         }
         previousVehicle = vehicle;
         previous = new WeakReference<>(source);
@@ -73,26 +92,33 @@ final class VehiclePhoto {
         return false;
     }
 
+    Image encode(Bitmap source) {
+        Bitmap artwork = target.hd ? trimTransparentPadding(source) : source;
+        try {
+            return encodeThumbnail(artwork);
+        } finally {
+            if (artwork != source) artwork.recycle();
+        }
+    }
+
     @SuppressWarnings("deprecation") // API 28/29 spell lossy WebP as WEBP.
-    private Image encode(Bitmap source) {
-        int maxWidth = target == Target.BAND ? 160 : 256;
-        int maxHeight = target == Target.BAND ? 80 : 128;
-        int maxBytes = target == Target.BAND ? BandPhoto.MAX_CHARS / 4 * 3 : 8192;
-        float scale = Math.min(1f, Math.min((float) maxWidth / source.getWidth(), (float) maxHeight / source.getHeight()));
+    private Image encodeThumbnail(Bitmap source) {
+        float scale = Math.min(1f, Math.min((float) target.width / source.getWidth(), (float) target.height / source.getHeight()));
         int width = Math.max(1, Math.round(source.getWidth() * scale));
         int height = Math.max(1, Math.round(source.getHeight() * scale));
-        Bitmap.CompressFormat format = target == Target.BAND ? Bitmap.CompressFormat.PNG
+        Bitmap.CompressFormat format = target.png ? Bitmap.CompressFormat.PNG
                 : Build.VERSION.SDK_INT >= 30 ? Bitmap.CompressFormat.WEBP_LOSSY : Bitmap.CompressFormat.WEBP;
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream(maxBytes);
-        for (int attempt = 0; attempt < 4; attempt++) {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream(target.budget);
+        int attempts = target.hd ? 6 : 4;
+        for (int attempt = 0; attempt < attempts; attempt++) {
             Bitmap scaled = Bitmap.createScaledBitmap(source, width, height, true);
             Bitmap readable = scaled;
             try {
                 if (scaled.getConfig() == Bitmap.Config.HARDWARE) readable = scaled.copy(Bitmap.Config.ARGB_8888, false);
                 if (readable == null || !hasVisiblePixel(readable)) return null;
                 bytes.reset();
-                if (!readable.compress(format, 85, bytes)) return null;
-                if (bytes.size() > 0 && bytes.size() <= maxBytes) {
+                if (!readable.compress(format, target.hd ? 89 : 85, bytes)) return null;
+                if (bytes.size() > 0 && bytes.size() <= target.budget) {
                     byte[] encoded = bytes.toByteArray();
                     return new Image(digest(encoded), Base64.encodeToString(encoded, Base64.NO_WRAP));
                 }
@@ -100,10 +126,41 @@ final class VehiclePhoto {
                 if (readable != null && readable != scaled) readable.recycle();
                 if (scaled != source) scaled.recycle();
             }
-            width = Math.max(1, width * 2 / 3);
-            height = Math.max(1, height * 2 / 3);
+            width = Math.max(1, target.hd ? width * 5 / 6 : width * 2 / 3);
+            height = Math.max(1, target.hd ? height * 5 / 6 : height * 2 / 3);
         }
         return null;
+    }
+
+    private static Bitmap trimTransparentPadding(Bitmap source) {
+        if (!source.hasAlpha() || source.getConfig() == Bitmap.Config.HARDWARE) return source;
+        int w = Math.min(source.getWidth(), 160), h = Math.min(source.getHeight(), 72);
+        Bitmap sample = Bitmap.createScaledBitmap(source, w, h, true);
+        Rect bounds = new Rect(w, h, 0, 0);
+        try {
+            int[] row = new int[w];
+            for (int y = 0; y < h; y++) {
+                sample.getPixels(row, 0, w, 0, y, w, 1);
+                for (int x = 0; x < w; x++) {
+                    if ((row[x] >>> 24) < 16) continue;
+                    bounds.left = Math.min(bounds.left, x);
+                    bounds.top = Math.min(bounds.top, y);
+                    bounds.right = Math.max(bounds.right, x + 1);
+                    bounds.bottom = Math.max(bounds.bottom, y + 1);
+                }
+            }
+        } finally {
+            if (sample != source) sample.recycle();
+        }
+        if (bounds.isEmpty()) return source;
+        // Leave two sample pixels at each edge for soft antialiasing and fine details.
+        bounds.inset(-2, -2);
+        bounds.intersect(0, 0, w, h);
+        int left = bounds.left * source.getWidth() / w;
+        int top = bounds.top * source.getHeight() / h;
+        int right = (int) Math.ceil(bounds.right * (double) source.getWidth() / w);
+        int bottom = (int) Math.ceil(bounds.bottom * (double) source.getHeight() / h);
+        return Bitmap.createBitmap(source, left, top, right - left, bottom - top);
     }
 
     private static boolean hasVisiblePixel(Bitmap bitmap) {

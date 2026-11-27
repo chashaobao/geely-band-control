@@ -433,6 +433,67 @@ public class RoundLayoutTest {
         } finally { device.runOnMainSync(activity::finish); }
     }
 
+    @Test public void oddGridCentersLastTileAndLayoutSelectionPersists() throws Exception {
+        activity = (WatchActivity) device.startActivitySync(new Intent(device.getTargetContext(), WatchActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+        SharedPreferences prefs = activity.getSharedPreferences("watchTheme", android.content.Context.MODE_PRIVATE);
+        String key = "controlListLayout";
+        boolean existed = prefs.contains(key), previous = prefs.getBoolean(key, false);
+        try {
+            prefs.edit().remove(key).apply();
+            FutureTask<Void> check = new FutureTask<>(() -> {
+                WatchFace.Controls events = new WatchFace.Controls() {
+                    public void refresh() {} public void prepare(JSONObject item) { selected = item; }
+                    public void confirm() {} public void cancel() {} public void pair() {} public void reconnect() {}
+                };
+                for (int i = 0; i < 3; i++) state.actions.put(new JSONObject().put("slot", "s" + i)
+                        .put("key", "k" + i).put("label", "按钮" + i));
+                face = new WatchFace(screenContext(true), events);
+                activity.setContentView(face);
+                face.show(state, true, true);
+                layout();
+                View first = find(face, "按钮0"), second = find(face, "按钮1"), last = find(face, "按钮2");
+                assertEquals(first.getTop(), second.getTop());
+                assertEquals(480, last.getLeft() + last.getRight());
+                assertEquals(first.getWidth(), last.getWidth());
+                assertTrue(last.getTop() > first.getBottom());
+
+                find(face, "设置").performClick();
+                find(face, "车控布局 · 网格").performClick();
+                assertNotNull(find(face, "网格 · 已选"));
+                find(face, "列表").performClick();
+                assertNotNull(find(face, "列表 · 已选"));
+                assertTrue(prefs.getBoolean(key, false));
+                assertTrue(face.back());
+                find(face, "返回车况").performClick();
+                layout();
+                View firstRow = find(face, "按钮0"), secondRow = find(face, "按钮1");
+                assertEquals(firstRow.getLeft(), secondRow.getLeft());
+                assertTrue(firstRow.getRight() - firstRow.getLeft() > last.getWidth());
+                assertTrue(secondRow.getTop() > firstRow.getBottom());
+                find(face, "按钮2").performClick();
+                assertEquals("s2", selected.optString("slot"));
+
+                face = new WatchFace(screenContext(true), events);
+                activity.setContentView(face);
+                face.show(state, true, true);
+                layout();
+                assertTrue(find(face, "按钮0").getTop() < find(face, "按钮1").getTop());
+                state.actions = new JSONArray().put(state.actions.getJSONObject(0));
+                face.show(state, true, true);
+                find(face, "设置").performClick();
+                assertNull(find(face, "车控布局 · 列表"));
+                return null;
+            });
+            device.runOnMainSync(check);
+            check.get();
+        } finally {
+            if (existed) prefs.edit().putBoolean(key, previous).apply();
+            else prefs.edit().remove(key).apply();
+            device.runOnMainSync(activity::finish);
+        }
+    }
+
     @Test public void photoTracksTheCurrentSnapshotBetweenEnergyAndControls() throws Exception {
         activity = (WatchActivity) device.startActivitySync(new Intent(device.getTargetContext(), WatchActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -454,10 +515,14 @@ public class RoundLayoutTest {
                 showPhotoReply("", new JSONObject()); // An older phone.
                 int compactTop = find(face, "按钮").getTop();
                 assertNull(find(face, "车模图"));
+                ImageView fallback = (ImageView) find(face, "默认领克车图");
+                assertNotNull(fallback);
+                assertEquals(540, ((BitmapDrawable) fallback.getDrawable()).getBitmap().getWidth());
                 showPhotoReply("", first);
                 ImageView photo = (ImageView) find(face, "车模图");
                 assertNotNull(photo);
                 assertEquals(ImageView.ScaleType.FIT_CENTER, photo.getScaleType());
+                assertNull(find(face, "默认领克车图"));
                 assertEquals(face.getWidth(), photo.getLeft() + photo.getRight());
                 assertInsideDial(photo);
                 assertNull(find(face, "油量 —"));
@@ -477,6 +542,7 @@ public class RoundLayoutTest {
                 showPhotoReply("", first);
                 showPhotoReply(firstId, new JSONObject());
                 assertNull(find(face, "车模图"));
+                assertNotNull(find(face, "默认领克车图"));
                 assertEquals(compactTop, find(face, "按钮").getTop());
                 showPhotoReply("", first);
                 showPhotoReply(firstId, new JSONObject().put("carPhotoId", firstId).put("carPhoto", "malformed!"));
@@ -660,11 +726,13 @@ public class RoundLayoutTest {
 
     @Test public void decoderRejectsWrongDigestDimensionsFormatAndSize() throws Exception {
         JSONObject valid = photoFixture(Bitmap.CompressFormat.PNG, 120, 48, Color.GREEN);
+        assertEquals(120, WatchPhoto.decode(valid).getWidth());
+        assertEquals(480, WatchPhoto.decode(photoFixture(Bitmap.CompressFormat.WEBP, 480, 160, Color.GREEN)).getWidth());
         assertNull(WatchPhoto.decode(valid.put("carPhotoId", new String(new char[64]).replace('\0', 'a'))));
-        assertNull(WatchPhoto.decode(photoFixture(Bitmap.CompressFormat.PNG, 257, 16, Color.GREEN)));
-        assertNull(WatchPhoto.decode(photoFixture(Bitmap.CompressFormat.PNG, 32, 129, Color.GREEN)));
+        assertNull(WatchPhoto.decode(photoFixture(Bitmap.CompressFormat.PNG, 481, 16, Color.GREEN)));
+        assertNull(WatchPhoto.decode(photoFixture(Bitmap.CompressFormat.PNG, 32, 241, Color.GREEN)));
         assertNull(WatchPhoto.decode(photoFixture(Bitmap.CompressFormat.JPEG, 120, 48, Color.GREEN)));
-        assertNull(WatchPhoto.decode(valid.put("carPhoto", Base64.encodeToString(new byte[8193], Base64.NO_WRAP))));
+        assertNull(WatchPhoto.decode(wirePhoto(new byte[16385])));
     }
 
     private static JSONObject photoFixture(Bitmap.CompressFormat format, int width, int height, int color) throws Exception {

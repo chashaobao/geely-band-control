@@ -84,4 +84,16 @@ public class BandPhotoTest {
         assertEquals(1, over.length());
         assertEquals("", over.getString("carPhotoId"));
     }
+
+    @Test public void hdPayloadRequiresTypedOptInAndKeepsLegacyChunkLimit() throws Exception {
+        VehiclePhoto.Image image = new VehiclePhoto.Image("hd", "AQID".repeat(BandPhoto.HD_MAX_CHARS / 4));
+        assertEquals("", reply(status(), image).getString("carPhotoId"));
+        assertEquals("", reply(status().put(BandPhoto.HD_CAPABILITY, "true"), image).getString("carPhotoId"));
+        JSONObject request = status().put(BandPhoto.HD_CAPABILITY, true);
+        JSONObject first = reply(request, image);
+        assertEquals(BandPhoto.HD_MAX_CHARS, first.getInt("carPhotoLength"));
+        assertEquals(2048, first.getString("carPhotoChunk").length());
+        JSONObject last = reply(request.put("photoTransferId", image.id()).put("photoOffset", 32764), image);
+        assertEquals("AQID", last.getString("carPhotoChunk"));
+    }
 }

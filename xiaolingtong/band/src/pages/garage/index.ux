@@ -6,7 +6,8 @@
     <image class="{{ 'themeMotion fx-' + motionScene }}"
       if="{{ motionVisible && mode === 'home' && layout.supportsTheme && motionImage }}"
       style="{{ layout.backdropStyle }}" src="{{ motionImage }}" alt="blank"></image>
-    <list class="feed" style="{{ layout.feedStyle }}" if="{{ mode === 'home' }}">
+    <list class="feed" style="{{ layout.feedStyle }}" if="{{ mode === 'home' }}"
+      @scroll="feedScrolled" @touchstart="feedTouchStarted" @touchend="feedTouchEnded">
       <list-item type="vehicle" class="block headingRow">
         <text class="title">{{ vehicle }}</text>
       </list-item>
@@ -37,22 +38,18 @@
       <list-item type="condition" class="block conditionRow" if="{{ condition }}">
         <text class="caption" style="{{ layout.captionStyle }}">{{ condition }}</text>
       </list-item>
-      <list-item type="carPhoto" class="photoRow" style="{{ layout.photoRowStyle }}" if="{{ layout.supportsTheme && !!photoSrc }}">
-        <image class="carPhoto" src="{{ photoSrc }}" alt="blank" @error="clearPhoto"></image>
+      <list-item type="carPhoto" class="photoRow" style="{{ layout.photoRowStyle }}" if="{{ layout.supportsTheme }}">
+        <image class="carPhoto" src="{{ photoSrc || '/common/default-vehicle.png' }}" alt="blank" @error="photoImageError"></image>
       </list-item>
-      <list-item type="defaultCarPhoto" class="photoRow" style="{{ layout.photoRowStyle }}"
-        if="{{ layout.supportsTheme && !photoSrc }}">
-        <image class="carPhoto" src="/common/default-vehicle.png" alt="blank"></image>
-      </list-item>
-      <list-item class="singleSlotRow" style="{{ layout.rowStyle }}" type="actionSingle" for="{{ singleRows }}" tid="id">
-        <div class="tile singleTile" style="{{ layout.tileStyle }}" disabled="{{ !$item.left.enabled }}" @click="prepare($item.left.slot)">
+      <list-item class="singleSlotRow" style="{{ layout.listRowStyle }}" type="actionSingle" for="{{ singleRows }}" tid="id">
+        <div class="tile singleTile" style="{{ layout.listTileStyle }}" disabled="{{ !$item.left.enabled }}" @click="prepare($item.left.slot)">
           <stack class="{{ $item.left.state === 'loading' ? 'badge pulse' : 'badge' }}" style="{{ $item.left.badgeStyle }}">
             <image class="glyph" src="{{ $item.left.glyph }}" alt="blank"></image>
           </stack>
           <text class="singleTileName" style="{{ layout.captionStyle }}">{{ $item.left.controlName }}</text>
         </div>
       </list-item>
-      <list-item class="slotRow" style="{{ layout.rowStyle }}" type="actionpair" for="{{ pairedRows }}" tid="id">
+      <list-item class="{{ $item.right.slot ? 'slotRow' : 'slotRow centeredSlotRow' }}" style="{{ layout.rowStyle }}" type="actionpair" for="{{ pairedRows }}" tid="id">
         <div class="tile" style="{{ layout.tileStyle }}" disabled="{{ !$item.left.enabled }}" @click="prepare($item.left.slot)">
           <stack class="{{ $item.left.state === 'loading' ? 'badge pulse' : 'badge' }}" style="{{ $item.left.badgeStyle }}">
             <image class="glyph" src="{{ $item.left.glyph }}" alt="blank"></image>
@@ -76,9 +73,22 @@
       <list-item class="block buttonRow" type="theme" if="{{ layout.supportsTheme }}">
         <text class="button" style="{{ layout.buttonStyle }}" @click="showSolar">{{ skyLabel }}</text>
       </list-item>
+      <list-item class="block buttonRow" type="settings" if="{{ canChooseLayout }}">
+        <text class="button" style="{{ layout.buttonStyle }}" @click="showSettings">设置</text>
+      </list-item>
       <list-item class="block buttonRow" type="refresh">
         <text class="button" style="{{ layout.buttonStyle }}" @click="refresh">刷新车况</text>
       </list-item>
+    </list>
+    <list class="feed" style="{{ layout.feedStyle }}" if="{{ mode === 'settings' }}">
+      <list-item class="block headingRow" type="settingsTitle"><text class="title">车控布局</text></list-item>
+      <list-item class="block buttonRow" type="controlGrid" if="{{ canChooseLayout }}">
+        <text class="{{ controlList ? 'button' : 'button layoutSelected' }}" style="{{ layout.buttonStyle }}" @click="setControlLayout(false)">{{ controlList ? '网格' : '网格 · 已选' }}</text>
+      </list-item>
+      <list-item class="block buttonRow" type="controlList" if="{{ canChooseLayout }}">
+        <text class="{{ controlList ? 'button layoutSelected' : 'button' }}" style="{{ layout.buttonStyle }}" @click="setControlLayout(true)">{{ controlList ? '列表 · 已选' : '列表' }}</text>
+      </list-item>
+      <list-item class="block buttonRow" type="back"><text class="button" style="{{ layout.buttonStyle }}" @click="home">返回</text></list-item>
     </list>
     <list class="feed" style="{{ layout.feedStyle }}" if="{{ mode === 'scenes' && layout.supportsTheme }}">
       <list-item class="block headingRow" type="sceneTitle"><text class="title">主题</text></list-item>
@@ -157,28 +167,35 @@ function screenLayout(info) {
   const caption = Math.max(single ? 28 : 21, Math.ceil(16 * designScale))
   const buttonHeight = Math.max(single ? 84 : 58, Math.ceil(44 * designScale))
   const tileHeight = single ? Math.max(78, buttonHeight, 2 * caption + 12) : Math.max(108, 48 + 3 * caption)
+  const listTileHeight = single ? tileHeight : 82
   const feedWidth = pill ? 84 : rect ? 94 : 72
   const contentWidth = Math.floor(336 * feedWidth / 100)
   return {
     single:single,
     supportsTheme:screenProfile === 'standard' || (ratio > 0 && !pill),
+    photoHd:!pill && width >= 280,
     backdropStyle:ratio >= 0.6 && ratio <= 2.8 ? {width:'336px', height:Math.round(336 * ratio) + 'px'} : {width:'100%', height:'100%'},
     photoRowStyle:{height:(small ? 104 : 128) + 'px'},
     feedStyle:{width:feedWidth + '%', height:usableHeight + '%'},
     captionStyle:{fontSize:caption + 'px'},
     energyStyle:{flexDirection:width >= 180 ? 'row' : 'column', height:width >= 180 ? '56px' : '104px'},
     rowStyle:{height:(tileHeight + 12) + 'px'},
-    tileStyle:{width:single ? (contentWidth - 4) + 'px' : '48%', height:tileHeight + 'px'},
+    tileStyle:{width:'48%', height:tileHeight + 'px'},
+    listRowStyle:{height:(listTileHeight + 12) + 'px'},
+    listTileStyle:{width:(contentWidth - 4) + 'px', height:listTileHeight + 'px'},
     buttonStyle:{height:buttonHeight + 'px', fontSize:Math.max(27, caption) + 'px'}
   }
 }
 const maxPhotoChars = 32768
 const maxChunkChars = 2048
-// Let the UI process taps between read-only status replies. A full .37 image is up to
-// 16 KiB of base64, often split into >8 chunks by the 4 KiB envelope's action list.
+// Let the UI process taps between read-only replies, each limited to a 4 KiB envelope.
 const photoChunkDelay = 32
+const photoWriteTimeout = 4500
+const photoRetryDelay = 8000
+const scrollCooldown = 350
 const themeChunkBytes = 1536
 const maxThemeBytes = 48 * 1024
+const themeRestoreTimeout = 2500
 const themeStorageKey = 'garageThemeArt'
 function themeUri(slot, part) { return 'internal://files/garage-theme-' + slot + '-' + part + '.png' }
 function validTheme(info) {
@@ -201,26 +218,41 @@ function deleteTheme(slot) {
     file.delete({uri:themeUri(slot, 'night')})
   } catch (error) { /* Both paths are reused on the next replacement. */ }
 }
+function writePng(file, uri, bytes, success, fail, stillWanted = () => true) {
+  const attempt = raw => {
+    if (!stillWanted()) { fail(); return }
+    try {
+      file.writeArrayBuffer({uri:uri, buffer:raw ? bytes.buffer : bytes, position:0, append:false,
+        success:success, fail:(reason, code) => {
+          if (!raw && Number(code == null ? reason : code) === 202) attempt(true)
+          else fail()
+        }})
+    } catch (error) {
+      if (!raw && error && error.name === 'TypeError') attempt(true)
+      else fail()
+    }
+  }
+  try {
+    // Truncate a previous file before writing. Some older file modules accept only ArrayBuffer.
+    file.writeText({uri:uri, text:' ', append:false, success:() => attempt(false), fail:fail})
+  } catch (error) { fail() }
+}
 function writeThemePng(uri, bytes, success, fail) {
   try {
     const file = require('@system.file')
-    const attempt = raw => {
-      try {
-        file.writeArrayBuffer({uri:uri, buffer:raw ? bytes.buffer : bytes, position:0, append:false,
-          success:success, fail:(reason, code) => { if (raw && code === 202) attempt(false); else fail() }})
-      } catch (error) { fail() }
-    }
-    file.writeText({uri:uri, text:' ', append:false, success:() => attempt(true), fail:fail})
+    writePng(file, uri, bytes, success, fail)
   } catch (error) { fail() }
 }
 const maxFastPhotoPolls = 16
 // Fixed paths bound storage even after a process kill. Keep each path reserved through async deletion.
 const photoPaths = ['internal://cache/garage-car-0.png', 'internal://cache/garage-car-1.png']
-const busyPhotoPaths = [false, false]
+const busyPhotoPaths = [null, null]
 let nextPhotoPath = 0
 function deletePhotoFile(photo) {
-  const release = () => { busyPhotoPaths[photo.slot] = false }
-  try { photo.file.delete({uri:photo.uri, complete:release}) } catch (error) { release() }
+  if (busyPhotoPaths[photo.slot] !== photo || photo.deleting) return
+  photo.deleting = true
+  const release = () => { if (busyPhotoPaths[photo.slot] === photo) busyPhotoPaths[photo.slot] = null }
+  try { photo.file.delete({uri:photo.uri, success:release, fail:release, complete:release}) } catch (error) { release() }
 }
 function decodePng(text, maxEdge = 512) {
   // Vela doesn't require browser atob. writeArrayBuffer accepts a Uint8Array.
@@ -286,6 +318,7 @@ export default {
     mode: 'home', vehicle: '小领通', status: '正在连接手机', range: '—', unit: 'km',
     condition: '', battery: '—', fuel: '', time: '等候卡片更新', note: '', photoSrc: '',
     actions: [], singleRows: [], pairedRows: [], layout: screenLayout({}), question: '', confirmTile: controlTile({}),
+    controlList:false, canChooseLayout:false,
     backdrop:{}, motionVisible:false, motionScene:'sky', motionImage:'', remoteBackdrop:'',
     sceneLabel:'主题 · 蓝天与星空', skyLabel:'昼夜 · 跟随手机', skyMode:'follow',
     solarInfo:'', riseTime:'06:00', setTime:'18:00'
@@ -326,6 +359,7 @@ export default {
     this.pending = null
     this.queuedChoice = null
     this.queuedRefresh = false
+    this.queuedThemeStatus = false
     this.controlsAllowed = true
     this.requiresStatus = false
     this.operation = null
@@ -336,6 +370,13 @@ export default {
     this.photoTransfer = null
     this.photoFile = null
     this.photoBurst = 0
+    this.photoRetryAt = 0
+    this.feedAtTop = true
+    this.feedBusyUntil = 0
+    this.pullStart = null
+    this.nextPullRefreshAt = 0
+    this.controlLayoutPicked = false
+    this.loadControlLayout()
     if (this.layout.supportsTheme) this.loadAppearance()
     try {
       require('@system.device').getInfo({success: info => {
@@ -442,7 +483,11 @@ export default {
   },
   restoreRemoteTheme() {
     this.themeRestoring = true
+    let settled = false
     const finish = value => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
       this.themeRestoring = false
       if (this.destroyed || this.themeTarget === null) return
       let saved
@@ -451,7 +496,9 @@ export default {
         this.themeActive = saved
         this.updateSky()
       }
+      if (this.visible && this.conn && !this.pending && !this.choice && this.canReadTheme()) this.schedule(0)
     }
+    const timeout = setTimeout(finish, themeRestoreTimeout)
     try {
       require('@system.storage').get({key:themeStorageKey, success:finish, fail:() => finish()})
     } catch (error) { finish() }
@@ -653,8 +700,23 @@ export default {
     if (this.photoSrc) this.photoSrc = ''
     const photo = this.photoFile
     this.photoFile = null
-    if (photo && photo.ready) deletePhotoFile(photo)
+    if (photo) {
+      clearTimeout(photo.timer)
+      if (photo.ready) deletePhotoFile(photo)
+    }
     // An invalidated writer releases its own path when its callback arrives.
+  },
+  photoImageError() {
+    if (!this.photoSrc) return
+    this.clearPhoto()
+    this.photoRetryAt = Date.now() + photoRetryDelay
+  },
+  feedBusy() {
+    return Date.now() < this.feedBusyUntil
+  },
+  canRequestPhoto() {
+    return !this.feedBusy() && Date.now() >= this.photoRetryAt &&
+      (!!this.photoFile || !busyPhotoPaths[0] || !busyPhotoPaths[1])
   },
   suspendPhoto() {
     // Unmount until the next opted-in snapshot confirms both vehicle and photo ID.
@@ -667,43 +729,39 @@ export default {
     if (busyPhotoPaths[slot]) return
     const buffer = decodePng(text)
     if (!buffer) return
-    const photo = {id:id, slot:slot, uri:photoPaths[slot], ready:false}
+    let file
     try {
-      photo.file = require('@system.file')
-      if (!photo.file || !photo.file.writeArrayBuffer) return
-      this.photoFile = photo
-      busyPhotoPaths[slot] = true
-      nextPhotoPath = 1 - slot
-      const fail = () => {
-        if (this.photoFile === photo) this.photoFile = null
-        deletePhotoFile(photo)
-      }
-      const write = () => {
-        if (this.photoFile !== photo) { deletePhotoFile(photo); return }
-        const success = () => {
-          if (this.photoFile !== photo) { deletePhotoFile(photo); return }
-          photo.ready = true
-          this.photoSrc = photo.uri
-        }
-        // Xiaomi's interconnect image sample passes ArrayBuffer. Some file modules
-        // enforce the Uint8Array documented by the public JS API (error 202).
-        const attempt = (raw) => {
-          try {
-            photo.file.writeArrayBuffer({uri:photo.uri, buffer:raw ? buffer.buffer : buffer, position:0, append:false,
-              success:success, fail:(reason, code) => {
-                if (raw && code === 202 && this.photoFile === photo) attempt(false)
-                else fail()
-              }})
-          } catch (error) { fail() }
-        }
-        attempt(true)
-      }
-      // Native writeArrayBuffer uses O_CREAT without O_TRUNC. writeText truncates
-      // a leftover cache file even after a process restart, before the PNG overwrites it.
-      photo.file.writeText({uri:photo.uri, text:' ', append:false, success:write, fail:fail})
-    } catch (error) {
-      if (this.photoFile === photo) { this.photoFile = null; deletePhotoFile(photo) }
+      file = require('@system.file')
+    } catch (error) { /* Some firmware has no native file module. */ }
+    if (!file || !file.writeArrayBuffer) {
+      this.photoRetryAt = Date.now() + photoRetryDelay
+      return
     }
+    const photo = {id:id, slot:slot, uri:photoPaths[slot], file:file, ready:false}
+    this.photoFile = photo
+    busyPhotoPaths[slot] = photo
+    nextPhotoPath = 1 - slot
+    const stillWanted = () => this.photoFile === photo
+    const defer = () => {
+      if (!stillWanted()) return
+      this.photoFile = null
+      this.photoRetryAt = Date.now() + photoRetryDelay
+    }
+    // Keep the slot reserved if native I/O never responds. A late callback releases it.
+    photo.timer = setTimeout(defer, photoWriteTimeout)
+    const success = () => {
+      clearTimeout(photo.timer)
+      if (!stillWanted()) { deletePhotoFile(photo); return }
+      photo.ready = true
+      if (!this.feedBusy() && !this.queuedRefresh && !(this.pending && this.pending.type === 'refresh'))
+        this.photoSrc = photo.uri
+    }
+    const fail = () => {
+      clearTimeout(photo.timer)
+      defer()
+      deletePhotoFile(photo)
+    }
+    writePng(file, photo.uri, buffer, success, fail, stillWanted)
   },
   receivePhoto(request, data) {
     // Only an opted-in status reply is authoritative. An empty or missing id also covers old phones.
@@ -714,7 +772,7 @@ export default {
     }
     if (this.photoFile && this.photoFile.id === id) {
       // receive() invalidates the file on a vehicle change before we get here.
-      if (this.photoFile.ready && !this.photoSrc) this.photoSrc = this.photoFile.uri
+      if (this.photoFile.ready && !this.photoSrc && !this.feedBusy()) this.photoSrc = this.photoFile.uri
       return false
     }
     if (this.photoFile || (this.photoTransfer && this.photoTransfer.id !== id)) this.clearPhoto()
@@ -738,10 +796,11 @@ export default {
     return true
   },
   updateRows() {
-    const columns = this.layout.single ? 1 : 2
+    const columns = this.layout.single || this.controlList ? 1 : 2
     const active = this.operation && this.status !== '车况只读' && this.operation.item
     const blocked = !!active || this.requiresStatus || !this.controlsAllowed || !!(this.pending && this.pending.type !== 'status')
     let items = this.controlsAllowed ? this.actions : []
+    this.canChooseLayout = !this.layout.single && items.length >= 2
     if (active) {
       // Keep the spinner visible while the official card temporarily replaces its controls.
       if (!items.some(item => sameControl(item, active))) {
@@ -768,6 +827,27 @@ export default {
       if (JSON.stringify(rows) !== JSON.stringify(this.pairedRows)) this.pairedRows = rows
     }
   },
+  loadControlLayout() {
+    try {
+      require('@system.storage').get({key:'garageControlLayout', success:value => {
+        if (this.destroyed || this.controlLayoutPicked || value !== 'list') return
+        this.controlList = true
+        this.updateRows()
+      }})
+    } catch (error) { /* The default grid remains available. */ }
+  },
+  showSettings() {
+    if (this.canChooseLayout && !this.choice) this.mode = 'settings'
+  },
+  setControlLayout(list) {
+    if (!this.canChooseLayout || this.mode !== 'settings') return
+    this.controlLayoutPicked = true
+    this.controlList = list
+    this.updateRows()
+    try {
+      require('@system.storage').set({key:'garageControlLayout', value:list ? 'list' : 'grid'})
+    } catch (error) { /* Keep the in-memory choice. */ }
+  },
   onShow() {
     this.motionVisible = true
     this.updateSky()
@@ -775,6 +855,9 @@ export default {
     this.sceneAttempts = 0
     this.sceneRetryAt = 0
     this.retries = 0
+    this.feedAtTop = true
+    this.feedBusyUntil = 0
+    this.pullStart = null
     this.open()
   },
   onHide() { this.sleepPage() },
@@ -808,6 +891,7 @@ export default {
     this.dropChoice()
     this.queuedChoice = null
     this.queuedRefresh = false
+    this.queuedThemeStatus = false
     this.requiresStatus = false
     if (this.operation) this.note = unknownResult
     this.operation = null
@@ -817,6 +901,7 @@ export default {
     this.actions = []
     this.singleRows = []
     this.pairedRows = []
+    this.canChooseLayout = false
     this.mode = 'home'
   },
   open() {
@@ -831,7 +916,9 @@ export default {
         connection.onclose = () => this.lost('手机已断开')
         connection.onerror = () => this.lost('检查手机通信服务')
       }
-      if (!this.pending && !this.choice) this.send(this.themeBurst < 4 && this.canReadTheme() ? 'themeAsset' : 'status')
+      if (!this.pending && !this.choice)
+        this.send(this.themeBurst < 4 && !this.feedBusy() && !this.queuedRefresh && !this.queuedThemeStatus &&
+          this.canReadTheme() ? 'themeAsset' : 'status')
     } catch (error) { this.lost('等待小米运动健康连接') }
   },
   schedule(delay) {
@@ -849,12 +936,13 @@ export default {
   },
   lost(reason) {
     if (!this.visible) return
-    const settingsMode = this.mode === 'solar' || this.mode === 'scenes' ? this.mode : 'home'
+    const settingsMode = this.mode === 'solar' || this.mode === 'scenes' || this.mode === 'settings' ? this.mode : 'home'
     const uncertain = !!this.operation || (this.pending && this.pending.type === 'execute') || this.note === unknownResult
     this.clearRequest()
     this.dropChoice()
     this.queuedChoice = null
     this.queuedRefresh = false
+    this.queuedThemeStatus = false
     this.requiresStatus = false
     this.operation = null
     this.controlsAllowed = false
@@ -869,6 +957,7 @@ export default {
     this.actions = []
     this.singleRows = []
     this.pairedRows = []
+    this.canChooseLayout = false
     this.status = reason
     this.note = uncertain ? '结果待核对，请查看官方车况' : ''
     this.releaseConnection()
@@ -879,6 +968,8 @@ export default {
   send(type, choice) {
     if (!this.visible || this.pending || !this.conn) return
     clearTimeout(this.pollTimer)
+    const themeStatus = type === 'status' && this.queuedThemeStatus
+    if (themeStatus) this.queuedThemeStatus = false
     const request = {v:1, id:Date.now().toString(36) + '_' + (++this.seq), type:type, selectedActions:true, supportsControlState:true}
     if (type === 'status' && this.installedVersionCode && screenProfile !== 'auto') {
       request.bandVersionCode = this.installedVersionCode
@@ -896,10 +987,12 @@ export default {
         this.sceneRetryAt = Date.now() + this.sceneAttempts * 5000
       }
     }
-    if (type === 'status' && this.layout.supportsTheme && !this.requiresStatus && !this.operation &&
-        !this.queuedChoice && !this.queuedRefresh) {
+    if (type === 'status' && !themeStatus && this.layout.supportsTheme && !this.requiresStatus && !this.operation &&
+        !this.queuedChoice && !this.queuedRefresh && this.canRequestPhoto()) {
       request.bandPhoto = true
-      request.carPhotoId = this.photoFile && this.photoFile.ready ? this.photoFile.id : ''
+      if (this.layout.photoHd) request.bandPhotoHd = true
+      // A write in progress can acknowledge the image without requesting the same bytes again.
+      request.carPhotoId = this.photoFile ? this.photoFile.id : ''
       request.photoTransferId = this.photoTransfer ? this.photoTransfer.id : ''
       request.photoOffset = this.photoTransfer ? this.photoTransfer.text.length : 0
     }
@@ -930,13 +1023,22 @@ export default {
     if (!reply || reply.v !== 1) return
     const request = this.pending
     if (reply.type === 'bandThemeChanged') {
-      if (this.layout.supportsTheme) this.acceptScene(reply, request, true)
+      const revision = reply.bandThemeRevision
+      if (this.layout.supportsTheme && scenes.indexOf(reply.theme) >= 0 && sceneRevision(revision) &&
+          (revision > this.sceneRevision || (revision === this.sceneRevision && reply.theme === this.theme))) {
+        this.acceptScene(reply, request, true)
+        // Different downloaded themes can share the same legacy scene. Fetch the selected
+        // artwork even when the legacy scene and revision have not changed.
+        this.queuedThemeStatus = true
+        this.themeRetryAt = 0
+        if (!request && !this.choice) this.dispatchQueued()
+      }
       return
     }
     if (!request || reply.id !== request.id) return
     if (request.type === 'themeAsset') {
       this.clearRequest()
-      this.receiveTheme(reply, request)
+      if (!this.queuedThemeStatus) this.receiveTheme(reply, request)
       this.themeBurst++
       if (!this.dispatchQueued()) this.schedule(this.canReadTheme() ? (this.themeBurst < 4 ? 45 : 250) : 5000)
       return
@@ -964,7 +1066,8 @@ export default {
     const vehicle = s.vehicle || '小领通'
     const vehicleChanged = vehicle !== this.vehicle
     if (vehicleChanged) this.clearPhoto()
-    const morePhoto = request.bandPhoto && this.layout.supportsTheme && this.receivePhoto(request, s)
+    const morePhoto = request.bandPhoto && !this.queuedRefresh && !this.feedBusy() &&
+      this.layout.supportsTheme && this.receivePhoto(request, s)
     this.vehicle = vehicle
     this.range = s.range || '—'
     this.unit = s.unit || 'km'
@@ -984,6 +1087,7 @@ export default {
           (this.operation.item.momentary === true || controlState(this.operation.item) === 'legacy'))) this.operation = null
     }
     if (reply.note) this.note = reply.note
+    else if (request.type === 'refresh' && !this.operation) this.note = ''
     this.observeOperation(s.vehicle)
     this.updateRows()
     if (request.type === 'prepare' && typeof reply.token === 'string' && reply.token && reply.label === request.label) {
@@ -1009,7 +1113,7 @@ export default {
     const now = Date.now()
     const operationDelay = this.operation ? Math.max(0, this.operation.deadline - now) : 500
     this.schedule(this.operation || now < this.fastPollUntil ? Math.min(500, operationDelay) :
-      fastPhoto ? photoChunkDelay : this.canReadTheme() ? 45 : request.type === 'refresh' ? 1600 : 5000)
+      fastPhoto ? photoChunkDelay : !this.feedBusy() && this.canReadTheme() ? 45 : request.type === 'refresh' ? 1600 : 5000)
   },
   canControl(item) {
     return this.controlsAllowed && !this.operation && !this.requiresStatus && actionable(item)
@@ -1044,7 +1148,11 @@ export default {
     }
     if (this.queuedRefresh && !this.choice) {
       this.queuedRefresh = false
-      this.send('refresh')
+      this.sendRefresh()
+      return true
+    }
+    if (this.queuedThemeStatus && this.conn && !this.pending && !this.choice) {
+      this.send('status')
       return true
     }
     return false
@@ -1053,16 +1161,45 @@ export default {
     // Photo requests are read-only. Their late replies cannot match the new request.
     if (!this.requiresStatus && this.pending && this.pending.bandPhoto) this.clearRequest()
   },
+  feedScrolled(event) {
+    if (event && Number.isFinite(event.scrollY)) {
+      this.feedAtTop = Math.abs(event.scrollY) <= 3
+      if (!this.feedAtTop) this.pullStart = null
+    }
+    this.feedBusyUntil = Date.now() + scrollCooldown
+  },
+  feedTouchStarted(event) {
+    this.feedBusyUntil = Date.now() + scrollCooldown
+    const touch = event && event.touches && event.touches[0]
+    this.pullStart = this.feedAtTop && touch && Number.isFinite(touch.clientX) && Number.isFinite(touch.clientY)
+      ? {x:touch.clientX, y:touch.clientY, id:touch.identifier} : null
+  },
+  feedTouchEnded(event) {
+    const start = this.pullStart
+    this.pullStart = null
+    if (!start || !this.feedAtTop) return
+    const touch = event && event.changedTouches && event.changedTouches[0]
+    const now = Date.now()
+    if (!touch || touch.identifier !== start.id || now < this.nextPullRefreshAt) return
+    const dy = touch.clientY - start.y
+    if (dy < 34 || dy < 1.5 * Math.abs(touch.clientX - start.x) || !Number.isFinite(dy)) return
+    this.nextPullRefreshAt = now + 1000
+    this.feedBusyUntil = now + scrollCooldown
+    this.refresh()
+  },
+  sendRefresh() {
+    if (!this.operation) this.note = '正在刷新车况'
+    this.send('refresh')
+  },
   refresh() {
     if (!this.visible || this.choice) return
-    this.yieldPhotoStatus()
+    // Let the native channel finish the current request before starting a manual refresh.
     if (!this.conn || this.pending) {
       if (!this.pending || this.pending.type !== 'refresh') this.queuedRefresh = true
       if (!this.conn) this.open()
       return
     }
-    if (!this.operation) this.note = ''
-    this.send('refresh')
+    this.sendRefresh()
   },
   controls() { this.mode = 'home'; this.note = '' },
   home() {
@@ -1070,6 +1207,8 @@ export default {
     this.queuedChoice = null
     this.dropChoice()
     this.mode = 'home'
+    this.feedAtTop = true
+    this.pullStart = null
     this.note = ''
     this.updateRows()
     if (!this.pending && this.dispatchQueued()) return
@@ -1224,6 +1363,7 @@ export default {
 .carPhoto { width:100%; height:100%; object-fit:contain; }
 .connectionText { color:#5ab9fc; text-align:center; }
 .slotRow { width:100%; height:144px; padding:4px 0; flex-direction:row; justify-content:space-around; align-items:center; }
+.centeredSlotRow { justify-content:center; }
 .tile { border-radius:18px; align-items:center; justify-content:center; flex-direction:column; }
 .badge { width:56px; height:56px; border-radius:28px; flex-shrink:0;
   transition-property:background-color; transition-duration:180ms; transition-timing-function:ease-out; }
@@ -1245,6 +1385,7 @@ export default {
 .warm { color:#ffbf75; }
 .tile { background-color:#192b3e; }
 .button { background-color:#212a38; }
+.layoutSelected { background-color:#285272; }
 .confirmButton { background-color:#ffbf75; color:#241609; }
 .solarPickerRow { flex-direction:column; height:160px; }
 .solarPicker { width:100%; height:120px; color:#eef5ff; selected-color:#ffffff; }

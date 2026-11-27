@@ -27,6 +27,8 @@ class LynkWidget {
     private final Handler main;
     private final VehiclePhoto watchPhoto = new VehiclePhoto(VehiclePhoto.Target.WATCH);
     private final VehiclePhoto bandPhoto = new VehiclePhoto(VehiclePhoto.Target.BAND);
+    private final VehiclePhoto watchPhotoHd = new VehiclePhoto(VehiclePhoto.Target.WATCH_HD);
+    private final VehiclePhoto bandPhotoHd = new VehiclePhoto(VehiclePhoto.Target.BAND_HD);
     private boolean listeningRequested;
     private boolean listening;
     private AppWidgetHostView view;
@@ -157,7 +159,13 @@ class LynkWidget {
     String identity() { return id + "/" + providerVersion; }
     AppWidgetHostView view() { return view; }
     VehiclePhoto.Image vehiclePhoto(VehiclePhoto.Target target) {
-        return (target == VehiclePhoto.Target.BAND ? bandPhoto : watchPhoto).read(content(), identity());
+        VehiclePhoto reader = switch (target) {
+            case WATCH -> watchPhoto;
+            case BAND -> bandPhoto;
+            case WATCH_HD -> watchPhotoHd;
+            case BAND_HD -> bandPhotoHd;
+        };
+        return reader.read(content(), identity());
     }
 
     View content() {

@@ -3,6 +3,8 @@ package com.mario.lynkband.watch;
 import android.graphics.Bitmap;
 import android.graphics.ImageDecoder;
 
+import com.mario.lynkband.transport.WatchPhotoWire;
+
 import org.json.JSONObject;
 
 import java.io.IOException;
@@ -13,7 +15,7 @@ import java.util.Base64;
 
 /** Validates and decodes an optional photo on the Bluetooth reader thread. */
 final class WatchPhoto {
-    private static final int MAX_BYTES = 8192;
+    private static final int MAX_BYTES = WatchPhotoWire.HD_BYTES;
     private WatchPhoto() {}
 
     static Bitmap decode(JSONObject data) {
@@ -26,7 +28,8 @@ final class WatchPhoto {
             return ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), (decoder, info, source) -> {
                 String mime = info.getMimeType();
                 if (!("image/png".equals(mime) || "image/webp".equals(mime))
-                        || info.getSize().getWidth() > 256 || info.getSize().getHeight() > 128) {
+                        || info.getSize().getWidth() > WatchPhotoWire.HD_WIDTH
+                        || info.getSize().getHeight() > WatchPhotoWire.HD_HEIGHT) {
                     throw new IllegalArgumentException("Unsupported watch thumbnail");
                 }
                 decoder.setAllocator(ImageDecoder.ALLOCATOR_SOFTWARE);

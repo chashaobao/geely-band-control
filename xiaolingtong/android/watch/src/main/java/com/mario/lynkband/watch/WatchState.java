@@ -8,6 +8,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import java.util.UUID;
 import com.mario.lynkband.transport.ControlCategory;
+import com.mario.lynkband.transport.WatchPhotoWire;
 
 final class WatchState {
     private static final String UNKNOWN_RESULT = "结果待核对，请查看官方车况";
@@ -155,7 +156,8 @@ final class WatchState {
         if (type.equals("prepare") && !canControl(action)) return null;
         JSONObject request = new JSONObject().put("v", 1).put("id", UUID.randomUUID().toString())
                 .put("type", type).put("visualActions", true).put("localWatchIcons", true)
-                .put("supportsControlState", true).put("carPhotoId", carPhotoId);
+                .put("supportsControlState", true).put("carPhotoId", carPhotoId)
+                .put(WatchPhotoWire.HD_CAPABILITY, true);
         if ("status".equals(type)) request.put("watchSolar", true);
         if (type.equals("execute")) {
             if (choice == null) return null;

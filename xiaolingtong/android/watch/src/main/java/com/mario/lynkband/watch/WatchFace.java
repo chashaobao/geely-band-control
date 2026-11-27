@@ -46,7 +46,7 @@ final class WatchFace extends FrameLayout {
     enum Screen {
         STATUS,
         PHONE,
-        THEME, SOLAR
+        THEME, SOLAR, CONTROLS
     }
 
     private final Controls events;
@@ -63,12 +63,14 @@ final class WatchFace extends FrameLayout {
     private WatchState model;
     private Screen screen = Screen.STATUS;
     private static final String SCENE_KEY = "scene";
+    private static final String CONTROL_LIST_KEY = "controlListLayout";
     private final android.content.SharedPreferences themeSettings;
     private final WatchThemes themes;
     private boolean localSolarNight, solarNight;
     private String localSolarInfo = "日出 06:00 · 日落 18:00";
     private Context palette;
     private boolean online, paired;
+    private boolean controlList;
     private boolean wasConfirming;
     private long confirmShownAt;
     private float scale;
@@ -90,6 +92,7 @@ final class WatchFace extends FrameLayout {
         super(context);
         this.events = events;
         themeSettings = context.getSharedPreferences("watchTheme", Context.MODE_PRIVATE);
+        controlList = themeSettings.getBoolean(CONTROL_LIST_KEY, false);
         themes = new WatchThemes(context);
         motion = new AmbientMotion(context);
         motion.setCenterCrop(true);
@@ -190,7 +193,8 @@ final class WatchFace extends FrameLayout {
             return true;
         }
         if (screen == Screen.STATUS) return false;
-        go(screen == Screen.SOLAR ? Screen.THEME : screen == Screen.THEME ? Screen.PHONE : Screen.STATUS);
+        go(screen == Screen.SOLAR ? Screen.THEME
+                : screen == Screen.THEME || screen == Screen.CONTROLS ? Screen.PHONE : Screen.STATUS);
         return true;
     }
 
@@ -218,7 +222,7 @@ final class WatchFace extends FrameLayout {
                         + "|"
                         + model.actions
                         + "|"
-                        + model.controlPending() + "|" + model.loadingAction()
+                        + model.controlPending() + "|" + model.loadingAction() + "|" + controlList
                         + (screen == Screen.SOLAR ? "|" + manualSolar() + "|" + solarSummary() : "");
         if (key.equals(rendered)) return;
         if (!controlsVisible()) clearTiles();
@@ -257,6 +261,7 @@ final class WatchFace extends FrameLayout {
         }
         if (screen == Screen.THEME) { themePage(); return; }
         if (screen == Screen.SOLAR) { solarPage(); return; }
+        if (screen == Screen.CONTROLS) { controlLayoutPage(); return; }
         if (screen == Screen.PHONE || (!online && !paired)) {
             phonePage();
             return;
@@ -306,7 +311,9 @@ final class WatchFace extends FrameLayout {
             gridTop = stacked ? 273 : 234;
         }
         int muted = photoHome ? 0xffd3dfed : color(R.color.muted);
-        int rows = actionTiles(gridTop, muted);
+        boolean list = singleColumn || controlList;
+        int rowHeight = list ? 118 : 148;
+        int rows = actionTiles(gridTop, muted, list, rowHeight);
         String time = value("time", "待更新");
         LinearLayout refresh = row();
         refresh.addView(new Symbol("refresh", muted), px(22), px(22));
@@ -318,7 +325,7 @@ final class WatchFace extends FrameLayout {
                 online ? events::refresh : events::reconnect,
                 0x00000000,
                 28);
-        int footerY = gridTop + (rows == 0 ? 91 : 6 + rows * (singleColumn ? 118 : 148));
+        int footerY = gridTop + (rows == 0 ? 91 : 6 + rows * rowHeight);
         put(refresh, 99, footerY, 282, 64);
         chip("设置", "", false, 128, footerY + 83, 224, 56, () -> go(Screen.PHONE));
         page.setMinimumHeight(px(footerY + 189));
@@ -426,8 +433,7 @@ final class WatchFace extends FrameLayout {
 
     private java.util.List<JSONObject> executingLayout;
 
-    private int actionTiles(int gridTop, int muted) {
-        int count = 0;
+    private int actionTiles(int gridTop, int muted, boolean list, int rowHeight) {
         Map<String, ActionTile> previous = tiles;
         tiles = new HashMap<>();
         JSONObject pending = model.loadingAction();
@@ -445,25 +451,35 @@ final class WatchFace extends FrameLayout {
             }
             if (!found) executingLayout.add(pending);
         }
-        int size = pending == null ? model.actions.length() : executingLayout.size();
-        for (int i = 0; i < size; i++) {
-            JSONObject item = pending == null ? model.actions.optJSONObject(i) : executingLayout.get(i);
-            if (!online || item == null || (pending == null && !model.canControl(item))) continue;
+        java.util.List<JSONObject> visible = new java.util.ArrayList<>();
+        if (online && pending != null) visible.addAll(executingLayout);
+        else if (online) {
+            for (int i = 0; i < model.actions.length(); i++) {
+                JSONObject item = model.actions.optJSONObject(i);
+                if (model.canControl(item)) visible.add(item);
+            }
+        }
+        int count = visible.size();
+        for (int i = 0; i < count; i++) {
+            JSONObject item = visible.get(i);
             boolean executing = pending != null && item == pending;
             String slot = item.optString("slot");
             ActionTile tile = previous.remove(slot);
-            if (tile == null) tile = new ActionTile();
+            if (tile == null) tile = new ActionTile(list);
             else ((ViewGroup) tile.getParent()).removeView(tile);
             tiles.put(slot, tile);
             tile.bind(item, executing);
-            if (singleColumn) put(tile, narrow || round ? 110 : 20, gridTop + count * 118, narrow || round ? 260 : 440, 106);
-            else if (round) put(tile, 74 + count % 2 * 174, gridTop + count / 2 * 148, 158, 122);
-            else put(tile, 20 + count % 2 * 224, gridTop + count / 2 * 148, 216, 122);
-            count++;
+            if (list) put(tile, narrow || round ? 110 : 20, gridTop + i * rowHeight, narrow || round ? 260 : 440, 106);
+            else {
+                int width = round ? 158 : 216;
+                boolean lone = i == count - 1 && i % 2 == 0;
+                int x = lone ? (480 - width) / 2 : round ? 74 + i % 2 * 174 : 20 + i % 2 * 224;
+                put(tile, x, gridTop + i / 2 * rowHeight, width, 122);
+            }
         }
         for (ActionTile removed : previous.values()) removed.stopMotion();
         if (count == 0 && online) label("当前没有可用车控", 23, muted, false, 82, gridTop + 3, 316, 66);
-        return singleColumn ? count : (count + 1) / 2;
+        return list ? count : (count + 1) / 2;
     }
 
     private final class ActionTile extends LinearLayout {
@@ -476,21 +492,26 @@ final class WatchFace extends FrameLayout {
         private int tint;
         private ValueAnimator transition, pulse;
 
-        ActionTile() {
+        ActionTile(boolean list) {
             super(WatchFace.this.getContext());
-            setOrientation(VERTICAL);
+            boolean horizontal = list && !singleColumn;
+            setOrientation(horizontal ? HORIZONTAL : VERTICAL);
             setGravity(Gravity.CENTER);
             boolean night = nightScene();
             setBackground(new RippleDrawable(ColorStateList.valueOf(0x447aabcb),
                     new FrostedTile(night, px(24), px(1)), shape(Color.WHITE, 24)));
             emblem = new FrameLayout(getContext());
-            addView(emblem, px(70), px(70));
+            int iconSize = px(horizontal ? 62 : 70);
+            addView(emblem, iconSize, iconSize);
             caption = text("", 20, color(R.color.ink), true);
             caption.setGravity(Gravity.CENTER);
             caption.setIncludeFontPadding(false);
             caption.setSingleLine(true);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, px(29));
-            lp.topMargin = px(4);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(horizontal ? -2 : -1, px(29));
+            if (horizontal) {
+                lp.leftMargin = px(8);
+                caption.setMaxWidth(px(round ? 162 : 320));
+            } else lp.topMargin = px(4);
             addView(caption, lp);
         }
 
@@ -607,12 +628,46 @@ final class WatchFace extends FrameLayout {
         y += 102;
         actionButton("主题和昼夜", "", false, y, () -> go(Screen.THEME));
         y += 102;
+        if (canChooseControlLayout()) {
+            actionButton("车控布局 · " + (controlList ? "列表" : "网格"), "", false, y, () -> go(Screen.CONTROLS));
+            y += 102;
+        }
         if (online) {
             secondaryButton("返回车况", "back", y, () -> go(Screen.STATUS));
             y += 92;
         }
         label(BuildConfig.VERSION_NAME, 17, color(R.color.muted), false, 165, y, 150, 24);
         page.setMinimumHeight(px(y + 100));
+    }
+
+    private boolean canChooseControlLayout() {
+        if (!online || singleColumn || windowWidth == 0) return false;
+        int count = 0;
+        for (int i = 0; i < model.actions.length(); i++) {
+            if (model.canControl(model.actions.optJSONObject(i)) && ++count == 2) return true;
+        }
+        return false;
+    }
+
+    private void controlLayoutPage() {
+        label("车控布局", 30, color(R.color.ink), true, 100, 40, 280, 46);
+        int y = 112;
+        if (canChooseControlLayout()) {
+            actionButton(controlList ? "网格" : "网格 · 已选", "", !controlList, y, () -> setControlList(false));
+            actionButton(controlList ? "列表 · 已选" : "列表", "", controlList, y + 102, () -> setControlList(true));
+            y += 204;
+        }
+        secondaryButton("返回设置", "back", y, () -> go(Screen.PHONE));
+        page.setMinimumHeight(px(y + 140));
+    }
+
+    private void setControlList(boolean value) {
+        if (!canChooseControlLayout() || controlList == value) return;
+        controlList = value;
+        themeSettings.edit().putBoolean(CONTROL_LIST_KEY, value).apply();
+        homeOffset = 0;
+        clearTiles();
+        drawPage();
     }
 
     private void themePage() {

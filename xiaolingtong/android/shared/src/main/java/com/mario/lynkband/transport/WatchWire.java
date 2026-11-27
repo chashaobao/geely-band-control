@@ -11,7 +11,7 @@ import java.util.UUID;
 public final class WatchWire {
     public static final UUID SERVICE = UUID.fromString("4d24acc8-3b43-41c7-ad56-dd59ce35c561");
     private static final int LIMIT = 8192;
-    private static final int REPLY_LIMIT = 32 * 1024;
+    public static final int REPLY_LIMIT = 32 * 1024;
     private WatchWire() {}
 
     public static byte[] read(InputStream in) throws IOException {

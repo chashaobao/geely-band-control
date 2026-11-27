@@ -8,6 +8,8 @@ import java.nio.charset.StandardCharsets;
 /** Stateless Vela status extension. Offsets count characters in the unwrapped base64 string. */
 final class BandPhoto {
     static final int MAX_CHARS = 16384;
+    static final int HD_MAX_CHARS = 32768;
+    static final String HD_CAPABILITY = "bandPhotoHd";
     private static final int CHUNK_CHARS = 2048;
     private static final int FRAME_BYTES = 4096;
 
@@ -20,7 +22,8 @@ final class BandPhoto {
 
     static void append(JSONObject frame, JSONObject request, VehiclePhoto.Image photo) throws JSONException {
         JSONObject data = frame.getJSONObject("data");
-        if (photo == null || photo.base64().isEmpty() || photo.base64().length() > MAX_CHARS) {
+        int maxChars = Boolean.TRUE.equals(request.opt(HD_CAPABILITY)) ? HD_MAX_CHARS : MAX_CHARS;
+        if (photo == null || photo.base64().isEmpty() || photo.base64().length() > maxChars) {
             data.put("carPhotoId", "");
             return;
         }
