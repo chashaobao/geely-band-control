@@ -33,8 +33,8 @@ final class PhoneWearReleases {
     private static final URI API = URI.create("https://api.github.com/repos" + REPO + "?per_page=30");
     private static final String TAG_EXPRESSION = "xiaolingtong-v(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})";
     private static final Pattern TAG = Pattern.compile(TAG_EXPRESSION);
-    private static final Pattern EXPANDED = Pattern.compile("\"" + REPO + "/expanded_assets/(" + TAG_EXPRESSION + ")\"");
-    private static final Pattern ASSET_LINK = Pattern.compile("href=\"" + REPO + "/download/(" + TAG_EXPRESSION + ")/([A-Za-z0-9._-]+)\"");
+    private static final Pattern EXPANDED = Pattern.compile("\"(?:https://github[.]com)?" + REPO + "/expanded_assets/(" + TAG_EXPRESSION + ")\"");
+    private static final Pattern ASSET_LINK = Pattern.compile("href=\"(?:https://github[.]com)?" + REPO + "/download/(" + TAG_EXPRESSION + ")/([A-Za-z0-9._-]+)\"");
     private static final Pattern PROFILE_RPK = Pattern.compile("lynk-band-(pill|standard)-[0-9]+\\.[0-9]+\\.[0-9]+\\.rpk");
     private static final Pattern SHA = Pattern.compile("[0-9a-fA-F]{64}");
     private static final Pattern SUM_LINE = Pattern.compile("([0-9a-fA-F]{64})[ \\t]+\\*?([A-Za-z0-9._-]+)");

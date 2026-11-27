@@ -61,6 +61,18 @@ public class PhoneWearUpdatesTest {
         assertEquals("lynk-band.rpk", PhoneWearReleases.parseWebAssets(TAG, assets).get(0).name());
     }
 
+    @Test public void htmlFallbackAcceptsCurrentAbsoluteGitHubLinks() {
+        String prefix = "<include-fragment src=\"" + "https://github.com";
+        String html = prefix + REPO + "/expanded_assets/" + TAG + "\"></include-fragment>"
+                + prefix + ".example.test" + REPO + "/expanded_assets/xiaolingtong-v1.2.3\"></include-fragment>";
+        List<PhoneWearReleases.Release> releases = PhoneWearReleases.parseWebReleases(html);
+        assertEquals(List.of(TAG), releases.stream().map(PhoneWearReleases.Release::tag).toList());
+        List<PhoneWearReleases.Asset> assets = PhoneWearReleases.parseWebAssets(TAG,
+                link("https://github.com" + REPO, TAG, PhoneWearReleases.PHONE_APK));
+        assertEquals(1, assets.size());
+        assertTrue(assets.get(0).isPhone());
+    }
+
     @Test public void aPhoneOnlyReleaseCanBeCheckedAndVersionsSortNumerically() throws Exception {
         String phoneOnly = release(TAG, false, uploaded(TAG, PhoneWearReleases.PHONE_APK, "https://github.com", 4000));
         var versions = PhoneWearReleases.parseApi("[" + phoneOnly + "]");
