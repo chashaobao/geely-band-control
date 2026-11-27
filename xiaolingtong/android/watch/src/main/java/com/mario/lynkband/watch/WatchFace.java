@@ -203,6 +203,7 @@ final class WatchFace extends FrameLayout {
         String key =
                 screen
                         + "|" + themes.key() + "|" + themes.scene() + "|" + themes.waitingForLegacyArt() + "|"
+                        + solarNight + "|"
                         + online
                         + paired
                         + model.confirming()

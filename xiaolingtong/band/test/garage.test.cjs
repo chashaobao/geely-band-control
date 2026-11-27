@@ -1088,7 +1088,7 @@ for (const [model, width, height, shape] of [
     assert.equal(s.backdrop().src, '/common/sky/day.png')
     assert.deepEqual([s.backdrop().style.width,s.backdrop().style.height], ['336px', Math.round(designWidth*height/width)+'px'])
     assert.equal(s.motion().src, '/common/motion/sky-day.png')
-    assert.ok(s.motion().classes.includes('fx-sky'))
+    assert.ok(s.motion().classes.includes('fx-sky-day'))
     assert.equal(fallback().children[0].src, '/common/default-vehicle.png')
     assert.equal(fallback().style.height, width < 280 ? '104px' : '128px')
     if (width < 280) assert.equal(s.page.layout.single, true)
@@ -1109,6 +1109,13 @@ test('every cached theme selects its own animation rule and overlay artwork', ()
     distinct.add(animation)
   }
   assert.equal(distinct.size, 9)
+})
+
+test('a cached theme with a legacy generic scene still uses the correct motion', () => {
+  const cached = JSON.stringify({key:'a'.repeat(64), title:'布丁的午后', scene:'generic', dayCrc:1, nightCrc:2, slot:0})
+  const s = setup(undefined, false, 12, {get({key, success}) { success(key === 'garageThemeArt' ? cached : undefined) }, set() {}})
+  assert.ok(s.motion().classes.includes('fx-paw'))
+  assert.equal(s.motion().src, '/common/motion/paw.png')
 })
 
 test('an old companion keeps matching cached artwork visible and falls back if it selects a different preset', () => {

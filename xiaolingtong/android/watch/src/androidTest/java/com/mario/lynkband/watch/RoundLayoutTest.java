@@ -398,6 +398,13 @@ public class RoundLayoutTest {
                 });
                 activity.setContentView(face);
                 face.show(state, true, true);
+                face.measure(View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY));
+                face.setLocalSolar(false, "日间");
+                assertArtwork(face, R.drawable.watch_landscape);
+                face.setLocalSolar(true, "夜间");
+                assertArtwork(face, R.drawable.watch_stars);
+                face.setLocalSolar(false, "日间");
                 for (int[] size : new int[][] {{400, 400}, {336, 396}, {396, 336}, {192, 490}}) {
                     int w = size[0], h = size[1];
                     face.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));

@@ -241,15 +241,15 @@ public final class MainActivity extends Activity {
         landscapeImage.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         landscapeImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
         scenery.addView(landscapeImage, new FrameLayout.LayoutParams(-1, -1));
-        landscapeMotion = new AmbientMotion(this);
-        landscapeMotion.setCenterCrop(true);
-        scenery.addView(landscapeMotion, new FrameLayout.LayoutParams(-1, -1));
         View shade = new View(this);
         shade.setBackgroundColor(night ? 0x3009131d : android.graphics.Color.TRANSPARENT);
         shade.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         scenery.addView(shade, new FrameLayout.LayoutParams(-1, -1));
         landscapeFade = new View(this);
         scenery.addView(landscapeFade, new FrameLayout.LayoutParams(-1, -1));
+        landscapeMotion = new AmbientMotion(this);
+        landscapeMotion.setCenterCrop(true);
+        scenery.addView(landscapeMotion, new FrameLayout.LayoutParams(-1, -1));
     }
 
     private void addPageHeading() {

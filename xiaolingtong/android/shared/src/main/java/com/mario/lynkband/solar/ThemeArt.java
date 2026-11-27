@@ -74,7 +74,8 @@ public final class ThemeArt {
             if (json == null || !hash(json.opt("key")) || !ThemeArt.title(json.opt("title"))
                     || !hash(json.opt("day")) || !hash(json.opt("night"))) throw new JSONException("Invalid theme");
             String title = json.getString("title");
-            String scene = themeId(json.opt("scene")) ? json.getString("scene") : ThemeSync.legacyIdForTitle(title);
+            String scene = themeId(json.opt("scene")) ? json.getString("scene") : "generic";
+            if ("generic".equals(scene)) scene = ThemeSync.themeIdForTitle(title);
             return new Offer(json.getString("key"), title, json.getString("day"),
                     json.getString("night"), scene);
         }

@@ -34,6 +34,9 @@ public final class AmbientMotion extends View {
     };
     private static final int[] CIRCUIT_X = {45, 184, 245, 358, 434, 542, 616, 794, 890};
     private static final int[] CIRCUIT_Y = {688, 688, 633, 633, 702, 702, 574, 574, 510};
+    private static final int[] FACET_DAY = {0xff53e3cb, 0xff7058ef, 0xffdbf55f};
+    private static final int[] FACET_NIGHT = {0xff32cbbd, 0xffa069f5, 0xffff78b3};
+    private static final int[] RIBBON_COLORS = {0xff49dfff, 0xfffd64b1, 0xffff995c};
     // Offline samples from watch_city_night.webp. Each exclusive-right/bottom rectangle
     // bounds a connected group of warm lit pixels (R > 112, G > 78, R - B > 24).
     private static final int[] WINDOWS = {
@@ -51,7 +54,6 @@ public final class AmbientMotion extends View {
     private final RadialGradient starlight = glow(0xffc4e4ff);
     private final RadialGradient ember = glow(0xffff843a);
     private final RadialGradient aqua = glow(0xff4bf1ed);
-    private final RadialGradient orchid = glow(0xfffa63c2);
     private final PowerManager power;
     private final int frameMs;
     private Scene scene = Scene.SKY;
@@ -203,7 +205,7 @@ public final class AmbientMotion extends View {
         switch (scene) {
             case SKY, GENERIC -> {
                 if (night) drawStars(c, t, STARS);
-                else drawSun(c, t);
+                else drawClouds(c, t);
             }
             case RIDGE -> drawEmbers(c, t);
             case CITY -> drawCity(c, t);
@@ -235,23 +237,19 @@ public final class AmbientMotion extends View {
 
     private static float wave(double angle) { return (float) Math.sin(angle); }
 
-    private void drawSun(Canvas c, double t) {
-        int save = c.save();
-        c.translate(215 + 96 * wave(t * .64), -95);
+    private void drawClouds(Canvas c, double t) {
         for (int i = 0; i < 3; i++) {
-            int beam = c.save();
-            c.rotate(-13 - i * 13 + 8 * wave(t * .72 + i));
-            halo(c, sunlight, 0, 365, i == 1 ? 54 : 82, 505,
-                    (int) (95 + 24 * wave(t * 1.1 + i)));
-            c.restoreToCount(beam);
-        }
-        c.restoreToCount(save);
-        // Broad, soft pools of reflected light drift along the ground/river line.
-        for (int i = 0; i < 5; i++) {
-            float x = 108 + i * 164 + 43 * wave(t * .77 + i);
-            float y = 631 + (i % 3) * 34 + 10 * wave(t * .64 + i * 1.7);
-            halo(c, sunlight, x, y, 56 + (i % 2) * 32, 13 + i % 3 * 6,
-                    (int) (70 + 30 * wave(t * 1.4 + i * 2.3)));
+            float travel = phase(t + i * 3.9 + 1, 12);
+            float x = -170 + 1300 * travel;
+            float y = 188 + i * 122 + 11 * wave(t * .8 + i);
+            paint.setColor(0xffa6ccdf);
+            paint.setAlpha((int) (99 * fade(travel)));
+            c.drawOval(x - 126, y - 8, x + 121, y + 35, paint);
+            paint.setColor(0xfff2faff);
+            paint.setAlpha((int) (157 * fade(travel)));
+            c.drawOval(x - 126, y - 21, x + 117, y + 27, paint);
+            c.drawOval(x - 71, y - 48, x + 22, y + 14, paint);
+            c.drawOval(x + 2, y - 35, x + 70, y + 10, paint);
         }
     }
 
@@ -264,17 +262,29 @@ public final class AmbientMotion extends View {
     }
 
     private void drawEmbers(Canvas c, double t) {
-        float flicker = .5f + .5f * wave(t * 5 + wave(t * 3));
-        halo(c, ember, 480, 635, 86 + 24 * flicker, 36 + 18 * flicker, night ? 158 : 108);
-        for (int i = 0; i < 12; i++) {
-            float progress = phase(t + i * .53, 4.2 + i % 3 * .6);
-            float x = 480 + (i % 5 - 2) * (11 + progress * 17) + 29 * wave(progress * 4 + i);
-            float y = 632 - progress * (176 + i % 4 * 26);
+        float flicker = wave(t * 5 + wave(t * 3));
+        halo(c, ember, 475, 603, 147, 89 + 12 * flicker, night ? 198 : 135);
+        for (int i = 0; i < 3; i++) {
+            float x = 443 + i * 34;
+            float y = 618;
+            float tip = 515 + 21 * wave(t * 4.1 + i * 1.9);
+            trail.rewind();
+            trail.moveTo(x - 24, y);
+            trail.cubicTo(x - 42, y - 33, x + 11, tip + 29, x + 16 * flicker, tip);
+            trail.cubicTo(x + 46, tip + 33, x + 39, y - 9, x + 17, y + 4);
+            trail.close();
+            paint.setColor(i == 1 ? 0xffffca52 : 0xffff6c31);
+            paint.setAlpha(night ? 218 : 174);
+            c.drawPath(trail, paint);
+        }
+        for (int i = 0; i < 7; i++) {
+            float progress = phase(t + i * .48, 3.2 + i % 3 * .4);
+            float x = 480 + (i % 5 - 2) * (15 + progress * 17) + 39 * wave(progress * 4 + i);
+            float y = 568 - progress * (183 + i % 4 * 22);
             float light = fade(progress);
-            halo(c, ember, x, y, 9 + light * 15, 9 + light * 15, (int) (130 * light));
             paint.setColor(night ? 0xffffe1a9 : 0xffffb05f);
             paint.setAlpha((int) (242 * light));
-            c.drawCircle(x, y, 2.5f + light * 2.4f, paint);
+            c.drawOval(x - 3, y - 8 * light, x + 3, y + 8 * light, paint);
         }
     }
 
@@ -282,8 +292,16 @@ public final class AmbientMotion extends View {
         float swing = wave(t * .84);
         float shine = .72f + .28f * wave(t * .84 + Math.PI / 2);
         int save = c.save();
-        c.rotate(14 * swing, 775, 420);
-        halo(c, starlight, 556, 420, 218, 21, (int) ((night ? 136 : 102) * shine));
+        c.rotate(24 * swing, 775, 420);
+        trail.rewind();
+        trail.moveTo(775, 420);
+        trail.lineTo(296, 373);
+        trail.lineTo(296, 473);
+        trail.close();
+        paint.setColor(night ? 0xffffe09a : 0xffa2f5ed);
+        paint.setAlpha((int) ((night ? 105 : 83) * shine));
+        c.drawPath(trail, paint);
+        halo(c, starlight, 556, 420, 218, 24, (int) ((night ? 172 : 132) * shine));
         halo(c, sunlight, 687, 420, 95, 6, (int) (113 * shine));
         c.restoreToCount(save);
         halo(c, sunlight, 775, 420, 23, 19, (int) (177 * shine));
@@ -292,106 +310,149 @@ public final class AmbientMotion extends View {
     private void drawCity(Canvas c, double t) {
         if (night) drawWindows(c, t);
         for (int i = 0; i < 5; i++) {
-            float travel = phase(t + i * 1.21, 6.5);
+            float travel = phase(t + i * .94, 4.8 + i * .31);
             float x = 72 + 816 * (i % 2 == 0 ? travel : 1 - travel);
-            float y = 505 + i * 28;
+            float y = 478 + i * 39;
             RadialGradient tint = i % 2 == 0 ? sunlight : starlight;
-            halo(c, tint, x, y, 61, 6, (int) (199 * fade(travel)));
+            halo(c, tint, x, y, 101, 15, (int) (201 * fade(travel)));
+            paint.setColor(i % 2 == 0 ? 0xffffb452 : 0xff63ddff);
+            paint.setAlpha((int) (226 * fade(travel)));
+            c.drawRoundRect(x - 54, y - 5, x + 54, y + 5, 5, 5, paint);
         }
     }
 
     private void drawSnow(Canvas c, double t) {
-        for (int i = 0; i < 26; i++) {
-            float travel = phase(t + i * 1.87, 7.8 + i % 4 * 1.4);
+        for (int i = 0; i < 21; i++) {
+            float travel = phase(t + i * 1.87, 6.6 + i % 4 * .9);
             float x = 55 + (i * 137 % 826) + 32 * wave(t * .6 + i) + travel * 47;
             float y = 65 + travel * 806;
             float light = fade(travel);
             paint.setColor(night ? 0xffdeefff : 0xffeaffff);
-            paint.setAlpha((int) ((night ? 220 : 178) * light));
-            float radius = 3 + i % 4;
-            c.drawCircle(x, y, radius, paint);
-            if (i % 5 == 0) {
-                paint.setStrokeWidth(2);
-                c.drawLine(x - radius * 1.8f, y, x + radius * 1.8f, y, paint);
-                c.drawLine(x, y - radius * 1.8f, x, y + radius * 1.8f, paint);
+            paint.setAlpha((int) (237 * light));
+            if (i % 2 == 0) {
+                int save = c.save();
+                c.translate(x, y);
+                c.rotate((float) (t * (17 + i % 4) + i * 11));
+                paint.setStrokeWidth(3.1f);
+                float arm = 13 + i % 5 * 2;
+                for (int axis = 0; axis < 3; axis++) {
+                    c.drawLine(-arm, 0, arm, 0, paint);
+                    c.rotate(60);
+                }
+                c.restoreToCount(save);
+            } else {
+                c.drawCircle(x, y, 3.8f + i % 4, paint);
             }
         }
     }
 
     private void drawLeaves(Canvas c, double t) {
-        for (int i = 0; i < 12; i++) {
-            float travel = phase(t + i * 1.62, 8 + i % 3);
-            float x = 72 + (i * 157 % 775) + 58 * wave(travel * 7 + i);
-            float y = 228 + 566 * travel;
+        for (int i = 0; i < 10; i++) {
+            float travel = phase(t + i * 1.62, 6.8 + i % 3);
+            float x = 72 + (i * 157 % 775) + 81 * wave(travel * 7 + i);
+            float y = 119 + 675 * travel;
             int save = c.save();
-            c.rotate(-32 + 56 * wave(t * .85 + i), x, y);
-            paint.setColor(night ? 0xffb6d779 : 0xffd7f0a2);
-            paint.setAlpha((int) (218 * fade(travel)));
-            c.drawOval(x - 11, y - 3, x + 12, y + 3, paint);
+            c.translate(x, y);
+            c.rotate(-32 + 70 * wave(t * 1.07 + i));
+            float size = 20 + i % 4 * 3;
+            trail.rewind();
+            trail.moveTo(-size, 0);
+            trail.quadTo(-4, -18, size, -3);
+            trail.quadTo(4, 14, -size, 0);
+            paint.setColor(night ? 0xffaad56f : 0xff4e9f59);
+            paint.setAlpha((int) (226 * fade(travel)));
+            c.drawPath(trail, paint);
+            paint.setColor(0xffdeefad);
+            paint.setAlpha((int) (174 * fade(travel)));
+            paint.setStrokeWidth(1.8f);
+            c.drawLine(-size + 4, 0, size - 8, -3, paint);
             c.restoreToCount(save);
         }
     }
 
     private void drawPrism(Canvas c, double t) {
-        float travel = phase(t, 6.8);
-        int save = c.save();
-        c.rotate(32, 480, 480);
-        float x = -30 + 1010 * travel;
-        int light = (int) ((night ? 181 : 146) * fade(travel));
-        halo(c, aqua, x - 20, 480, 62, 570, light);
-        halo(c, sunlight, x + 9, 480, 13, 565, light);
-        halo(c, orchid, x + 37, 480, 34, 520, light * 2 / 3);
-        c.restoreToCount(save);
+        int[] colors = night ? FACET_NIGHT : FACET_DAY;
+        for (int i = 0; i < colors.length; i++) {
+            float slide = wave(t * 1.03 + i * 1.8);
+            float x = 302 + i * 140 + 104 * slide;
+            float y = 456 + i * 31 + 52 * wave(t * .97 + i);
+            int save = c.save();
+            c.translate(x, y);
+            c.rotate(-17 + 27 * wave(t * .82 + i * 2.2));
+            trail.rewind();
+            trail.moveTo(-135, -18);
+            trail.lineTo(135, -101);
+            trail.lineTo(83, 101);
+            trail.close();
+            paint.setColor(colors[i]);
+            paint.setAlpha(night ? 161 : 145);
+            c.drawPath(trail, paint);
+            stroke(c, trail, colors[i], 3, 225);
+            c.restoreToCount(save);
+        }
     }
 
     private void drawCircuit(Canvas c, double t) {
         for (int i = 0; i < 3; i++) {
-            float progress = phase(t + i * 1.84, 5.6) * (CIRCUIT_X.length - 1);
+            float progress = phase(t + i * 1.28, 4.2) * (CIRCUIT_X.length - 1);
             int j = Math.min((int) progress, CIRCUIT_X.length - 2);
             float fraction = progress - j;
             float x = CIRCUIT_X[j] + (CIRCUIT_X[j + 1] - CIRCUIT_X[j]) * fraction;
             float y = CIRCUIT_Y[j] + (CIRCUIT_Y[j + 1] - CIRCUIT_Y[j]) * fraction - i * 59;
-            halo(c, night ? aqua : sunlight, x, y, 34, 21, 185);
-            paint.setColor(night ? 0xffc0ffff : 0xffffe5a4);
-            c.drawCircle(x, y, 5.2f, paint);
+            trail.rewind();
+            for (int node = 0; node <= j; node++) {
+                float yy = CIRCUIT_Y[node] - i * 59;
+                if (node == 0) trail.moveTo(CIRCUIT_X[node], yy);
+                else trail.lineTo(CIRCUIT_X[node], yy);
+            }
+            trail.lineTo(x, y);
+            int color = night ? 0xff38efd7 : 0xffffad43;
+            stroke(c, trail, color, 12, 61);
+            stroke(c, trail, color, 4, 214);
+            halo(c, night ? aqua : sunlight, x, y, 39, 28, 205);
+            paint.setColor(night ? 0xffc3fff5 : 0xffffe5a4);
+            c.drawRoundRect(x - 7, y - 5, x + 7, y + 5, 3, 3, paint);
         }
     }
 
     private void drawPaws(Canvas c, double t) {
         for (int i = 0; i < 4; i++) {
-            float progress = phase(t + (3 - i) * .62, 6);
-            if (progress > .62f) continue;
-            float light = fade(progress / .62f);
-            float x = 140 + i * 96, y = 725 - i * 66;
+            float progress = phase(t + (3 - i) * .52, 4.4);
+            float light = Math.min(1, progress * 15) * Math.max(0, Math.min(1, (0.74f - progress) * 5));
+            if (light == 0) continue;
+            float x = 140 + i * 105, y = 659 - i * 84;
             int save = c.save();
             c.translate(x, y);
             c.rotate(i % 2 == 0 ? 26 : 40);
-            c.scale(.85f + .2f * light, .85f + .2f * light);
-            paint.setColor(night ? 0xffffc797 : 0xffa64074);
-            paint.setAlpha((int) (174 * light));
-            c.drawOval(-13, 0, 13, 21, paint);
+            c.scale(1.21f + .29f * light, 1.21f + .29f * light);
+            paint.setColor(night ? 0xffffd5a4 : 0xff96365f);
+            paint.setAlpha((int) (217 * light));
+            c.drawOval(-16, 0, 16, 24, paint);
             for (int toe = 0; toe < 4; toe++)
-                c.drawCircle((toe - 1.5f) * 9, toe == 1 || toe == 2 ? -10 : -5, 4.6f, paint);
+                c.drawCircle((toe - 1.5f) * 11, toe == 1 || toe == 2 ? -12 : -6, 5.9f, paint);
             c.restoreToCount(save);
         }
     }
 
     private void drawRibbons(Canvas c, double t) {
         for (int i = 0; i < 3; i++) {
-            int y = 555 + i * 65;
-            float curl = 83 * wave(t * .61 + i * .83);
+            int y = 485 + i * 80;
+            float curl = 138 * wave(t * .87 + i * .83);
             trail.rewind();
             trail.moveTo(-40, y + 70);
             trail.cubicTo(198, y + curl, 566, y - curl - 162, 1000, y - 33);
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setColor(i == 1 ? 0xffff7ba9 : 0xff75caff);
-            paint.setAlpha(night ? 58 : 46);
-            paint.setStrokeWidth(i == 1 ? 13 : 7);
-            c.drawPath(trail, paint);
-            paint.setStyle(Paint.Style.FILL);
-            halo(c, i == 1 ? orchid : aqua, 375 + 128 * wave(t * .6 + i), y - 26, 153, 20,
-                    (int) (68 + 24 * wave(t + i)));
+            stroke(c, trail, RIBBON_COLORS[i], 31 - i * 5, night ? 116 : 103);
+            stroke(c, trail, RIBBON_COLORS[i], 5, 186);
         }
+    }
+
+    private void stroke(Canvas c, Path path, int color, float width, int alpha) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setColor(color);
+        paint.setAlpha(alpha);
+        paint.setStrokeWidth(width);
+        c.drawPath(path, paint);
+        paint.setStyle(Paint.Style.FILL);
     }
 
     private void drawStars(Canvas c, double t, int[] stars) {
@@ -409,6 +470,16 @@ public final class AmbientMotion extends View {
                 c.drawLine(x - 6*pulse, y, x + 6*pulse, y, paint);
                 c.drawLine(x, y - 8*pulse, x, y + 8*pulse, paint);
             }
+        }
+        float comet = phase(t + 1.5, 7.4);
+        if (comet < .54f) {
+            float x = 160 + comet * 1180;
+            float y = 121 + comet * 450;
+            halo(c, starlight, x, y, 28, 16, (int) (190 * fade(comet / .54f)));
+            paint.setStrokeWidth(3.8f);
+            paint.setColor(0xffe4f5ff);
+            paint.setAlpha((int) (177 * fade(comet / .54f)));
+            c.drawLine(x - 106, y - 40, x, y, paint);
         }
     }
 

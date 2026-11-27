@@ -28,12 +28,18 @@ public final class ThemeSync {
                 ? value.toLowerCase(java.util.Locale.ROOT) : null;
     }
 
-    static String legacyIdForTitle(String title) {
+    static String themeIdForTitle(String title) {
         return switch (title) {
+            case "蓝天与星空" -> "sky";
             case "山脊营地" -> "ridge";
             case "城市天际线" -> "city";
             case "海岸灯塔" -> "coast";
             case "雪山映湖" -> "alpine";
+            case "雾隐竹海" -> "bamboo";
+            case "光栅棱镜" -> "prism";
+            case "脉冲电路" -> "circuit";
+            case "布丁的午后" -> "paw";
+            case "流体折光" -> "flux";
             default -> "generic";
         };
     }
