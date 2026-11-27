@@ -4,6 +4,7 @@
     {
       "id": "ridge",
       "title": "山脊营地",
+      "version": 1,
       "assets": {
         "phone-day": "05296fcef1fc716e023670f0b1b1b10e18315a39cc5f01861b6efffa40ea436a",
         "watch-day": "9c2494673072eabe6cbee91916c7a434bbbc2f9414fe813e6c6bd6af33c7c137",
@@ -15,6 +16,7 @@
     {
       "id": "city",
       "title": "城市天际线",
+      "version": 1,
       "assets": {
         "phone-day": "5d4801fd637ea23b68c12b43421e1bbfc34df29d8be33c7db080dbfa98c90b4d",
         "watch-day": "28ddff22abeea8917a118d51a4d987ce7f71f7c7549fe07b26c377a60cdd6133",
@@ -26,6 +28,7 @@
     {
       "id": "coast",
       "title": "海岸灯塔",
+      "version": 1,
       "assets": {
         "phone-day": "ea9fca32a7ffacc44f26148ef2eb78ba1eb341c0862b0f9ee06c39cd470daea4",
         "watch-day": "c5f1166df2bb05f71ed3c5ebd20adf38286bd4bff29f3967969af7d13f44bca0",
@@ -37,6 +40,7 @@
     {
       "id": "alpine",
       "title": "雪山映湖",
+      "version": 1,
       "assets": {
         "phone-day": "acc6811f7060241b350239056669ea3279205eeda6279bc87d608eb80aa80d54",
         "watch-day": "1d07d7c592901d7b4c6195411b11b4f0e626a09779a0872e7425f0b95bffd3cc",
@@ -48,6 +52,7 @@
     {
       "id": "bamboo",
       "title": "雾隐竹海",
+      "version": 1,
       "assets": {
         "phone-day": "c8755752e8abb5c5127c406b9d349d697feedb82e647fd963241cf3fbe1f565f",
         "watch-day": "2ab3e8f30310f720c29a7370f75f417d59b38c332b35c2ff836853103d97e3be",
