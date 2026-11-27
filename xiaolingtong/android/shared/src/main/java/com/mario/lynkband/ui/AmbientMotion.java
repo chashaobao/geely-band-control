@@ -25,7 +25,8 @@ import android.view.ViewTreeObserver;
 
 /** Transparent decorative layer for the shared square landscape illustrations. */
 public final class AmbientMotion extends View {
-    private enum Scene { SKY, RIDGE, CITY, COAST, ALPINE, BAMBOO, PRISM, CIRCUIT, PAW, FLUX, GENERIC }
+    private enum Scene { SKY, RIDGE, CITY, COAST, ALPINE, BAMBOO, PRISM, CIRCUIT, PAW, FLUX,
+        ORIGAMI, TAPE, HAMSTER, ENAMEL, GENERIC }
 
     private static final float ART_SIZE = 960f;
     // Bright star centers in watch_stars.webp, in original artwork pixels.
@@ -216,6 +217,10 @@ public final class AmbientMotion extends View {
             case CIRCUIT -> drawCircuit(c, t);
             case PAW -> drawPaws(c, t);
             case FLUX -> drawRibbons(c, t);
+            case ORIGAMI -> drawPaperFolds(c, t);
+            case TAPE -> drawTapeReels(c, t);
+            case HAMSTER -> drawEnvelopes(c, t);
+            case ENAMEL -> drawMineralGrains(c, t);
         }
     }
 
@@ -443,6 +448,93 @@ public final class AmbientMotion extends View {
             trail.cubicTo(198, y + curl, 566, y - curl - 162, 1000, y - 33);
             stroke(c, trail, RIBBON_COLORS[i], 31 - i * 5, night ? 116 : 103);
             stroke(c, trail, RIBBON_COLORS[i], 5, 186);
+        }
+    }
+
+    private void drawPaperFolds(Canvas c, double t) {
+        for (int i = 0; i < 2; i++) {
+            float open = .5f + .5f * wave(t * 1.34 + i * 2.4);
+            int left = i == 0 ? 0 : 960, direction = i == 0 ? 1 : -1;
+            int edge = i == 0 ? 395 : 479;
+            float tip = left + direction * (117 + 235 * open);
+            float crease = edge + 185 + 88 * open;
+            int color = i == 0 ? (night ? 0xffc69bff : 0xff72e2ff) : (night ? 0xfff55b96 : 0xffff7756);
+            trail.rewind();
+            trail.moveTo(left, edge);
+            trail.lineTo(tip, crease);
+            trail.lineTo(left, edge + 98);
+            trail.close();
+            paint.setColor(color);
+            paint.setAlpha(103 + Math.round(open * 61));
+            c.drawPath(trail, paint);
+            paint.setColor(color);
+            paint.setAlpha(229);
+            paint.setStrokeWidth(4);
+            c.drawLine(left, edge, tip, crease, paint);
+        }
+    }
+
+    private void drawTapeReels(Canvas c, double t) {
+        for (int i = 0; i < 2; i++) {
+            float x = i == 0 ? 24 : 936;
+            float y = 444;
+            int color = night ? 0xff8cf7ed : 0xffffd085;
+            int save = c.save();
+            c.rotate((float) ((i == 0 ? 105 : -137) * t % 360), x, y);
+            for (int part = 0; part < 4; part++) {
+                trail.rewind();
+                trail.addArc(x - 116, y - 116, x + 116, y + 116, part * 90 + 5, 29);
+                stroke(c, trail, color, 10, 221);
+            }
+            paint.setColor(color);
+            paint.setStrokeWidth(7);
+            for (int spoke = 0; spoke < 3; spoke++) {
+                c.drawLine(x + 32, y, x + 75, y, paint);
+                c.rotate(120, x, y);
+            }
+            c.restoreToCount(save);
+        }
+        for (int i = 0; i < 13; i++) {
+            float h = 14 + 54 * Math.abs(wave(t * (3 + i % 3) + 1.5 * i));
+            float x = 277 + i * 33;
+            paint.setColor(night ? 0xffc088ff : 0xffffaa32);
+            paint.setAlpha(192);
+            c.drawRect(x, 783 - h, x + 18, 783, paint);
+        }
+    }
+
+    private void drawEnvelopes(Canvas c, double t) {
+        for (int i = 0; i < 2; i++) {
+            float progress = phase(t + 1.52 * i, 4.6);
+            float opacity = fade(progress);
+            float x = 168 + 280 * progress;
+            float y = 682 - 189 * progress - 30 * wave(progress * Math.PI);
+            int save = c.save();
+            c.translate(x, y);
+            c.rotate(-21 + 48 * wave(progress * Math.PI * 2));
+            c.scale(i == 0 ? 1 : .72f, i == 0 ? 1 : .72f);
+            paint.setColor(night ? 0xffc59cff : 0xfffb7586);
+            paint.setAlpha(Math.round(230 * opacity));
+            c.drawRoundRect(-60, -40, 60, 40, 11, 11, paint);
+            trail.rewind();
+            trail.moveTo(-57, -32);
+            trail.lineTo(0, 9);
+            trail.lineTo(57, -32);
+            stroke(c, trail, night ? 0xfff7dfff : 0xffffe9a1, 6, Math.round(239 * opacity));
+            c.restoreToCount(save);
+        }
+    }
+
+    private void drawMineralGrains(Canvas c, double t) {
+        for (int i = 0; i < 36; i++) {
+            float travel = phase(t + i * .36, 4.8 + i % 3);
+            float x = 53 + 855 * travel;
+            float y = 670 - 178 * travel + (43 + 8 * (i % 6)) * wave(travel * 7.2 + i * .37);
+            int color = i % 3 == 0 ? (night ? 0xffef83db : 0xffffb26b) : (night ? 0xff7df6ff : 0xffb6ffbc);
+            paint.setColor(color);
+            paint.setAlpha(Math.round((139 + 18 * (i % 6)) * fade(travel)));
+            float width = 4 + i % 5;
+            c.drawOval(x - width, y - width * .65f, x + width, y + width * .65f, paint);
         }
     }
 

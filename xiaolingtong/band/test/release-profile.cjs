@@ -11,7 +11,8 @@ const script = name => '(' + readFileSync(path.join(root, name), 'utf8').trim().
   assert.deepEqual(existsSync(sky) ? readdirSync(sky).sort() : [], profile === 'standard' ? ['day.png', 'night.png'] : [])
   const motion = path.join(root, 'common/motion')
   assert.deepEqual(existsSync(motion) ? readdirSync(motion).sort() : [], profile === 'standard'
-    ? ['alpine.png', 'bamboo.png', 'circuit.png', 'city.png', 'coast.png', 'flux.png', 'paw.png', 'prism.png', 'ridge.png', 'sky-day.png', 'sky-night.png'] : [])
+    ? ['alpine.png', 'bamboo.png', 'circuit.png', 'city.png', 'coast.png', 'enamel.png', 'flux.png',
+      'hamster.png', 'origami.png', 'paw.png', 'prism.png', 'ridge.png', 'sky-day.png', 'sky-night.png', 'tape.png'] : [])
   assert.equal(existsSync(path.join(root, 'common/default-vehicle.png')), profile === 'standard')
   // Check assets in the release itself. A valid source-tree path alone does not put it in the RPK.
   for (const group of ['', 'day/', 'open/']) {
@@ -24,7 +25,10 @@ const script = name => '(' + readFileSync(path.join(root, name), 'utf8').trim().
     }
   }
 }
-for (const info of [null, {screenShape:'pill-shaped', screenWidth:192, screenHeight:490}, {screenShape:'rect', screenWidth:336, screenHeight:480}]) {
+for (const info of [null, {screenShape:'pill-shaped', screenWidth:192, screenHeight:490},
+    {screenWidth:212, screenHeight:520}, {screenShape:'rect', screenWidth:336, screenHeight:480},
+    {screenWidth:390, screenHeight:450}, {screenWidth:176, screenHeight:220},
+    {screenShape:'circle', screenWidth:466, screenHeight:466}]) {
   const sent = []
   const runtime = {
     $app_require$: name => ({
@@ -45,8 +49,13 @@ for (const info of [null, {screenShape:'pill-shaped', screenWidth:192, screenHei
   assert.equal(sent[0].bandVersionCode, 26)
   assert.equal(sent[0].bandPackageProfile, profile)
   assert.equal(!!sent[0].bandPhoto, profile === 'standard')
+  assert.equal(!!sent[0].bandPhotoHd, profile === 'standard')
   assert.equal(!!sent[0].remoteThemes, profile === 'standard')
   assert.equal(!!sent[0].bandTheme, profile === 'standard')
   if (profile === 'pill') assert.equal(page.layout.single, true)
+  page.showSettings()
+  assert.equal(page.mode, 'settings')
+  page.onBackPress()
+  assert.equal(page.mode, 'home')
 }
 console.log(`${profile}: missing, pill-shaped and rectangular device reports passed`)

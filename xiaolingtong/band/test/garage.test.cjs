@@ -119,7 +119,7 @@ test('standard home assembles a PNG, reuses its cached URI and unmounts stale ph
   assert.equal(s.writes.length, 1)
   const write = s.writes[0]
   assert.deepEqual(s.truncated, [write.uri])
-  assert.equal(Object.prototype.toString.call(write.buffer), '[object Uint8Array]')
+  assert.equal(Object.prototype.toString.call(write.buffer), '[object ArrayBuffer]')
   assert.deepEqual(Buffer.from(write.buffer), png)
   write.success()
   assert.match(s.row().children[0].src, /^internal:\/\/cache\/garage-car-[01]\.png$/)
@@ -148,7 +148,7 @@ test('photo writer retries the legacy buffer once on a type mismatch and falls b
     assert.equal(s.row(), undefined)
     if (Number(code) === 202) {
       assert.equal(s.writes.length, 2)
-      assert.equal(Object.prototype.toString.call(s.writes[1].buffer), '[object ArrayBuffer]')
+      assert.equal(Object.prototype.toString.call(s.writes[1].buffer), '[object Uint8Array]')
       assert.deepEqual(Buffer.from(s.writes[1].buffer), png)
       s.writes[1].success()
       assert.equal(s.row().children[0].src, s.writes[0].uri)
@@ -158,7 +158,7 @@ test('photo writer retries the legacy buffer once on a type mismatch and falls b
     }
   }
   const legacy = photoSession(undefined, options => {
-    if (ArrayBuffer.isView(options.buffer)) throw new TypeError('legacy buffer only')
+    if (!ArrayBuffer.isView(options.buffer)) throw new TypeError('typed array only')
     options.success()
   })
   legacy.chunk('legacy')
@@ -166,10 +166,55 @@ test('photo writer retries the legacy buffer once on a type mismatch and falls b
   assert.ok(legacy.row())
 })
 
-test('small standard screens use the legacy photo budget', () => {
-  const s = photoSession({getInfo:({success}) => success({screenShape:'rect', screenWidth:176, screenHeight:220})})
-  assert.equal(s.sent[0].bandPhoto, true)
-  assert.equal(s.sent[0].bandPhotoHd, undefined)
+test('standard screens resolve HD then legacy then fallback without a placeholder row', () => {
+  for (const [screenWidth, screenHeight] of [[176,220], [336,480], [390,450], [432,514], [466,466], [480,480]]) {
+    const s = photoSession({getInfo:({success}) => success({screenWidth, screenHeight})})
+    const photo = () => s.feed().children.find(row => row.type === 'carPhoto')
+    assert.equal(s.sent[0].bandPhotoHd, true)
+    assert.equal(photo(), undefined)
+    s.reply({data:{vehicle:'测试车辆', carPhotoId:''}})
+    assert.equal(photo(), undefined)
+    const legacy = s.poll()
+    assert.equal(legacy.bandPhoto, true)
+    assert.equal(legacy.bandPhotoHd, undefined)
+    s.reply({data:{vehicle:'测试车辆', carPhotoId:''}})
+    assert.equal(photo().children[0].src, '/common/default-vehicle.png')
+  }
+})
+
+test('REDMI Watch 4 uses the known PNG path and can refresh and configure two columns', () => {
+  for (const screenShape of ['rect', undefined]) {
+    const s = photoSession({getInfo:({success}) => success({screenShape, screenWidth:390, screenHeight:450})}, write => {
+      assert.equal(Object.prototype.toString.call(write.buffer), '[object ArrayBuffer]')
+      assert.deepEqual(Buffer.from(write.buffer), png)
+      write.success()
+    })
+    const row = type => s.feed().children.find(item => item.type === type)
+    const actions = [slot, {...slot, slot:'lock', label:'解锁'}, {...slot, slot:'climate', label:'开空调'}]
+    assert.equal(s.page.layout.feedStyle.width, '94%')
+    assert.equal(s.sent[0].bandPhoto, true)
+    assert.equal(s.sent[0].bandPhotoHd, true)
+    assert.equal(row('carPhoto'), undefined)
+    s.chunk('watch4-photo', 0, encoded.length, {}, actions)
+    assert.match(row('carPhoto').children[0].src, /^internal:\/\/cache\//)
+    assert.equal(s.visibleRows().length, 2)
+    assert.ok(row('actionpair'))
+    row('settings').children[0].click()
+    row('controlList').children[0].click()
+    row('back').children[0].click()
+    assert.equal(s.visibleRows().length, 3)
+    const outstanding = s.poll()
+    const button = () => row('refresh').children[0]
+    assert.equal(button().tag, 'text')
+    button().click()
+    assert.match(button().value, /^正在刷新/)
+    assert.equal(s.sent.at(-1), outstanding)
+    s.reply({actions, data:{vehicle:'测试车辆', carPhotoId:'watch4-photo', time:'14:30'}})
+    assert.equal(s.sent.at(-1).type, 'refresh')
+    s.reply({actions, note:'已请求刷新，等候领克更新', data:{vehicle:'测试车辆',time:'14:31'}})
+    assert.equal(button().value, '刷新车况\n14:31')
+    assert.equal(row('receipt').children[0].value, '已请求刷新，等候领克更新')
+  }
 })
 
 test('pill and undetected layouts ignore even unsolicited valid photos', () => {
@@ -192,7 +237,10 @@ test('grid centers its odd last tile and settings switch to a persisted full-wid
   const s = setup(undefined, false, 12, store)
   const row = (session, type) => session.feed().children.find(item => item.type === type)
   s.reply({actions:[slot]})
-  assert.equal(row(s, 'settings'), undefined)
+  row(s, 'settings').children[0].click()
+  assert.equal(row(s, 'controlGrid'), undefined)
+  assert.ok(row(s, 'theme'))
+  row(s, 'back').children[0].click()
   s.page.refresh(); s.reply({actions})
   const pairs = s.feed().children.filter(item => item.type === 'actionpair')
   assert.equal(pairs.length, 2)
@@ -217,8 +265,10 @@ test('grid centers its odd last tile and settings switch to a persisted full-wid
   assert.equal(saved, 'grid')
   const small = setup({getInfo:({success}) => success({screenShape:'rect', screenWidth:176, screenHeight:220})}, false, 12, store)
   small.reply({actions})
-  assert.equal(row(small, 'settings'), undefined)
   assert.equal(small.page.singleRows.length, 3)
+  row(small, 'settings').children[0].click()
+  assert.equal(row(small, 'controlGrid'), undefined)
+  assert.ok(row(small, 'theme'))
 })
 
 test('refresh waits for the in-flight request, and controls ignore preempted photo replies', () => {
@@ -260,14 +310,16 @@ test('pull-to-refresh starts only at the top and defers photo writes during a dr
   s.chunk('drag')
   assert.equal(s.writes.length, 0)
   assert.equal(s.sent.at(-1).type, 'refresh')
-  assert.equal(carRow().children[0].src, '/common/default-vehicle.png')
+  assert.equal(carRow(), undefined)
   s.reply({data:{vehicle:'测试车辆'}})
   assert.equal(s.page.note, '')
   s.poll(); s.chunk('drag'); s.writes[0].success()
   assert.match(carRow().children[0].src, /^internal:\/\/cache\//)
   carRow().children[0].error()
+  assert.equal(carRow(), undefined)
+  assert.equal(s.poll().bandPhotoHd, undefined)
+  s.reply({data:{vehicle:'测试车辆', carPhotoId:''}})
   assert.equal(carRow().children[0].src, '/common/default-vehicle.png')
-  assertNoPhotoFields(s.poll())
 })
 
 test('timed-out native photo writes do not replace the fallback or reuse a live path', () => {
@@ -276,9 +328,10 @@ test('timed-out native photo writes do not replace the fallback or reuse a live 
   const timer = s.timers.get(s.page.photoFile.timer)
   s.advance(timer.delay); timer.fn()
   assert.equal(s.row(), undefined)
-  assertNoPhotoFields(s.poll())
-  s.reply({data:{vehicle:'测试车辆'}})
-  s.poll(); s.chunk('retry')
+  const retry = s.poll()
+  assert.equal(retry.bandPhoto, true)
+  assert.equal(retry.bandPhotoHd, undefined)
+  s.chunk('retry')
   assert.notEqual(s.writes[0].uri, s.writes[1].uri)
   s.writes[0].success(); s.writes[1].success()
   assert.equal(s.row().children[0].src, s.writes[1].uri)
@@ -342,8 +395,9 @@ test('bad metadata, oversized, reordered or mixed chunks discard partial transfe
     s.chunk('a', 0, 100); s.poll(); s.chunk('a', 100, encoded.length, bad)
     assert.equal(s.writes.length, 0, JSON.stringify(bad))
     assert.equal(s.row(), undefined)
-    assert.equal(s.timers.get(s.page.pollTimer).delay, 5000)
-    assert.equal(s.poll().photoOffset, 0)
+    const retry = s.poll()
+    assert.equal(retry.photoOffset, 0)
+    if (bad.carPhotoId !== null) assert.equal(retry.bandPhotoHd, undefined)
   }
   const s = photoSession()
   s.chunk('junk', 0, encoded.length, {carPhotoChunk:'A'.repeat(encoded.length)})
@@ -550,7 +604,7 @@ for (const [shape, w, h, columns] of [
     assert.equal(feed.tag, 'list')
     const width = parseFloat(feed.style.width) * w / 100
     const height = parseFloat(feed.style.height) * h / 100
-    if (shape === 'rect' && h / w < 1.65) {
+    if ((shape === 'rect' || !shape && w !== h) && h / w < 1.65) {
       assert.ok(width >= 0.9 * w && height >= 0.9 * h, 'square should use its corners')
     } else {
       // The viewport corners must lie inside the circular caps at both scroll limits.
@@ -574,11 +628,10 @@ for (const [shape, w, h, columns] of [
       assert.ok(parseFloat(tile.children[1].style.fontSize) * w / designWidth >= 16)
     }
     const refresh = feed.children.at(-1).children[0]
-    assert.equal(refresh.children[0].value, '刷新车况')
-    assert.equal(refresh.children[1].value, '等候卡片更新')
+    assert.equal(refresh.value, '刷新车况\n等候卡片更新')
     assert.equal(typeof refresh.click, 'function')
     assert.ok(parseFloat(refresh.style.height) * w / designWidth >= 44)
-    assert.ok(parseFloat(refresh.children[0].style.fontSize) * w / designWidth >= 16)
+    assert.ok(parseFloat(refresh.style.fontSize) * w / designWidth >= 16)
     tiles.at(-1).click()
     assert.equal(s.sent.at(-1).slot, 's4')
     s.reply({actions, token:'t', label:'关闭车窗'})
@@ -806,18 +859,16 @@ test('tapping the bottom timestamp refreshes once and polls for the new time', (
   const s = setup()
   const footer = () => s.feed().children.at(-1).children[0]
   s.reply()
-  assert.equal(footer().children[1].value, '14:30')
+  assert.equal(footer().value, '刷新车况\n14:30')
   footer().click(); footer().click()
   assert.equal(s.sent.at(-1).type, 'refresh')
   assert.equal(s.sent.filter(msg => msg.type === 'refresh').length, 1)
-  assert.equal(footer().children[0].value, '正在刷新')
-  assert.equal(footer().children[1].value, '14:30')
+  assert.equal(footer().value, '正在刷新\n14:30')
   s.reply({note:'等候领克更新'})
   Array.from(s.timers.values()).find(t => t.delay === 1600).fn()
   assert.equal(s.sent.at(-1).type, 'status')
   s.reply({data:{vehicle:'测试车辆', time:'14:31'}})
-  assert.equal(footer().children[0].value, '刷新车况')
-  assert.equal(footer().children[1].value, '14:31')
+  assert.equal(footer().value, '刷新车况\n14:31')
 })
 test('official confirmation is presented on the phone', () => {
   const s = setup()
@@ -868,6 +919,7 @@ test('offline standard screen has two solar settings and a manual time picker', 
   const s = setup(undefined, true)
   assert.equal(s.page.skyMode, 'follow')
   assert.equal(s.page.template(s.page).tag, 'div')
+  s.page.showSettings()
   const theme = s.feed().children.find(row => row.type === 'theme').children[0]
   theme.click()
   assert.ok(s.feed().children.some(row => row.type === 'solarTitle'))
@@ -893,8 +945,9 @@ test('standard screen uses the default scene until assets arrive and allows a lo
   assert.equal(image(), '/common/sky/night.png')
   s.page.setSkyMode('manual')
   assert.equal(image(), '/common/sky/day.png')
+  s.page.showSettings()
   s.feed().children.find(row => row.type === 'scene').children[0].click()
-  assert.equal(s.feed().children.find(row => row.type === 'sceneInfo').children[0].value, '在手机上选择主题')
+  assert.equal(s.feed().children.find(row => row.type === 'sceneInfo').children[0].value, '手机未提供主题包')
   assert.equal(s.feed().children.some(row => row.type === 'sceneOption'), false)
   s.page.home()
   s.page.open()
@@ -908,6 +961,7 @@ test('standard screen uses the default scene until assets arrive and allows a lo
 })
 
 function selectScene(s, scene) {
+  s.page.showSettings()
   s.feed().children.find(row => row.type === 'scene').children[0].click()
   s.page.selectScene(scene)
 }
@@ -998,6 +1052,65 @@ test('phone theme pushes redraw immediately and preserve in-flight status and co
   assert.equal(s.page.theme, 'RIDGE')
   s.page.onDestroy()
   assert.equal(setup(undefined, true, 12, store).page.theme, 'RIDGE')
+})
+
+test('theme transfer resumes only after the same offer is confirmed on reconnect or wake', () => {
+  const day = readFileSync(path.resolve(__dirname, '../../themes/circuit/vela-day.png'))
+  const offer = {key:'b'.repeat(64), title:'脉冲电路', dayCrc:123, nightCrc:456}
+  for (const interrupt of ['sleep', 'disconnect']) {
+    const s = setup()
+    s.reply({remoteTheme:offer})
+    s.page.open()
+    s.reply({type:'themeAsset', key:offer.key, part:'day', offset:0, length:day.length,
+      chunk:day.subarray(0,1536).toString('base64')})
+    if (interrupt === 'sleep') { s.page.onHide(); s.page.onShow() }
+    else { s.connection.onclose(); s.page.open() }
+    assert.equal(s.sent.at(-1).type, 'status')
+    s.reply({remoteTheme:offer})
+    s.page.open()
+    assert.equal(s.sent.at(-1).offset, 1536)
+    s.page.onHide(); s.page.onShow()
+    s.reply({remoteTheme:{...offer, key:'c'.repeat(64)}})
+    s.page.open()
+    assert.equal(s.sent.at(-1).offset, 0)
+  }
+})
+
+test('missing theme writer callback releases the queue and a late write cannot replace new artwork', () => {
+  const writes = [], metadata = []
+  const store = {get({success}) { success() }, set({key,value}) { if (key === 'garageThemeArt') metadata.push(value) }}
+  const file = {writeText({success}) { success() }, writeArrayBuffer(args) { writes.push(args) },
+    delete({complete}) { complete() }}
+  const s = setup(undefined, false, 12, store, file)
+  const offer = {key:'a'.repeat(64), title:'第一套', dayCrc:1, nightCrc:2}
+  const next = {...offer, key:'b'.repeat(64), title:'第二套'}
+  s.reply({remoteTheme:offer})
+  s.page.saveRemoteTheme(s.page.themeTarget, png, png)
+  const timeout = [...s.timers.values()].find(t => t.delay === 8000)
+  timeout.fn()
+  assert.match(s.page.themeSyncInfo, /超时/)
+  s.page.open()
+  s.reply({remoteTheme:next})
+  s.page.saveRemoteTheme(s.page.themeTarget, png, png)
+  assert.notEqual(writes[0].uri, writes[1].uri)
+  writes[1].success(); writes[2].success(); writes[0].success()
+  assert.equal(s.page.themeActive.key, next.key)
+  assert.equal(JSON.parse(metadata.at(-1)).key, next.key)
+  assert.equal(s.page.themeSyncInfo, '已同步 · 第二套')
+})
+
+test('only a cold read-only status gets one early probe; late responses cannot complete refresh', () => {
+  const s = setup()
+  const first = s.sent[0]
+  s.timers.get(s.page.firstProbeTimer).fn()
+  assert.equal(s.sent[1], first)
+  s.reply()
+  assert.equal(s.timers.has(s.page.firstProbeTimer), false)
+  s.page.refresh()
+  const refresh = s.page.pending
+  s.connection.onmessage({data:{v:1, id:first.id}})
+  assert.equal(s.page.pending, refresh)
+  assert.equal(s.sent.filter(r => r.type === 'refresh').length, 1)
 })
 
 test('a missing cache-restore callback does not block the next theme transfer', () => {
@@ -1103,12 +1216,16 @@ for (const [width, height, shape, themed] of [
         reads++
         success(JSON.stringify({mode:'manual', rise:780, set:1080}))
       }})
-    const themeRow = () => s.feed().children.some(row => row.type === 'theme')
+    const themeRow = () => s.feed().children.some(row => row.type === 'settings')
     const image = () => s.backdrop()?.src
-    assert.equal(themeRow(), false)
+    assert.equal(themeRow(), true)
     assert.equal(image(), undefined)
     detected({screenWidth:width, screenHeight:height, screenShape:shape})
-    assert.equal(themeRow(), themed)
+    assert.equal(themeRow(), true)
+    s.feed().children.find(row => row.type === 'settings').children[0].click()
+    assert.ok(s.feed().children.some(row => row.type === 'settingsRefresh'))
+    assert.equal(s.feed().children.some(row => row.type === 'scene'), themed)
+    s.feed().children.find(row => row.type === 'back').children[0].click()
     assert.equal(reads, themed ? 3 : 0) // Scene, solar settings and downloaded artwork.
     assert.equal(image(), themed ? '/common/sky/night.png' : undefined)
     s.reply({data:{battery:'50%', vehicle:'纯电车'}})
@@ -1191,7 +1308,7 @@ test('standard screen stores only a complete verified theme, restores it offline
   const file = {
     writeText({uri, success}) { files.set(uri, null); success() },
     writeArrayBuffer({uri, buffer, success}) { files.set(uri, Buffer.from(buffer)); success() },
-    delete({uri}) { files.delete(uri) }
+    delete({uri, complete}) { files.delete(uri); complete() }
   }
   const s = setup(undefined, false, 12, store, file)
   assert.equal(s.sent[0].remoteThemes, true)
@@ -1291,7 +1408,8 @@ for (const [model, width, height, shape] of [
 
 test('every cached theme selects its own animation rule and overlay artwork', () => {
   const distinct = new Set()
-  for (const scene of ['ridge', 'city', 'coast', 'alpine', 'bamboo', 'prism', 'circuit', 'paw', 'flux']) {
+  for (const scene of ['ridge', 'city', 'coast', 'alpine', 'bamboo', 'prism', 'circuit', 'paw', 'flux',
+    'origami', 'tape', 'hamster', 'enamel']) {
     const saved = JSON.stringify({key:'a'.repeat(64), title:'主题', scene, dayCrc:1, nightCrc:2, slot:0})
     const s = setup(undefined, false, 12, {get({key, success}) { success(key === 'garageThemeArt' ? saved : undefined) }, set() {}})
     assert.equal(s.motion().src, '/common/motion/' + scene + '.png')
@@ -1300,7 +1418,7 @@ test('every cached theme selects its own animation rule and overlay artwork', ()
     assert.ok(animation)
     distinct.add(animation)
   }
-  assert.equal(distinct.size, 9)
+  assert.equal(distinct.size, 13)
 })
 
 test('a cached theme with a legacy generic scene still uses the correct motion', () => {

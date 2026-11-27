@@ -40,6 +40,10 @@ public final class ThemeSync {
             case "脉冲电路" -> "circuit";
             case "布丁的午后" -> "paw";
             case "流体折光" -> "flux";
+            case "折角构成" -> "origami";
+            case "磁带纪元" -> "tape";
+            case "仓鼠邮差" -> "hamster";
+            case "珐琅流沙" -> "enamel";
             default -> "generic";
         };
     }

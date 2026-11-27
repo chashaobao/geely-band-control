@@ -517,7 +517,7 @@ public class WristApp extends Application {
             } catch (RuntimeException unavailable) {
                 // A provider view can disappear or fail to draw during a card transition.
                 android.util.Log.w("WristLynkHost", "Card unavailable for " + type, unavailable);
-                if (!node.startsWith("watch:") && !compact) throw unavailable;
+                if (!node.startsWith("watch:") && !band && !compact) throw unavailable;
                 tickets.forget(node);
                 out.remove("token");
                 out.remove("label");
@@ -526,6 +526,7 @@ public class WristApp extends Application {
                     out.put("note", "结果待核对，请查看官方车况");
                 }
                 if (compact) return out.put("type", "executeAck").toString();
+                if ("refresh".equals(type) && !out.has("note")) out.put("note", "等待领克卡片数据");
                 return out.put("status", "等待领克卡片数据").put("controlsAllowed", false)
                         .put("data", new JSONObject()).put("actions", new JSONArray()).toString();
             }
@@ -584,9 +585,12 @@ public class WristApp extends Application {
             try {
                 if (Boolean.TRUE.equals(request.opt(BandPhoto.HD_CAPABILITY)))
                     photo = card.vehiclePhoto(VehiclePhoto.Target.BAND_HD);
-                if (photo == null) photo = card.vehiclePhoto(VehiclePhoto.Target.BAND);
             } catch (RuntimeException unavailable) {
-                android.util.Log.w("WristLynkHost", "Vehicle photo unavailable", unavailable);
+                android.util.Log.w("WristLynkHost", "HD band photo unavailable", unavailable);
+            }
+            if (photo == null) {
+                try { photo = card.vehiclePhoto(VehiclePhoto.Target.BAND); }
+                catch (RuntimeException unavailable) { android.util.Log.w("WristLynkHost", "Band photo unavailable", unavailable); }
             }
             BandPhoto.append(out, request, photo);
         } else if (node.startsWith("watch:") && permitsWearable(node) && request.opt("carPhotoId") instanceof String knownId) {
@@ -604,7 +608,12 @@ public class WristApp extends Application {
 
     private boolean appendWatchPhoto(JSONObject out, JSONObject data, String knownId, VehiclePhoto.Target target)
             throws JSONException {
-        VehiclePhoto.Image photo = card.vehiclePhoto(target);
+        VehiclePhoto.Image photo;
+        try { photo = card.vehiclePhoto(target); }
+        catch (RuntimeException unavailable) {
+            android.util.Log.w("WristLynkHost", "Watch photo unavailable for " + target, unavailable);
+            return false;
+        }
         if (photo == null) return false;
         data.put("carPhotoId", photo.id());
         if (photo.id().equals(knownId)) return true;

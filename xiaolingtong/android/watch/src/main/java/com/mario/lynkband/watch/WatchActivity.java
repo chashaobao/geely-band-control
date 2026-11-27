@@ -39,6 +39,8 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
     private boolean visible;
     private boolean choosing;
     private boolean firstReply;
+    private long connectionStartedAt;
+    private long socketReadyAt;
     private int failedConnections;
     private final Runnable reconnect = () -> { if (visible && !link.ready()) start(false); };
     private final Runnable poll =
@@ -159,6 +161,7 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
         link.close();
         themes.disconnected();
         state.offline("等待手机连接");
+        state.photoResolved = false;
         super.onStop();
     }
 
@@ -257,6 +260,8 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
         main.removeCallbacks(poll);
         main.removeCallbacks(expire);
         state.offline("正在连接手机");
+        state.photoResolved = false;
+        connectionStartedAt = SystemClock.elapsedRealtime();
         render();
         link.connect(adapter, address);
     }
@@ -271,6 +276,8 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
     public void connected() {
         if (visible) {
             firstReply = true;
+            socketReadyAt = SystemClock.elapsedRealtime();
+            Log.i("WristLynkLink", "Bluetooth socket ready in " + (socketReadyAt - connectionStartedAt) + " ms");
             state.status = "正在同步车况";
             send("status", null);
         }
@@ -312,6 +319,7 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
         boolean wasConfirming = state.confirming();
         String previousNote = state.note;
         boolean statusReply = state.readingStatus();
+        boolean initialStatus = firstReply && statusReply;
         boolean themeReply = state.readingTheme();
         try {
             state.apply(response, photo, SystemClock.elapsedRealtime());
@@ -325,7 +333,7 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
             }
             if (firstReply) {
                 firstReply = false;
-                Log.i("WristLynkLink", "Received first status on Bluetooth connection");
+                Log.i("WristLynkLink", "First status after socket ready in " + (SystemClock.elapsedRealtime() - socketReadyAt) + " ms");
             }
             failedConnections = 0;
         } catch (JSONException error) {
@@ -364,6 +372,10 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
             send("refresh", null);
             return;
         }
+        if (initialStatus && !state.confirming()) {
+            send("status", null);
+            return;
+        }
         schedule();
     }
 
@@ -385,6 +397,8 @@ public final class WatchActivity extends Activity implements PhoneLink.Listener 
                 render();
                 return;
             }
+            // Show the snapshot before the phone encodes and transfers a fresh photo.
+            if (firstReply && "status".equals(type)) request.remove("carPhotoId");
             main.removeCallbacks(poll);
             main.removeCallbacks(expire);
             if ("status".equals(type)) request.put("landscapeSync", face.landscapeSnapshot()).put(ThemeArt.CAPABILITY, true);

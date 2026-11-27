@@ -14,6 +14,9 @@ final class WatchState {
     private static final String UNKNOWN_RESULT = "结果待核对，请查看官方车况";
     JSONObject data = new JSONObject();
     Bitmap carPhoto;
+    boolean photoResolved;
+    private boolean legacyPhotoOnly;
+    private boolean retryLegacyPhoto;
     private String carPhotoId = "";
     JSONArray actions = new JSONArray();
     String status = "等待手机连接", note = "";
@@ -98,11 +101,11 @@ final class WatchState {
     }
 
     boolean canSyncTheme(long now) {
-        return loading == null && !needsStatusAfterAck && now >= fastPollUntil;
+        return loading == null && !needsStatusAfterAck && !retryLegacyPhoto && now >= fastPollUntil;
     }
 
     long pollDelay(long now) {
-        if (needsStatusAfterAck) return 0;
+        if (needsStatusAfterAck || retryLegacyPhoto) return 0;
         if (loading != null) return Math.min(500, Math.max(0, loadingDeadline - now));
         return now < fastPollUntil ? 500 : 4000;
     }
@@ -156,8 +159,8 @@ final class WatchState {
         if (type.equals("prepare") && !canControl(action)) return null;
         JSONObject request = new JSONObject().put("v", 1).put("id", UUID.randomUUID().toString())
                 .put("type", type).put("visualActions", true).put("localWatchIcons", true)
-                .put("supportsControlState", true).put("carPhotoId", carPhotoId)
-                .put(WatchPhotoWire.HD_CAPABILITY, true);
+                .put("supportsControlState", true).put("carPhotoId", carPhotoId);
+        if (!legacyPhotoOnly) request.put(WatchPhotoWire.HD_CAPABILITY, true);
         if ("status".equals(type)) request.put("watchSolar", true);
         if (type.equals("execute")) {
             if (choice == null) return null;
@@ -209,13 +212,18 @@ final class WatchState {
         JSONArray nextActions = reply.getJSONArray("actions");
         String nextStatus = reply.getString("status");
         String nextNote = reply.has("note") ? reply.getString("note") : note;
+        if (!nextData.optString("vehicle").equals(data.optString("vehicle"))) legacyPhotoOnly = false;
         data = nextData;
         String incomingId = data.opt("carPhotoId") instanceof String id ? id : "";
         // An ID-only reply can reuse exactly the image we acknowledged on this connection.
-        if (data.remove("carPhoto") != null || !carPhotoId.equals(incomingId)) {
+        boolean hasPhotoBytes = data.remove("carPhoto") != null;
+        if (hasPhotoBytes || !carPhotoId.equals(incomingId)) {
             carPhoto = decodedPhoto;
             carPhotoId = decodedPhoto == null ? "" : incomingId;
         }
+        retryLegacyPhoto = hasPhotoBytes && decodedPhoto == null && request.optBoolean(WatchPhotoWire.HD_CAPABILITY);
+        if (retryLegacyPhoto) legacyPhotoOnly = true;
+        photoResolved = request.has("carPhotoId") && !retryLegacyPhoto;
         // Older phones still send PNGs with visual metadata. Keep them out of display and confirmation state.
         for (int i = 0; i < nextActions.length(); i++) {
             JSONObject item = nextActions.optJSONObject(i);
@@ -273,6 +281,9 @@ final class WatchState {
         cancel();
         carPhoto = null;
         carPhotoId = "";
+        legacyPhotoOnly = false;
+        retryLegacyPhoto = false;
+        photoResolved = true;
         data = new JSONObject(); actions = new JSONArray(); status = reason;
     }
 }

@@ -108,6 +108,54 @@
         "vela-day": "f0638fdc763dca3757af7208d54254a35090986ab0346d557a933077c0a53e27",
         "vela-night": "883ff8866a14b0958cc7b2a3ce77c7f61798cbfd24e48125e4a2303abab1ff2b"
       }
+    },
+    {
+      "id": "origami",
+      "title": "折角构成",
+      "version": 1,
+      "assets": {
+        "phone-day": "aefe3bc8e278f91ad4d6ed43fef33224376ab41d85102e178305b400473231e0",
+        "watch-day": "aefe3bc8e278f91ad4d6ed43fef33224376ab41d85102e178305b400473231e0",
+        "watch-night": "e4a8b12c6dc05954cb8a3660c668ea3dbf7bf1a1c92cfb43d774fc245746158e",
+        "vela-day": "80a6b66de4019d0f2e75f7edb1bd8acdc2340de16b97341215b4d630432a9cd1",
+        "vela-night": "f80ed4bba3b5269c9358ffd2d8423e6e333f1bc609b5e0239214a69dd7aedee4"
+      }
+    },
+    {
+      "id": "tape",
+      "title": "磁带纪元",
+      "version": 1,
+      "assets": {
+        "phone-day": "d0619505abbe3faacb52f4df42b84e93d66b3660d2058febab2196906e095532",
+        "watch-day": "d0619505abbe3faacb52f4df42b84e93d66b3660d2058febab2196906e095532",
+        "watch-night": "892984d98cbc0731eecb0d8629e5e0a6b8695b80fefe0f0e61e8600c5b1058ac",
+        "vela-day": "c2d416df86c2d85e54d0e3baf512483f869fc1f8f6ab81e82f1bf20d7cd5fbdb",
+        "vela-night": "9b902818b56a11e39d03f645ec91e0c2edd50d561f3c5c21d1024cdd27fbface"
+      }
+    },
+    {
+      "id": "hamster",
+      "title": "仓鼠邮差",
+      "version": 1,
+      "assets": {
+        "phone-day": "d127075a1edfafb713a729b371cd91b596b362eebe4e6c051443f8bb1bf2c9ce",
+        "watch-day": "d127075a1edfafb713a729b371cd91b596b362eebe4e6c051443f8bb1bf2c9ce",
+        "watch-night": "d4a8f2816c99d76fac490e9ea4c9df95692aa60a187acc5ffbb86c1a1e8032e3",
+        "vela-day": "fd4041ac764e157084afc1e7ec020ab78c814722fb3d663a16bd49eee2872c69",
+        "vela-night": "fc2adfa7be223cd0d8650a1536f94986d71e6112a8831eb848fc9acb1f399bd1"
+      }
+    },
+    {
+      "id": "enamel",
+      "title": "珐琅流沙",
+      "version": 1,
+      "assets": {
+        "phone-day": "d6ef3e1f074c2bfa8fb59022786cba34b39b152dc24d67b37676b3184d292c99",
+        "watch-day": "d6ef3e1f074c2bfa8fb59022786cba34b39b152dc24d67b37676b3184d292c99",
+        "watch-night": "28584ea064bdaecacc01162b36276b2301402e783b1e6ee0df3329fd31f6177d",
+        "vela-day": "99a8884ff22ca24517348e29ba827c44852454085162d056ad0296d82df21124",
+        "vela-night": "40a88ea2429b2b2463870132362a0fa0da27ea0ef893c21543e4f9f94c434572"
+      }
     }
   ]
 }

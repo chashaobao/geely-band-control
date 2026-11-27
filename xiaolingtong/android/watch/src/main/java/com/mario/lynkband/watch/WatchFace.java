@@ -218,6 +218,7 @@ final class WatchFace extends FrameLayout {
                         + model.note
                         + "|"
                         + (model.carPhoto != null)
+                        + model.photoResolved
                         + model.data
                         + "|"
                         + model.actions
@@ -361,6 +362,7 @@ final class WatchFace extends FrameLayout {
         connectionRow.addView(connectionText);
         put(connectionRow, 76, 199, 328, 28);
 
+        if (model.carPhoto == null && !model.photoResolved) return 246;
         ImageView photo = new ImageView(getContext());
         photo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         if (model.carPhoto != null) {

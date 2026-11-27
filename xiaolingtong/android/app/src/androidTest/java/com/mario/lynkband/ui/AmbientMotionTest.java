@@ -19,7 +19,7 @@ import static org.junit.Assert.assertTrue;
 @RunWith(AndroidJUnit4.class)
 public final class AmbientMotionTest {
     private static final String[] THEMES = {"sky", "ridge", "city", "coast", "alpine", "bamboo",
-            "prism", "circuit", "paw", "flux"};
+            "prism", "circuit", "paw", "flux", "origami", "tape", "hamster", "enamel"};
     private static final int EDGE = 336;
 
     @Test

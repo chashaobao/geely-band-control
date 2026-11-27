@@ -1,8 +1,8 @@
 {
   "package": "com.mario.lynkband.phone",
   "name": "小领通",
-  "versionName": "0.2.32",
-  "versionCode": 34,
+  "versionName": "0.2.34",
+  "versionCode": 36,
   "minPlatformVersion": 1000,
   "minAPILevel": 1,
   "icon": "/common/launcher-round.png",

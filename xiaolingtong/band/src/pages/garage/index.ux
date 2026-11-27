@@ -1,8 +1,9 @@
 <template>
   <div class="page">
-    <image class="themeBackdrop"
-      if="{{ layout.supportsTheme && (remoteBackdrop || backdrop.backgroundImage) }}" style="{{ layout.backdropStyle }}"
-      src="{{ remoteBackdrop || backdrop.backgroundImage }}" alt="blank" @error="themeImageError"></image>
+    <image class="themeBackdrop" if="{{ layout.supportsTheme && !remoteBackdrop && backdrop.backgroundImage }}"
+      style="{{ layout.backdropStyle }}" src="{{ backdrop.backgroundImage }}" alt="blank"></image>
+    <image class="themeBackdrop" if="{{ layout.supportsTheme && remoteBackdrop }}"
+      style="{{ layout.backdropStyle }}" src="{{ remoteBackdrop }}" alt="blank" @error="themeImageError"></image>
     <image class="{{ 'themeMotion fx-' + motionScene }}"
       if="{{ motionVisible && mode === 'home' && layout.supportsTheme && motionImage }}"
       style="{{ layout.backdropStyle }}" src="{{ motionImage }}" alt="blank"></image>
@@ -38,8 +39,9 @@
       <list-item type="condition" class="block conditionRow" if="{{ condition }}">
         <text class="caption" style="{{ layout.captionStyle }}">{{ condition }}</text>
       </list-item>
-      <list-item type="carPhoto" class="photoRow" style="{{ layout.photoRowStyle }}" if="{{ layout.supportsTheme }}">
-        <image class="carPhoto" src="{{ photoSrc || '/common/default-vehicle.png' }}" alt="blank" @error="photoImageError"></image>
+      <list-item type="carPhoto" class="photoRow" style="{{ layout.photoRowStyle }}" if="{{ layout.supportsTheme && (photoSrc || photoFallback) }}">
+        <image if="{{ !!photoSrc }}" class="carPhoto" src="{{ photoSrc }}" alt="blank" @error="photoImageError"></image>
+        <image if="{{ !photoSrc }}" class="carPhoto" src="/common/default-vehicle.png" alt="blank"></image>
       </list-item>
       <list-item class="singleSlotRow" style="{{ layout.listRowStyle }}" type="actionSingle" for="{{ singleRows }}" tid="id">
         <div class="tile singleTile" style="{{ layout.listTileStyle }}" disabled="{{ !$item.left.enabled }}" @click="prepare($item.left.slot)">
@@ -63,41 +65,43 @@
           <text class="tileName" style="{{ layout.captionStyle }}">{{ $item.right.controlName }}</text>
         </div>
       </list-item>
+      <list-item class="block buttonRow" type="settings">
+        <text class="button" style="{{ layout.buttonStyle }}" @click="showSettings">设置</text>
+      </list-item>
+      <list-item class="block receiptRow" type="receipt" if="{{ !!note }}">
+        <text class="caption warm" style="{{ layout.captionStyle }}">{{ note }}</text>
+      </list-item>
+      <list-item class="block refreshRow" type="refresh" style="{{ layout.refreshRowStyle }}">
+        <text class="button refreshButton" style="{{ layout.refreshButtonStyle }}" @click="refresh">{{ (refreshActive ? '正在刷新' : '刷新车况') + '\n' + time }}</text>
+      </list-item>
+    </list>
+    <list class="feed" style="{{ layout.feedStyle }}" if="{{ mode === 'settings' }}">
+      <list-item class="block headingRow" type="settingsTitle"><text class="title">设置</text></list-item>
+      <list-item class="block receiptRow" type="linkStatus"><text class="caption" style="{{ layout.captionStyle }}">{{ status }}</text></list-item>
+      <list-item class="block buttonRow" type="settingsRefresh"><text class="button" style="{{ layout.buttonStyle }}" @click="refreshFromSettings">刷新车况</text></list-item>
       <list-item class="block buttonRow" type="scene" if="{{ layout.supportsTheme }}">
         <text class="button" style="{{ layout.buttonStyle }}" @click="showScenes">{{ sceneLabel }}</text>
       </list-item>
       <list-item class="block buttonRow" type="theme" if="{{ layout.supportsTheme }}">
         <text class="button" style="{{ layout.buttonStyle }}" @click="showSolar">{{ skyLabel }}</text>
       </list-item>
-      <list-item class="block buttonRow" type="settings" if="{{ canChooseLayout }}">
-        <text class="button" style="{{ layout.buttonStyle }}" @click="showSettings">设置</text>
-      </list-item>
-      <list-item class="block receiptRow" type="receipt" if="{{ !!note && note !== '正在刷新车况' }}">
-        <text class="caption warm" style="{{ layout.captionStyle }}">{{ note }}</text>
-      </list-item>
-      <list-item class="block refreshRow" type="refresh" style="{{ layout.refreshRowStyle }}">
-        <div class="refreshButton" style="{{ layout.refreshButtonStyle }}" @click="refresh">
-          <text class="refreshTitle" style="{{ layout.captionStyle }}">{{ note === '正在刷新车况' ? '正在刷新' : '刷新车况' }}</text>
-          <text class="refreshTime" style="{{ layout.captionStyle }}">{{ time }}</text>
-        </div>
-      </list-item>
-    </list>
-    <list class="feed" style="{{ layout.feedStyle }}" if="{{ mode === 'settings' }}">
-      <list-item class="block headingRow" type="settingsTitle"><text class="title">车控布局</text></list-item>
+      <list-item class="block headingRow" type="layoutTitle" if="{{ canChooseLayout }}"><text class="title">车控布局</text></list-item>
       <list-item class="block buttonRow" type="controlGrid" if="{{ canChooseLayout }}">
         <text class="{{ controlList ? 'button' : 'button layoutSelected' }}" style="{{ layout.buttonStyle }}" @click="setControlLayout(false)">{{ controlList ? '网格' : '网格 · 已选' }}</text>
       </list-item>
       <list-item class="block buttonRow" type="controlList" if="{{ canChooseLayout }}">
         <text class="{{ controlList ? 'button layoutSelected' : 'button' }}" style="{{ layout.buttonStyle }}" @click="setControlLayout(true)">{{ controlList ? '列表 · 已选' : '列表' }}</text>
       </list-item>
+      <list-item class="block receiptRow" type="version" if="{{ versionLabel }}"><text class="caption" style="{{ layout.captionStyle }}">{{ versionLabel }}</text></list-item>
       <list-item class="block buttonRow" type="back"><text class="button" style="{{ layout.buttonStyle }}" @click="home">返回</text></list-item>
     </list>
     <list class="feed" style="{{ layout.feedStyle }}" if="{{ mode === 'scenes' && layout.supportsTheme }}">
       <list-item class="block headingRow" type="sceneTitle"><text class="title">主题</text></list-item>
       <list-item class="block receiptRow" type="sceneInfo">
-        <text class="caption" style="{{ layout.captionStyle }}">在手机上选择主题</text>
+        <text class="caption" style="{{ layout.captionStyle }}">{{ themeSyncInfo }}</text>
       </list-item>
-      <list-item class="block buttonRow" type="back"><text class="button" style="{{ layout.buttonStyle }}" @click="home">返回</text></list-item>
+      <list-item class="block buttonRow" type="syncTheme"><text class="button" style="{{ layout.buttonStyle }}" @click="retryTheme">重新同步</text></list-item>
+      <list-item class="block buttonRow" type="back"><text class="button" style="{{ layout.buttonStyle }}" @click="showSettings">返回</text></list-item>
     </list>
     <list class="feed" style="{{ layout.feedStyle }}" if="{{ mode === 'solar' && layout.supportsTheme }}">
       <list-item class="block headingRow" type="solarTitle"><text class="title">日出日落</text></list-item>
@@ -112,7 +116,7 @@
         <text class="caption" style="{{ layout.captionStyle }}">日落 {{ setTime }}</text>
         <picker class="solarPicker" type="time" selected="{{ setTime }}" onchange="setSunset"></picker>
       </list-item>
-      <list-item class="block buttonRow" type="back"><text class="button" style="{{ layout.buttonStyle }}" @click="home">返回</text></list-item>
+      <list-item class="block buttonRow" type="back"><text class="button" style="{{ layout.buttonStyle }}" @click="showSettings">返回</text></list-item>
     </list>
     <list class="feed" style="{{ layout.feedStyle }}" if="{{ mode === 'confirm' }}">
       <list-item class="block questionRow" type="question">
@@ -141,7 +145,8 @@ const scenes = ['SKY','RIDGE','CITY','COAST','ALPINE']
 const sceneNames = {SKY:'蓝天与星空', RIDGE:'山脊营地', CITY:'城市天际线', COAST:'海岸灯塔', ALPINE:'雪山映湖'}
 const motionTitles = {
   '山脊营地':'ridge', '城市天际线':'city', '海岸灯塔':'coast', '雪山映湖':'alpine', '雾隐竹海':'bamboo',
-  '光栅棱镜':'prism', '脉冲电路':'circuit', '布丁的午后':'paw', '流体折光':'flux'
+  '光栅棱镜':'prism', '脉冲电路':'circuit', '布丁的午后':'paw', '流体折光':'flux',
+  '折角构成':'origami', '磁带纪元':'tape', '仓鼠邮差':'hamster', '珐琅流沙':'enamel'
 }
 const motionScenes = Object.keys(motionTitles).map(title => motionTitles[title])
 function sceneRevision(value) { return Number.isInteger(value) && value >= 0 && value <= 253402300799999 }
@@ -157,10 +162,10 @@ function screenLayout(info) {
   const ratio = width > 0 && height > 0 && isFinite(height / width) ? height / width : 0
   const measuredPill = info.screenShape === 'pill-shaped' || (info.screenShape !== 'circle' && ratio >= 1.65)
   const pill = screenProfile === 'pill' || (screenProfile === 'auto' && measuredPill)
-  const rect = !pill && (info.screenShape === 'rect' || (screenProfile === 'standard' && !ratio))
   const rectangular = ratio > 0 && width !== height && info.screenShape !== 'circle'
+  const rect = !pill && (info.screenShape === 'rect' || rectangular || (screenProfile === 'standard' && !ratio))
   const small = width > 0 && width < 280
-  const single = pill || rectangular || !(width >= 280)
+  const single = pill || !(Math.min(width, height) >= (rectangular ? 384 : 280))
   // Center the scroll viewport inside the outline, so even its first/last row is reachable.
   // A capsule's two round ends together need just under half a screen width at 84% usable width.
   const usableHeight = pill ? 98 - Math.ceil(46 / Math.max(1, ratio)) : rect ? 94 : 66
@@ -176,7 +181,6 @@ function screenLayout(info) {
   return {
     single:single,
     supportsTheme:screenProfile === 'standard' || (ratio > 0 && !pill),
-    photoHd:!pill && width >= 280,
     backdropStyle:ratio >= 0.6 && ratio <= 2.8 ? {width:'336px', height:Math.round(336 * ratio) + 'px'} : {width:'100%', height:'100%'},
     photoRowStyle:{height:(small ? 104 : 128) + 'px'},
     feedStyle:{width:feedWidth + '%', height:usableHeight + '%'},
@@ -188,7 +192,7 @@ function screenLayout(info) {
     listTileStyle:{width:(contentWidth - 4) + 'px', height:listTileHeight + 'px'},
     buttonStyle:{height:buttonHeight + 'px', fontSize:Math.max(27, caption) + 'px'},
     refreshRowStyle:{height:(refreshHeight + 16) + 'px'},
-    refreshButtonStyle:{height:refreshHeight + 'px'}
+    refreshButtonStyle:{height:refreshHeight + 'px', fontSize:caption + 'px'}
   }
 }
 const maxPhotoChars = 32768
@@ -202,26 +206,31 @@ const themeChunkBytes = 1536
 const maxThemeBytes = 48 * 1024
 const themeRestoreTimeout = 2500
 const themeStorageKey = 'garageThemeArt'
+// The third fixed slot is a spare if firmware has not completed a write in another slot.
+const busyThemeSlots = [false, false, false]
 function themeUri(slot, part) { return 'internal://files/garage-theme-' + slot + '-' + part + '.png' }
 function validTheme(info) {
   return info && typeof info.key === 'string' && /^[0-9a-f]{64}$/.test(info.key) &&
     typeof info.title === 'string' && !!info.title.trim() && info.title.length <= 32 &&
     [info.dayCrc, info.nightCrc].every(value => Number.isInteger(value) && value >= 0 && value <= 0xffffffff)
 }
-function pngCrc(bytes) {
-  let crc = 0xffffffff
-  for (let i = 0; i < bytes.length; i++) {
+function updatePngCrc(crc, bytes, start, end) {
+  for (let i = start; i < end; i++) {
     crc ^= bytes[i]
     for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
   }
-  return (crc ^ 0xffffffff) >>> 0
+  return crc
 }
 function deleteTheme(slot) {
+  busyThemeSlots[slot] = true
+  let remaining = 2
+  const released = () => { if (--remaining === 0) busyThemeSlots[slot] = false }
   try {
     const file = require('@system.file')
-    file.delete({uri:themeUri(slot, 'day')})
-    file.delete({uri:themeUri(slot, 'night')})
-  } catch (error) { /* Both paths are reused on the next replacement. */ }
+    for (const part of ['day','night']) {
+      try { file.delete({uri:themeUri(slot, part), complete:released}) } catch (error) { released() }
+    }
+  } catch (error) { busyThemeSlots[slot] = false }
 }
 function writePng(file, uri, bytes, success, fail, stillWanted = () => true, firstRaw = false) {
   const attempt = (raw, retry) => {
@@ -242,10 +251,10 @@ function writePng(file, uri, bytes, success, fail, stillWanted = () => true, fir
     file.writeText({uri:uri, text:' ', append:false, success:() => attempt(firstRaw, true), fail:fail})
   } catch (error) { fail() }
 }
-function writeThemePng(uri, bytes, success, fail) {
+function writeThemePng(uri, bytes, success, fail, current, firstRaw) {
   try {
     const file = require('@system.file')
-    writePng(file, uri, bytes, success, fail)
+    writePng(file, uri, bytes, success, fail, current, firstRaw)
   } catch (error) { fail() }
 }
 const maxFastPhotoPolls = 16
@@ -259,13 +268,8 @@ function deletePhotoFile(photo) {
   const release = () => { if (busyPhotoPaths[photo.slot] === photo) busyPhotoPaths[photo.slot] = null }
   try { photo.file.delete({uri:photo.uri, success:release, fail:release, complete:release}) } catch (error) { release() }
 }
-function decodePng(text, maxEdge = 512) {
-  // Vela doesn't require browser atob. writeArrayBuffer accepts a Uint8Array.
+function decodeInto(text, bytes, pos) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-  if (text.length < 60 || text.indexOf('iVBORw0KGgoAAAANSUhEU') !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(text)) return null
-  const padding = text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0
-  const bytes = new Uint8Array(text.length * 3 / 4 - padding)
-  let pos = 0
   for (let i = 0; i < text.length; i += 4) {
     const a = alphabet.indexOf(text[i]), b = alphabet.indexOf(text[i + 1])
     const c = alphabet.indexOf(text[i + 2]), d = alphabet.indexOf(text[i + 3])
@@ -273,11 +277,23 @@ function decodePng(text, maxEdge = 512) {
     if (c >= 0) bytes[pos++] = (b << 4) | (c >> 2)
     if (d >= 0) bytes[pos++] = (c << 6) | d
   }
+  return pos
+}
+function validPngBytes(bytes, maxEdge) {
   const size = i => bytes[i] * 16777216 + (bytes[i+1] << 16) + (bytes[i+2] << 8) + bytes[i+3]
+  if (bytes.length < 45 || size(0) !== 0x89504e47 || size(4) !== 0x0d0a1a0a ||
+      size(8) !== 13 || size(12) !== 0x49484452) return false
   const width = size(16), height = size(20)
   if (!width || !height || width > maxEdge || height > maxEdge) return null
   const end = bytes.length - 12
-  return size(end) === 0 && size(end + 4) === 0x49454e44 && size(end + 8) === 0xae426082 ? bytes : null
+  return size(end) === 0 && size(end + 4) === 0x49454e44 && size(end + 8) === 0xae426082
+}
+function decodePng(text) {
+  if (text.length < 60 || text.length % 4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(text)) return null
+  const padding = text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0
+  const bytes = new Uint8Array(text.length * 3 / 4 - padding)
+  decodeInto(text, bytes, 0)
+  return validPngBytes(bytes, 512) ? bytes : null
 }
 const controlCategories = ['LOCK','FIND','ENGINE','TRUNK','SUNROOF','CLIMATE','WINDOW','OTHER']
 function controlState(item) {
@@ -321,16 +337,17 @@ function controlTile(item, loading = false, blocked = false) {
 export default {
   private: {
     mode: 'home', vehicle: '小领通', status: '正在连接手机', range: '—', unit: 'km',
-    condition: '', battery: '—', fuel: '', time: '等候卡片更新', note: '', photoSrc: '',
+    condition: '', battery: '—', fuel: '', time: '等候卡片更新', note: '', photoSrc: '', photoFallback:false,
     actions: [], singleRows: [], pairedRows: [], layout: screenLayout({}), question: '', confirmTile: controlTile({}),
-    controlList:false, canChooseLayout:false,
+    controlList:false, canChooseLayout:false, refreshActive:false, versionLabel:'',
     backdrop:{}, motionVisible:false, motionScene:'sky', motionImage:'', remoteBackdrop:'',
-    sceneLabel:'主题 · 蓝天与星空', skyLabel:'昼夜 · 跟随手机', skyMode:'follow',
+    sceneLabel:'主题 · 蓝天与星空', themeSyncInfo:'等待手机主题', skyLabel:'昼夜 · 跟随手机', skyMode:'follow',
     solarInfo:'', riseTime:'06:00', setTime:'18:00'
   },
   onInit() {
     try {
       const info = require('@system.app').getInfo()
+      if (info && typeof info.versionName === 'string') this.versionLabel = '版本 ' + info.versionName
       if (info && Number.isInteger(info.versionCode) && info.versionCode > 0) this.installedVersionCode = info.versionCode
     } catch (error) { /* Older firmware can still report vehicle status. */ }
     this.backdropReady = false
@@ -339,6 +356,7 @@ export default {
     this.themeTarget = undefined
     this.themeTransfer = null
     this.themeWriting = false
+    this.themeRawFirst = true
     this.themeRetryAt = 0
     this.themeBurst = 0
     this.userPickedSky = false
@@ -364,6 +382,7 @@ export default {
     this.pending = null
     this.queuedChoice = null
     this.queuedRefresh = false
+    this.refreshActive = false
     this.queuedThemeStatus = false
     this.controlsAllowed = true
     this.requiresStatus = false
@@ -377,6 +396,7 @@ export default {
     this.photoBurst = 0
     this.photoRetryAt = 0
     this.photoHdFailed = false
+    this.photoProbeAt = 0
     this.feedAtTop = true
     this.feedY = 0
     this.feedBusyUntil = 0
@@ -499,7 +519,7 @@ export default {
       if (this.destroyed || this.themeTarget === null) return
       let saved
       try { if (typeof value === 'string' && value.length <= 512) saved = JSON.parse(value) } catch (error) { /* Ignore corrupt metadata. */ }
-      if (validTheme(saved) && (saved.slot === 0 || saved.slot === 1)) {
+      if (validTheme(saved) && Number.isInteger(saved.slot) && saved.slot >= 0 && saved.slot < busyThemeSlots.length) {
         this.themeActive = saved
         this.updateSky()
       }
@@ -521,38 +541,40 @@ export default {
     if (!this.remoteBackdrop) return
     this.clearRemoteTheme()
     this.themeRetryAt = Date.now() + 30000
+    this.themeSyncInfo = '设备未能显示主题图片，将重试'
     this.updateSky()
   },
   acceptRemoteTheme(offer) {
     if (offer === null) {
       this.themeTarget = null
       this.themeTransfer = null
-      if (!this.themeWriting) this.clearRemoteTheme()
-      else {
-        this.themeActive = null
-        this.themeClearPending = true
-      }
+      this.clearRemoteTheme()
+      this.themeSyncInfo = '手机已选择默认主题或关闭同步'
       return
     }
     if (!validTheme(offer)) {
       this.themeTarget = undefined
       this.themeTransfer = null
+      this.themeSyncInfo = '手机未提供主题包'
       return
     }
     if (!this.themeTarget || this.themeTarget.key !== offer.key) {
       this.themeTarget = offer
-      this.themeTransfer = {offset:0, text:'', total:0, day:null}
+      if (!this.themeTransfer || this.themeTransfer.key !== offer.key) this.themeTransfer = null
       this.themeRetryAt = 0
     }
+    if (this.themeActive && this.themeActive.key === offer.key) this.themeSyncInfo = '已同步 · ' + offer.title
+    else if (!this.themeTransfer && !this.themeWriting && Date.now() >= this.themeRetryAt) this.themeSyncInfo = '等待接收 · ' + offer.title
   },
   canReadTheme() {
     return this.layout.supportsTheme && this.themeTarget && (!this.themeActive || this.themeActive.key !== this.themeTarget.key) &&
       !this.themeRestoring && !this.themeWriting && !this.operation && !this.requiresStatus &&
       !this.queuedChoice && !this.queuedRefresh && Date.now() >= this.themeRetryAt
   },
-  themeFailed() {
-    this.themeTransfer = {offset:0, text:'', total:0, day:null}
+  themeFailed(reason) {
+    this.themeTransfer = null
     this.themeRetryAt = Date.now() + 30000
+    this.themeSyncInfo = reason || '主题分片校验失败，将重试'
   },
   receiveTheme(reply, request) {
     const transfer = this.themeTransfer, target = this.themeTarget
@@ -567,56 +589,71 @@ export default {
       this.themeFailed()
       return
     }
-    transfer.text += chunk
+    if (!offset) {
+      transfer.bytes = new Uint8Array(total)
+      transfer.crc = 0xffffffff
+    }
+    if (decodeInto(chunk, transfer.bytes, offset) !== offset + size) { this.themeFailed(); return }
+    transfer.crc = updatePngCrc(transfer.crc, transfer.bytes, offset, offset + size)
     transfer.offset += size
     transfer.total = total
+    const progress = Math.floor(4 * transfer.offset / total)
+    if (offset === 0 || progress !== Math.floor(4 * offset / total)) {
+      this.themeSyncInfo = (transfer.day ? '夜间图 ' : '日间图 ') + (progress * 25) + '%'
+    }
     if (transfer.offset !== total) return
-    const bytes = decodePng(transfer.text)
-    if (!bytes || bytes.length !== total || pngCrc(bytes) !== (transfer.day ? target.nightCrc : target.dayCrc)) {
+    const bytes = transfer.bytes
+    if (!validPngBytes(bytes, 512) || ((transfer.crc ^ 0xffffffff) >>> 0) !== (transfer.day ? target.nightCrc : target.dayCrc)) {
       this.themeFailed()
       return
     }
-    if (!transfer.day) this.themeTransfer = {offset:0, text:'', total:0, day:bytes}
+    if (!transfer.day) this.themeTransfer = {key:target.key, offset:0, total:0, day:bytes}
     else this.saveRemoteTheme(target, transfer.day, bytes)
   },
   saveRemoteTheme(offer, day, night) {
     const previous = this.themeActive
-    const slot = previous ? 1 - previous.slot : 0
+    const slot = busyThemeSlots.findIndex((busy, i) => !busy && (!previous || previous.slot !== i))
+    if (slot < 0) { this.themeFailed('等待设备释放主题文件'); return }
     const next = {...offer, slot:slot}
-    this.themeWriting = true
+    busyThemeSlots[slot] = true
+    this.themeWriting = next
+    this.themeSyncInfo = '正在保存 · ' + offer.title
+    const firstRaw = this.themeRawFirst
     this.themeTransfer = null
-    const finish = saved => {
+    const current = () => this.themeWriting === next && this.themeTarget === offer && !this.destroyed
+    const timer = setTimeout(() => {
+      if (this.themeWriting !== next) return
       this.themeWriting = false
-      if (saved && this.themeTarget === offer && !this.destroyed) {
+      this.themeRawFirst = !firstRaw
+      if (this.themeTarget === offer) this.themeFailed('设备保存主题超时，将重试')
+      // Leave the slot reserved until the native call returns; a later writer gets a different path.
+    }, 8000)
+    const finish = written => {
+      clearTimeout(timer)
+      if (written && current()) {
         this.themeActive = next
+        this.themeSyncInfo = '已同步 · ' + next.title
+        busyThemeSlots[slot] = false
+        try { require('@system.storage').set({key:themeStorageKey, value:JSON.stringify(next)}) }
+        catch (error) { /* The verified pair is still usable for the current session. */ }
         if (previous) deleteTheme(previous.slot)
       } else {
         deleteTheme(slot)
-        if (this.themeClearPending) {
-          this.themeClearPending = false
-          if (previous) deleteTheme(previous.slot)
-          try { require('@system.storage').set({key:themeStorageKey, value:''}) } catch (error) { /* Default is active. */ }
-        } else if (saved) {
-          // If a new offer arrived during the native commit, restore the old metadata.
-          try { require('@system.storage').set({key:themeStorageKey, value:previous ? JSON.stringify(previous) : ''}) }
-          catch (error) { /* The built-in theme remains available. */ }
-        }
-        if (this.themeTarget === offer) this.themeFailed()
+        if (current()) this.themeFailed('主题文件写入失败，将重试')
       }
+      if (this.themeWriting === next) this.themeWriting = false
       this.updateSky()
     }
-    const current = () => this.themeTarget === offer && !this.destroyed
-    const commit = () => {
-      if (!current()) { finish(false); return }
-      try {
-        require('@system.storage').set({key:themeStorageKey, value:JSON.stringify(next),
-          success:() => finish(true), fail:() => finish(false)})
-      } catch (error) { finish(false) }
-    }
     writeThemePng(themeUri(slot, 'day'), day, () => {
-      if (current()) writeThemePng(themeUri(slot, 'night'), night, commit, () => finish(false))
+      if (current()) writeThemePng(themeUri(slot, 'night'), night, () => finish(true), () => finish(false), current, firstRaw)
       else finish(false)
-    }, () => finish(false))
+    }, () => finish(false), current, firstRaw)
+  },
+  retryTheme() {
+    if (!this.layout.supportsTheme || this.choice) return
+    this.themeRetryAt = 0
+    this.queuedThemeStatus = true
+    if (!this.pending) this.open()
   },
   showScenes() {
     if (this.layout.supportsTheme && !this.choice) this.mode = 'scenes'
@@ -720,8 +757,13 @@ export default {
     this.deferPhoto(hd)
   },
   deferPhoto(hd) {
-    if (hd) this.photoHdFailed = true
-    this.photoRetryAt = Date.now() + photoRetryDelay
+    this.photoHdFailed = true
+    this.photoRetryAt = hd ? 0 : Date.now() + photoRetryDelay
+    if (!hd) {
+      this.photoFallback = true
+      this.photoProbeAt = Date.now() + 30000
+    }
+    if (hd && this.visible && !this.pending && !this.choice) this.schedule(photoChunkDelay)
   },
   feedBusy() {
     return Date.now() < this.feedBusyUntil
@@ -746,7 +788,7 @@ export default {
       file = require('@system.file')
     } catch (error) { /* Some firmware has no native file module. */ }
     if (!file || !file.writeArrayBuffer) {
-      this.photoRetryAt = Date.now() + photoRetryDelay
+      this.deferPhoto(hd)
       return
     }
     const photo = {id:id, slot:slot, uri:photoPaths[slot], file:file, ready:false, hd:hd}
@@ -773,13 +815,20 @@ export default {
       defer()
       deletePhotoFile(photo)
     }
-    writePng(file, photo.uri, buffer, success, fail, stillWanted, !hd)
+    // Both resolutions use the original PNG writer. File API type negotiation is independent of size.
+    writePng(file, photo.uri, buffer, success, fail, stillWanted, true)
   },
   receivePhoto(request, data) {
     // Only an opted-in status reply is authoritative. An empty or missing id also covers old phones.
     const id = data.carPhotoId
     if (typeof data.vehicle !== 'string' || !data.vehicle.trim() || typeof id !== 'string' || !id || id.length > 128) {
       this.clearPhoto()
+      if (request.bandPhotoHd && typeof data.vehicle === 'string' && data.vehicle.trim() && id === '') {
+        this.deferPhoto(true)
+        return true
+      }
+      this.photoFallback = true
+      if (this.photoHdFailed && !this.photoProbeAt) this.photoProbeAt = Date.now() + 30000
       return false
     }
     if (this.photoFile && this.photoFile.id === id) {
@@ -796,13 +845,14 @@ export default {
         data.carPhotoMime !== 'image/png' || typeof chunk !== 'string' || !chunk.length || chunk.length > maxChunkChars ||
         offset + chunk.length > total || /[^A-Za-z0-9+/=]/.test(chunk) || (chunk.indexOf('=') >= 0 && offset + chunk.length < total)) {
       this.photoTransfer = null
-      return false
+      this.deferPhoto(request.bandPhotoHd === true)
+      return request.bandPhotoHd === true
     }
     const text = (transfer ? transfer.text : '') + chunk
     if (text.length === total) {
       this.photoTransfer = null
       this.savePhoto(id, text, request.bandPhotoHd === true)
-      return false
+      return !this.photoFile && !this.photoFallback && this.photoHdFailed
     }
     this.photoTransfer = {id:id, total:total, text:text}
     return true
@@ -849,7 +899,11 @@ export default {
     } catch (error) { /* The default grid remains available. */ }
   },
   showSettings() {
-    if (this.canChooseLayout && !this.choice) this.mode = 'settings'
+    if (!this.choice) this.mode = 'settings'
+  },
+  refreshFromSettings() {
+    this.home()
+    this.refresh()
   },
   setControlLayout(list) {
     if (!this.canChooseLayout || this.mode !== 'settings') return
@@ -889,6 +943,7 @@ export default {
   onBackPress() {
     if (this.mode === 'home') return false
     if (this.mode === 'confirm') this.cancel()
+    else if (this.mode === 'scenes' || this.mode === 'solar') this.showSettings()
     else this.home()
     return true
   },
@@ -896,7 +951,7 @@ export default {
     this.visible = false
     this.motionVisible = false
     this.themeTarget = undefined
-    this.themeTransfer = null
+    if (this.destroyed) this.themeTransfer = null
     this.syncedNight = null
     this.releaseConnection()
     clearTimeout(this.pollTimer)
@@ -904,12 +959,14 @@ export default {
     this.dropChoice()
     this.queuedChoice = null
     this.queuedRefresh = false
+    this.refreshActive = false
     this.queuedThemeStatus = false
     this.requiresStatus = false
     if (this.operation) this.note = unknownResult
     this.operation = null
     this.fastPollUntil = 0
     this.suspendPhoto()
+    this.photoFallback = false
     this.photoBurst = 0
     this.actions = []
     this.singleRows = []
@@ -924,10 +981,11 @@ export default {
       if (!this.conn) {
         const connection = require('@system.interconnect').instance()
         this.conn = connection
-        connection.onmessage = event => { if (event) this.receive(event.data) }
-        connection.onopen = () => { if (this.visible && !this.pending && !this.choice) this.send('status') }
-        connection.onclose = () => this.lost('手机已断开')
-        connection.onerror = () => this.lost('检查手机通信服务')
+        this.awaitingFirstReply = true
+        connection.onmessage = event => { if (this.conn === connection && event) this.receive(event.data) }
+        connection.onopen = () => { if (this.conn === connection && this.visible && !this.pending && !this.choice) this.send('status') }
+        connection.onclose = () => { if (this.conn === connection) this.lost('手机已断开') }
+        connection.onerror = () => { if (this.conn === connection) this.lost('检查手机通信服务') }
       }
       if (!this.pending && !this.choice)
         this.send(this.themeBurst < 4 && !this.feedBusy() && !this.queuedRefresh && !this.queuedThemeStatus &&
@@ -940,6 +998,7 @@ export default {
   },
   clearRequest() {
     clearTimeout(this.requestTimer)
+    clearTimeout(this.firstProbeTimer)
     this.pending = null
   },
   dropChoice() {
@@ -955,17 +1014,18 @@ export default {
     this.dropChoice()
     this.queuedChoice = null
     this.queuedRefresh = false
+    this.refreshActive = false
     this.queuedThemeStatus = false
     this.requiresStatus = false
     this.operation = null
     this.controlsAllowed = false
     this.syncedNight = null
     this.themeTarget = undefined
-    this.themeTransfer = null
     this.updateSky()
     this.mode = settingsMode
     this.fastPollUntil = 0
     this.suspendPhoto()
+    this.photoFallback = true
     this.photoBurst = 0
     this.actions = []
     this.singleRows = []
@@ -1003,7 +1063,11 @@ export default {
     if (type === 'status' && !themeStatus && this.layout.supportsTheme && !this.requiresStatus && !this.operation &&
         !this.queuedChoice && !this.queuedRefresh && this.canRequestPhoto()) {
       request.bandPhoto = true
-      if (this.layout.photoHd && !this.photoHdFailed) request.bandPhotoHd = true
+      if (this.photoProbeAt && Date.now() >= this.photoProbeAt && !this.photoTransfer && !this.photoFile) {
+        this.photoHdFailed = false
+        this.photoProbeAt = 0
+      }
+      if (!this.photoHdFailed) request.bandPhotoHd = true
       // A write in progress can acknowledge the image without requesting the same bytes again.
       request.carPhotoId = this.photoFile ? this.photoFile.id : ''
       request.photoTransferId = this.photoTransfer ? this.photoTransfer.id : ''
@@ -1011,7 +1075,7 @@ export default {
     }
     if (type === 'themeAsset') {
       if (!this.canReadTheme()) return
-      if (!this.themeTransfer) this.themeTransfer = {offset:0, text:'', total:0, day:null}
+      if (!this.themeTransfer) this.themeTransfer = {key:this.themeTarget.key, offset:0, total:0, day:null}
       request.key = this.themeTarget.key
       request.part = this.themeTransfer.day ? 'night' : 'day'
       request.offset = this.themeTransfer.offset
@@ -1026,6 +1090,13 @@ export default {
     this.pending = request
     const fail = () => { if (this.pending === request) this.lost('手机未响应') }
     this.requestTimer = setTimeout(fail, 5500)
+    if (this.awaitingFirstReply && type === 'status' && !request.bandThemeChoice) {
+      // Mi Fitness can open the channel before the phone's message listener is registered.
+      this.firstProbeTimer = setTimeout(() => {
+        if (this.pending !== request || !this.visible || !this.conn) return
+        try { this.conn.send({data:request}) } catch (error) { /* Original reply timeout owns reconnect. */ }
+      }, 1500)
+    }
     if (type !== 'status' && type !== 'themeAsset') this.updateRows()
     try { this.conn.send({data:request, fail:fail}) } catch (error) { fail() }
   },
@@ -1049,6 +1120,7 @@ export default {
       return
     }
     if (!request || reply.id !== request.id) return
+    this.awaitingFirstReply = false
     if (request.type === 'themeAsset') {
       this.clearRequest()
       if (!this.queuedThemeStatus) this.receiveTheme(reply, request)
@@ -1078,7 +1150,13 @@ export default {
     const s = reply.data || {}
     const vehicle = s.vehicle || '小领通'
     const vehicleChanged = vehicle !== this.vehicle
-    if (vehicleChanged) this.clearPhoto()
+    if (vehicleChanged) {
+      this.clearPhoto()
+      this.photoFallback = false
+      this.photoHdFailed = false
+      this.photoProbeAt = 0
+      this.photoRetryAt = 0
+    }
     const morePhoto = request.bandPhoto && !this.queuedRefresh && !this.feedBusy() &&
       this.layout.supportsTheme && this.receivePhoto(request, s)
     this.vehicle = vehicle
@@ -1099,6 +1177,7 @@ export default {
       if (legacyRefusals.indexOf(reply.note) >= 0 || (this.operation &&
           (this.operation.item.momentary === true || controlState(this.operation.item) === 'legacy'))) this.operation = null
     }
+    if (request.type === 'refresh') this.refreshActive = false
     if (reply.note) this.note = reply.note
     else if (request.type === 'refresh' && !this.operation) this.note = ''
     this.observeOperation(s.vehicle)
@@ -1161,7 +1240,7 @@ export default {
     }
     if (this.queuedRefresh && !this.choice) {
       this.queuedRefresh = false
-      this.sendRefresh()
+      this.send('refresh')
       return true
     }
     if (this.queuedThemeStatus && this.conn && !this.pending && !this.choice) {
@@ -1202,19 +1281,16 @@ export default {
     this.feedBusyUntil = now + scrollCooldown
     this.refresh()
   },
-  sendRefresh() {
-    if (!this.operation) this.note = '正在刷新车况'
-    this.send('refresh')
-  },
   refresh() {
     if (!this.visible || this.choice) return
+    this.refreshActive = true
     // Let the native channel finish the current request before starting a manual refresh.
     if (!this.conn || this.pending) {
       if (!this.pending || this.pending.type !== 'refresh') this.queuedRefresh = true
       if (!this.conn) this.open()
       return
     }
-    this.sendRefresh()
+    this.send('refresh')
   },
   controls() { this.mode = 'home'; this.note = '' },
   home() {
@@ -1289,6 +1365,33 @@ export default {
 .fx-circuit { animation-name:currentFlow; animation-duration:3500ms; animation-timing-function:linear; }
 .fx-paw { animation-name:pawSteps; animation-duration:4700ms; }
 .fx-flux { animation-name:glassRipple; animation-duration:5600ms; }
+.fx-origami { transform-origin:50% 62%; animation-name:paperOpen; animation-duration:4300ms; }
+.fx-tape { transform-origin:13% 46%; animation-name:tapeSpin; animation-duration:3350ms; animation-timing-function:linear; }
+.fx-hamster { animation-name:mailHop; animation-duration:4600ms; }
+.fx-enamel { transform-origin:53% 80%; animation-name:mineralSwirl; animation-duration:5700ms; }
+@keyframes paperOpen {
+  0% { opacity:0.49; transform:scaleX(0.62); }
+  38% { opacity:1; transform:scaleX(1.12); }
+  59% { opacity:0.82; transform:scaleX(0.88); }
+  100% { opacity:0.49; transform:scaleX(0.62); }
+}
+@keyframes tapeSpin {
+  0% { opacity:0.92; transform:rotate(0deg); }
+  100% { opacity:0.92; transform:rotate(360deg); }
+}
+@keyframes mailHop {
+  0% { opacity:0; transform:translate(-34px, 28px); }
+  20% { opacity:0.96; transform:translate(-11px, 0px); }
+  49% { opacity:1; transform:translate(11px, -33px); }
+  73% { opacity:0.93; transform:translate(30px, -20px); }
+  100% { opacity:0; transform:translate(53px, -64px); }
+}
+@keyframes mineralSwirl {
+  0% { opacity:0.59; transform:rotate(-11deg); }
+  24% { opacity:1; transform:rotate(5deg); }
+  63% { opacity:0.86; transform:rotate(18deg); }
+  100% { opacity:0.59; transform:rotate(-11deg); }
+}
 @keyframes cloudsDrift {
   0% { opacity:0.12; transform:translateX(-58px); }
   22% { opacity:0.92; transform:translateX(-35px); }
@@ -1360,11 +1463,7 @@ export default {
 .conditionRow { width:100%; height:64px; }
 .receiptRow { width:100%; height:124px; justify-content:center; }
 .refreshRow { width:100%; justify-content:center; }
-.refreshButton { width:100%; flex-direction:column; justify-content:center; align-items:center;
-  border-radius:18px; background-color:#212a38; }
-.refreshTitle, .refreshTime { width:100%; text-align:center; lines:1; text-overflow:ellipsis; }
-.refreshTitle { color:#e9edf3; }
-.refreshTime { color:#a5afbe; }
+.refreshButton { width:100%; lines:2; text-overflow:ellipsis; }
 .questionRow { width:100%; height:240px; }
 .buttonRow { width:100%; height:124px; justify-content:center; }
 .block { flex-direction:column; align-items:center; padding:5px 0; }

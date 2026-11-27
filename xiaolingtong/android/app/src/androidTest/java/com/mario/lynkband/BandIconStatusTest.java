@@ -208,6 +208,7 @@ public class BandIconStatusTest {
 
     private static final class FixturePhone extends WristApp {
         boolean paired;
+        boolean unavailableCard;
         String themeMessage;
         @Override void sendBandTheme(String node, String message) {
             assertEquals("fixture", node);
@@ -218,7 +219,10 @@ public class BandIconStatusTest {
             attachBaseContext(context);
             onCreate();
             card = new LynkWidget(this, new Handler(getMainLooper()), this::cardChanged) {
-                @Override View content() { return root; }
+                @Override View content() {
+                    if (unavailableCard) throw new IllegalStateException("provider replaced its view");
+                    return root;
+                }
                 @Override String identity() { return "fixture"; }
                 @Override boolean bound() { return true; }
                 @Override VehiclePhoto.Image vehiclePhoto(VehiclePhoto.Target target) { return null; }
@@ -240,5 +244,26 @@ public class BandIconStatusTest {
             assertTrue(response.getBytes(StandardCharsets.UTF_8).length <= 4096);
             return new JSONObject(response);
         }
+    }
+
+    @Test public void velaKeepsThemeAndReadOnlyStatusWhileProviderReplacesItsView() throws Exception {
+        var instrumentation = InstrumentationRegistry.getInstrumentation();
+        var task = new FutureTask<Void>(() -> {
+            var phone = new FixturePhone(instrumentation.getTargetContext(), null);
+            phone.paired = true;
+            phone.unavailableCard = true;
+            try {
+                var req = new JSONObject().put("v",1).put("id","read").put("type","status").put("bandTheme",true);
+                var status = phone.status("band:fixture", req);
+                assertTrue(status.has("theme"));
+                assertFalse(status.getBoolean("controlsAllowed"));
+                assertEquals(0, status.getJSONArray("actions").length());
+                var refresh = phone.status("band:fixture", req.put("type","refresh"));
+                assertTrue(refresh.getString("note").contains("卡片"));
+            } finally { phone.disarm(); }
+            return null;
+        });
+        instrumentation.runOnMainSync(task);
+        task.get();
     }
 }

@@ -47,6 +47,7 @@ public class RoundLayoutTest {
                                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         try {
             state.status = "已允许穿戴车控";
+            state.photoResolved = true; // Completed snapshot from a phone without artwork.
             state.data =
                     new JSONObject()
                             .put("vehicle", "我的领克")
@@ -521,8 +522,13 @@ public class RoundLayoutTest {
                 android.widget.FrameLayout fixture = new android.widget.FrameLayout(activity);
                 fixture.addView(face, 480, 480);
                 activity.setContentView(fixture);
+                face.show(state, true, true);
+                layout();
+                assertNull(find(face, "默认领克车图"));
+                int waitingTop = find(face, "按钮").getTop();
                 showPhotoReply("", new JSONObject()); // An older phone.
                 int compactTop = find(face, "按钮").getTop();
+                assertTrue(compactTop > waitingTop);
                 assertNull(find(face, "车模图"));
                 ImageView fallback = (ImageView) find(face, "默认领克车图");
                 assertNotNull(fallback);
@@ -556,6 +562,8 @@ public class RoundLayoutTest {
                 showPhotoReply("", first);
                 showPhotoReply(firstId, new JSONObject().put("carPhotoId", firstId).put("carPhoto", "malformed!"));
                 assertNull(find(face, "车模图"));
+                assertNull(find(face, "默认领克车图"));
+                assertEquals(0, state.pollDelay(2));
                 showPhotoReply("", next);
                 state.offline("断开");
                 assertNull(state.carPhoto);

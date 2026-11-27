@@ -38,6 +38,9 @@ final class XiaomiLink {
     private boolean active;
     private boolean authorizing;
     private int generation;
+    private int pollSequence;
+    private int appliedPoll;
+    private int fastPollsLeft;
     private String status = "通信服务未启动";
 
     XiaomiLink(Context context, Handler main, Receiver receiver, Consumer<String> onDisconnect, Runnable onChange) {
@@ -103,6 +106,7 @@ final class XiaomiLink {
         if (active) return;
         active = true;
         generation++;
+        fastPollsLeft = 8;
         setStatus("正在连接小米运动健康");
         try {
             messages = Wearable.getMessageApi(context);
@@ -146,18 +150,26 @@ final class XiaomiLink {
     private void poll() {
         if (!active) return;
         int requestGeneration = generation;
+        int sequence = ++pollSequence;
         try {
             nodes.getConnectedNodes()
                     .addOnSuccessListener(result -> main.post(() -> {
-                        if (active && generation == requestGeneration) updateNodes(result, requestGeneration);
+                        if (!active || generation != requestGeneration || sequence < appliedPoll) return;
+                        appliedPoll = sequence;
+                        updateNodes(result, requestGeneration);
                     }))
                     .addOnFailureListener(error -> main.post(() -> {
-                        if (active && generation == requestGeneration) setStatus("等待小米运动健康连接");
+                        if (active && generation == requestGeneration && sequence >= appliedPoll) {
+                            appliedPoll = sequence;
+                            setStatus("等待小米运动健康连接");
+                        }
                     }));
         } catch (RuntimeException unavailable) {
             setStatus("等待小米运动健康连接");
         }
-        main.postDelayed(poll, 5_000);
+        boolean discovering = listening.isEmpty() && permissionNeeded.isEmpty() && fastPollsLeft > 0;
+        if (discovering) fastPollsLeft--;
+        main.postDelayed(poll, discovering ? 1_000 : 5_000);
     }
 
     private void updateNodes(Iterable<Node> result, int requestGeneration) {
@@ -166,7 +178,14 @@ final class XiaomiLink {
             if (node.id != null && !node.id.isEmpty()) current.add(node.id);
         }
         for (String previous : connected) {
-            if (!current.contains(previous)) onDisconnect.accept(previous);
+            if (!current.contains(previous)) {
+                fastPollsLeft = 8;
+                onDisconnect.accept(previous);
+                if (current.isEmpty()) {
+                    main.removeCallbacks(poll);
+                    main.postDelayed(poll, 1_000);
+                }
+            }
         }
         connected.clear();
         connected.addAll(current);
