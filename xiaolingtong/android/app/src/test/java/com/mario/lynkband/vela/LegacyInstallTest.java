@@ -25,6 +25,24 @@ public class LegacyInstallTest {
     @Test public void mismatchedReadbackIsUnconfirmed() throws Exception { exchange(0, VERSION - 1); }
     @Test public void newerInstalledVersionStopsBeforePreflight() throws Exception { exchange(VERSION + 1,0); }
 
+    @Test public void rejectedDeviceKeyDoesNotTriggerKeyPersistence() throws Exception {
+        try (PipedInputStream incoming = new PipedInputStream(1024);
+             DataOutputStream peer = new DataOutputStream(new PipedOutputStream(incoming));
+             LegacyInstall session = new LegacyInstall(incoming, new ByteArrayOutputStream(), () -> false)) {
+            frame(peer, 0, 0, new byte[] {1});
+            byte[] challenge = join(bytes(1, new byte[16]), bytes(2, new byte[32]));
+            frame(peer, 1, 2, cmd(1, 26, 3, bytes(31, challenge)));
+
+            VelaInstaller.Progress progress = new VelaInstaller.Progress() {
+                @Override public void report(String stage, int percent) { }
+                @Override public void authenticated() { fail("A rejected key must not be saved"); }
+            };
+            IOException failure = assertThrows(IOException.class,
+                    () -> session.install(KEY, 35, "test", RPK, VERSION, progress));
+            assertEquals("V1 设备密钥不匹配。", failure.getMessage());
+        }
+    }
+
     private void exchange(int before, int after) throws Exception {
         ExecutorService pool = Executors.newSingleThreadExecutor();
         try (PipedInputStream phone = new PipedInputStream(8192); PipedOutputStream deviceOut = new PipedOutputStream(phone);

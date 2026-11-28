@@ -82,6 +82,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        clearLegacyLoginCookies();
         app = (WristApp) getApplication();
         wearUpdates = new PhoneWearUpdates(this, saved);
         triedAutoBinding = saved != null && saved.getBoolean("triedAutoBinding");
@@ -587,6 +588,26 @@ public final class MainActivity extends Activity {
                     app.card.unbind();
                     render();
                 }).show();
+    }
+
+    private void clearLegacyLoginCookies() {
+        SharedPreferences migrations = getSharedPreferences("migrations", MODE_PRIVATE);
+        if (migrations.getBoolean("legacyLoginCookiesCleared", false)) return;
+
+        // The 0.3.61 login screen was the only user of this app's WebView profile.
+        if (!new java.io.File(getDataDir(), "app_webview").isDirectory()) {
+            migrations.edit().putBoolean("legacyLoginCookiesCleared", true).apply();
+            return;
+        }
+        try {
+            android.webkit.CookieManager cookies = android.webkit.CookieManager.getInstance();
+            cookies.removeAllCookies(removed -> {
+                cookies.flush();
+                migrations.edit().putBoolean("legacyLoginCookiesCleared", true).apply();
+            });
+        } catch (RuntimeException unavailable) {
+            // A disabled WebView provider can become available on a later launch.
+        }
     }
 
     @Override protected void onActivityResult(int code, int result, Intent data) {

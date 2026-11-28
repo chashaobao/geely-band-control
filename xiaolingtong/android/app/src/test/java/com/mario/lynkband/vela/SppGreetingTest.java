@@ -12,7 +12,7 @@ public class SppGreetingTest {
         return new byte[]{(byte)0xba,(byte)0xdc,(byte)0xfe,0,(byte)0x80,4,0,0,1,0,(byte)version,(byte)0xef,42};
     }
     @Test public void consumesOnlyReportedVersion() throws Exception {
-        for (int version : new int[]{1,2}) {
+        for (int version : new int[]{1, 2, 3, 4}) {
             var in = stream(reply(version));
             var out = new ByteArrayOutputStream();
             assertEquals(version == 1 ? SppGreeting.Version.V1 : SppGreeting.Version.V2,
@@ -30,10 +30,10 @@ public class SppGreetingTest {
         assertEquals(SppGreeting.Version.UNKNOWN, SppGreeting.probe(partial, out, () -> false, 50));
         assertEquals(0xba, partial.read());
     }
-    @Test public void rejectsUnknownVersionAndHonorsCancellationBeforeWriting() {
+    @Test public void rejectsVersionZeroAndHonorsCancellationBeforeWriting() {
         var out = new ByteArrayOutputStream();
         assertThrows(IOException.class, () -> SppGreeting.probe(stream(), out, () -> true, 100));
         assertEquals(0, out.size());
-        assertThrows(IOException.class, () -> SppGreeting.probe(stream(reply(3)), out, () -> false, 100));
+        assertThrows(IOException.class, () -> SppGreeting.probe(stream(reply(0)), out, () -> false, 100));
     }
 }

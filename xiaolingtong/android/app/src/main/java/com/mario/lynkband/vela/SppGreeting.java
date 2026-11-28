@@ -39,7 +39,8 @@ final class SppGreeting {
                 if (frame[9] != 0 || frame[count - 1] != (byte)0xef) break;
                 int version = frame[10] & 255;
                 if (version == 1) return Version.V1;
-                if (version == 2) return Version.V2;
+                // Newer peers advertise values above two. Confirm compatibility with the V2 session reply.
+                if (version >= 2) return Version.V2;
                 throw new IOException("设备报告的串口协议版本为 " + version + "，暂未支持。");
             }
         }

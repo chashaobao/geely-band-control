@@ -151,6 +151,8 @@ final class LegacyInstall implements AutoCloseable {
     boolean install(byte[] key, int api, String model, byte[] rpk, int version, VelaInstaller.Progress progress) throws Exception {
         progress.report("正在认证 V1 设备", -1);
         authenticate(key, api, model);
+        if (cancelled.getAsBoolean()) throw new IOException("操作已取消。");
+        progress.authenticated();
         progress.report("正在核对 V1 安装版本", -1);
         BandProtocol.checkVersion(installed(),version);
         command(BandMessages.prepareApp(BandProtocol.APP_PACKAGE,rpk.length,version));

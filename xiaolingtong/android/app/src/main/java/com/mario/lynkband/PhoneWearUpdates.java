@@ -6,6 +6,7 @@ import android.widget.EditText;
 import android.text.InputType;
 import com.mario.lynkband.transport.PairedDevice;
 import com.mario.lynkband.vela.VelaInstaller;
+import com.mario.lynkband.vela.VelaAuthKeys;
 
 import com.mario.lynkband.transport.WatchUpdateWire;
 import android.app.AlertDialog;
@@ -404,12 +405,20 @@ final class PhoneWearUpdates {
     @android.annotation.SuppressLint("MissingPermission")
     private void confirmVela(BluetoothDevice device) {
         if (exportFile == null) return;
+        String address = device.getAddress();
         EditText input = new EditText(activity);
         input.setSingleLine();
         input.setSaveEnabled(false);
         input.setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_NO);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         input.setHint("32 位十六进制 AuthKey");
+        byte[] savedKey = VelaAuthKeys.load(activity, address);
+        boolean hasSavedKey = savedKey != null;
+        if (savedKey != null) {
+            input.setText(VelaAuthKeys.format(savedKey));
+            input.setSelection(input.length());
+            java.util.Arrays.fill(savedKey, (byte) 0);
+        }
         android.widget.LinearLayout form = new android.widget.LinearLayout(activity);
         form.setOrientation(android.widget.LinearLayout.VERTICAL);
         android.widget.Spinner protocol = new android.widget.Spinner(activity);
@@ -417,10 +426,19 @@ final class PhoneWearUpdates {
                 VelaInstaller.Mode.values()));
         form.addView(protocol);
         form.addView(input);
-        AlertDialog prompt = display(new AlertDialog.Builder(activity).setTitle("确认蓝牙安装")
-                .setMessage((device.getName() == null ? "Vela" : device.getName()) + " · " + device.getAddress()
-                        + "\n" + exportName + "\n请输入这台设备的绑定密钥，仅用于本次连接。")
-                .setView(form).setNegativeButton("返回", (d, w) -> rpkActions()).setPositiveButton("安装", null));
+        AlertDialog.Builder builder = new AlertDialog.Builder(activity).setTitle("确认蓝牙安装")
+                .setMessage((device.getName() == null ? "Vela" : device.getName()) + " · " + address
+                        + "\n" + exportName + "\n"
+                        + (hasSavedKey ? "已带出本机加密保存的 AuthKey，可直接安装。" : "请输入这台设备的绑定密钥，验证后将加密保存到本机。"))
+                .setView(form).setNegativeButton("返回", (d, w) -> rpkActions()).setPositiveButton("安装", null);
+        if (hasSavedKey) {
+            builder.setNeutralButton("清除已保存密钥", (d, w) -> {
+                VelaAuthKeys.clear(activity, address);
+                input.getText().clear();
+                Toast.makeText(activity, "已清除这台设备的 AuthKey", Toast.LENGTH_SHORT).show();
+            });
+        }
+        AlertDialog prompt = display(builder);
         prompt.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             byte[] key;
             try { key = VelaInstaller.key(input.getText().toString()); }
@@ -435,7 +453,19 @@ final class PhoneWearUpdates {
                     RpkInfo info = rpkInfo(file);
                     if (current != null) checkRpkTarget(info, current);
                     return VelaInstaller.send(activity, device, mode, key, file, info.versionCode(), op.cancelled::get,
-                            (stage, percent) -> op.progress(stage, Math.max(0, percent), 100));
+                            new VelaInstaller.Progress() {
+                                @Override public void report(String stage, int percent) {
+                                    op.progress(stage, Math.max(0, percent), 100);
+                                }
+                                @Override public void authenticated() {
+                                    try {
+                                        VelaAuthKeys.save(activity, address, key);
+                                    } catch (java.security.GeneralSecurityException | RuntimeException unavailable) {
+                                        activity.runOnUiThread(() -> Toast.makeText(activity,
+                                                "已通过设备认证，本机未能保存密钥", Toast.LENGTH_LONG).show());
+                                    }
+                                }
+                            });
                 } finally {
                     java.util.Arrays.fill(key, (byte) 0);
                 }

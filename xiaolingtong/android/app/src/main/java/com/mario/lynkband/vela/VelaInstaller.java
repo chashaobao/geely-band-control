@@ -20,7 +20,10 @@ import java.util.function.BooleanSupplier;
 
 public final class VelaInstaller {
     private static final UUID STANDARD = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb");
-    public interface Progress { void report(String stage, int percent); }
+    public interface Progress {
+        void report(String stage, int percent);
+        default void authenticated() {}
+    }
 
     public enum Mode {
         AUTO("自动识别"), SPP_V1("经典蓝牙 SPP V1"), SPP_V2("经典蓝牙 SPP V2"), BLE("低功耗蓝牙 BLE V2");
@@ -133,6 +136,7 @@ public final class VelaInstaller {
             progress.report("正在认证 " + link + " V2 设备", -1);
             protocol.authenticateSession(key, Build.VERSION.SDK_INT, Build.MODEL);
             check(cancelled);
+            progress.authenticated();
             return protocol.install(data, version, progress::report) == BandProtocol.Result.CONFIRMED;
         }
     }
